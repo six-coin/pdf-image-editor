@@ -1,6 +1,6 @@
 from PySide6.QtCore import QRectF, QPointF, Qt
 from PySide6.QtWidgets import QGraphicsScene
-from PySide6.QtGui import QTransform, QPixmap, QPainter
+from PySide6.QtGui import QTransform, QPixmap
 
 from app.page_item import PageItem
 from app.image_item import ImageItem
@@ -89,10 +89,6 @@ class PdfScene(QGraphicsScene):
 
         pm = QPixmap(200, 200)
         pm.fill(Qt.white)
-        painter = QPainter(pm)
-        painter.setPen(Qt.lightGray)
-        painter.drawRect(0, 0, 199, 199)
-        painter.end()
 
         item = ImageItem(active)
         item.setPixmap(pm)
