@@ -1,6 +1,6 @@
 import os
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QKeySequence, QShortcut, QUndoStack
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QToolBar, QSpinBox,
     QLabel, QWidget, QVBoxLayout, QMessageBox,
@@ -26,6 +26,9 @@ class MainWindow(QMainWindow):
         self._canvas = PdfCanvas(self._scene)
         self._split_tool = SplitTool(self._scene)
         self._canvas.set_split_tool(self._split_tool)
+
+        self._undo_stack = QUndoStack(self)
+        self._scene.set_undo_stack(self._undo_stack)
 
         self._current_file = None
 
@@ -77,6 +80,27 @@ class MainWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
+        edit_menu = mb.addMenu("编辑(&E)")
+
+        undo_action = self._undo_stack.createUndoAction(self, "撤销(&U)")
+        undo_action.setShortcut(QKeySequence.Undo)
+        edit_menu.addAction(undo_action)
+
+        redo_action = self._undo_stack.createRedoAction(self, "重做(&R)")
+        redo_action.setShortcut(QKeySequence.Redo)
+        edit_menu.addAction(redo_action)
+
+        edit_menu.addSeparator()
+
+        add_white_action = QAction("添加白色矩形", self)
+        add_white_action.triggered.connect(self._on_add_white_rect)
+        edit_menu.addAction(add_white_action)
+
+        delete_action = QAction("删除选中", self)
+        delete_action.setShortcut(QKeySequence.Delete)
+        delete_action.triggered.connect(self._on_delete_selected)
+        edit_menu.addAction(delete_action)
+
         view_menu = mb.addMenu("视图(&V)")
 
         self._guide_action = QAction("显示参考线", self)
@@ -101,17 +125,6 @@ class MainWindow(QMainWindow):
         fit_action.setShortcut(QKeySequence("Ctrl+0"))
         fit_action.triggered.connect(self._canvas.fit_to_width)
         view_menu.addAction(fit_action)
-
-        edit_menu = mb.addMenu("编辑(&E)")
-
-        add_white_action = QAction("添加白色矩形", self)
-        add_white_action.triggered.connect(self._on_add_white_rect)
-        edit_menu.addAction(add_white_action)
-
-        delete_action = QAction("删除选中", self)
-        delete_action.setShortcut(QKeySequence.Delete)
-        delete_action.triggered.connect(self._on_delete_selected)
-        edit_menu.addAction(delete_action)
 
     def _setup_toolbar(self):
         tb = QToolBar("工具栏")
@@ -153,13 +166,25 @@ class MainWindow(QMainWindow):
         self._shortcut_r.activated.connect(lambda: self._enter_split(SplitMode.VERTICAL))
 
         self._shortcut_esc = QShortcut(QKeySequence(Qt.Key_Escape), self)
-        self._shortcut_esc.activated.connect(self._on_split_cancel)
+        self._shortcut_esc.activated.connect(self._on_esc)
 
         self._shortcut_undo = QShortcut(QKeySequence("Ctrl+Z"), self)
-        self._shortcut_undo.activated.connect(self._split_tool.undo_last)
+        self._shortcut_undo.activated.connect(self._on_undo)
 
     def _connect_signals(self):
         self._canvas.zoom_changed.connect(self._on_zoom_changed)
+
+    def _on_undo(self):
+        if self._split_tool.is_active:
+            self._split_tool.undo_last()
+        else:
+            self._undo_stack.undo()
+
+    def _on_esc(self):
+        if self._split_tool.is_active:
+            self._on_split_cancel()
+        else:
+            pass
 
     def _on_open(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -171,6 +196,7 @@ class MainWindow(QMainWindow):
     def _load_file(self, path):
         self._split_tool.cancel()
         self._update_split_ui()
+        self._undo_stack.clear()
         try:
             pages_data = self._model.load(path)
         except Exception as e:

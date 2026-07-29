@@ -166,6 +166,11 @@ class SplitTool:
         pw = pixmap.width()
         ph = pixmap.height()
 
+        target = self._target_image
+        original_state = target.get_state()
+
+        self._cleanup()
+
         new_items = []
 
         for hi in range(len(h_cuts) - 1):
@@ -196,11 +201,18 @@ class SplitTool:
 
                 new_items.append(item)
 
-        self._cleanup()
+        scene.removeItem(target)
 
-        scene.removeItem(self._target_image)
+        new_states = []
         for item in new_items:
             scene.addItem(item)
+            if parent and hasattr(parent, "add_image"):
+                parent.add_image(item)
+            new_states.append(item.get_state())
+
+        if scene and hasattr(scene, "_undo_stack") and scene._undo_stack:
+            from app.undo_commands import SplitCommand
+            scene._undo_stack.push(SplitCommand(scene, target, original_state, new_items, new_states))
 
         return new_items
 

@@ -5,6 +5,8 @@ from PySide6.QtGui import QTransform, QPixmap, QPainter
 from app.page_item import PageItem
 from app.image_item import ImageItem
 from app.guide_overlay import GuideOverlay
+from app.undo_commands import DeleteCommand, AddWhiteRectCommand
+from app.utils import mm_to_pt
 
 
 PAGE_GAP = 20
@@ -16,6 +18,7 @@ class PdfScene(QGraphicsScene):
         self._pages = []
         self._guide_overlay = GuideOverlay(self)
         self._current_y = 0
+        self._undo_stack = None
 
     @property
     def pages(self):
@@ -24,6 +27,13 @@ class PdfScene(QGraphicsScene):
     @property
     def guide_overlay(self):
         return self._guide_overlay
+
+    @property
+    def undo_stack(self):
+        return self._undo_stack
+
+    def set_undo_stack(self, stack):
+        self._undo_stack = stack
 
     def clear_scene(self):
         self._guide_overlay.clear()
@@ -73,8 +83,8 @@ class PdfScene(QGraphicsScene):
 
         page = self._pages[active]
         pr = page.pageRect()
-        cx = pr.width() / 2 - 50
-        cy = pr.height() / 2 - 50
+        x = mm_to_pt(10)
+        y = mm_to_pt(10)
 
         pm = QPixmap(200, 200)
         pm.fill(Qt.white)
@@ -85,12 +95,17 @@ class PdfScene(QGraphicsScene):
 
         item = ImageItem(active)
         item.setPixmap(pm)
-        item.setPos(cx, cy)
+        item.setPos(x, y)
         item.setZValue(10)
         item.setParentItem(page)
         self.addItem(item)
+        page.add_image(item)
         self.clearSelection()
         item.setSelected(True)
+
+        if self._undo_stack:
+            self._undo_stack.push(AddWhiteRectCommand(self, item, page))
+
         return item
 
     def active_page_index(self):
@@ -159,6 +174,19 @@ class PdfScene(QGraphicsScene):
         img_item.page_index = new_page.page_index
 
     def delete_selected(self):
+        items_data = []
         for item in self.selectedItems():
             if isinstance(item, ImageItem):
+                state = item.get_state()
+                parent = item.parentItem()
+                items_data.append({
+                    "item": item,
+                    "parent": parent,
+                    "state": state,
+                })
+                if parent and hasattr(parent, "remove_image"):
+                    parent.remove_image(item)
                 self.removeItem(item)
+
+        if items_data and self._undo_stack:
+            self._undo_stack.push(DeleteCommand(self, items_data))

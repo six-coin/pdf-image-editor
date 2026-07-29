@@ -1,5 +1,5 @@
 from PySide6.QtCore import (
-    Qt, QPointF, QRectF, Signal
+    Qt, QPointF, QRectF
 )
 from PySide6.QtGui import (
     QPen, QBrush, QColor, QTransform
@@ -8,14 +8,13 @@ from PySide6.QtWidgets import (
     QGraphicsPixmapItem, QGraphicsItem
 )
 
-HANDLE_SIZE = 6
+HANDLE_HIT_SIZE = 20
+HANDLE_VISUAL_SIZE = 8
 HANDLE_COLOR = QColor(0, 120, 255)
 HANDLE_BRUSH = QBrush(QColor(255, 255, 255, 200))
 
 
 class ImageItem(QGraphicsPixmapItem):
-    page_changed = Signal(int, int)
-
     def __init__(self, page_index=0, parent=None):
         super().__init__(parent)
         self._page_index = page_index
@@ -54,9 +53,60 @@ class ImageItem(QGraphicsPixmapItem):
     def scale_y(self):
         return self.transform().m22()
 
-    def _corner_rect(self, corner):
+    def get_state(self):
+        return {
+            "pos": QPointF(self.pos()),
+            "transform": QTransform(self.transform()),
+            "parent": self.parentItem(),
+            "page_index": self._page_index,
+            "pixmap": self.pixmap() if self.pixmap() else None,
+            "zValue": self.zValue(),
+        }
+
+    def apply_state(self, state):
+        if state["parent"] and self.parentItem() != state["parent"]:
+            old_p = self.parentItem()
+            if old_p and hasattr(old_p, "remove_image"):
+                old_p.remove_image(self)
+            self.setParentItem(state["parent"])
+            if hasattr(state["parent"], "add_image"):
+                state["parent"].add_image(self)
+        elif not state["parent"] and self.parentItem():
+            old_p = self.parentItem()
+            if old_p and hasattr(old_p, "remove_image"):
+                old_p.remove_image(self)
+            self.setParentItem(None)
+        self.setPos(state["pos"])
+        self.setTransform(state["transform"])
+        self._page_index = state["page_index"]
+        if state["pixmap"] and state["pixmap"] != self.pixmap():
+            self.setPixmap(state["pixmap"])
+        self.setZValue(state["zValue"] if state["zValue"] else 10)
+
+    @staticmethod
+    def state_changed(old, new):
+        return (
+            old["pos"] != new["pos"]
+            or old["transform"].m11() != new["transform"].m11()
+            or old["transform"].m22() != new["transform"].m22()
+            or old["parent"] != new["parent"]
+            or old["page_index"] != new["page_index"]
+        )
+
+    def _hit_rect(self, corner):
         r = self.boundingRect()
-        hs = HANDLE_SIZE
+        hs = HANDLE_HIT_SIZE
+        mapping = {
+            "tl": QRectF(r.left() - hs / 2, r.top() - hs / 2, hs, hs),
+            "tr": QRectF(r.right() - hs / 2, r.top() - hs / 2, hs, hs),
+            "bl": QRectF(r.left() - hs / 2, r.bottom() - hs / 2, hs, hs),
+            "br": QRectF(r.right() - hs / 2, r.bottom() - hs / 2, hs, hs),
+        }
+        return mapping.get(corner, QRectF())
+
+    def _visual_rect(self, corner):
+        r = self.boundingRect()
+        hs = HANDLE_VISUAL_SIZE
         mapping = {
             "tl": QRectF(r.left() - hs / 2, r.top() - hs / 2, hs, hs),
             "tr": QRectF(r.right() - hs / 2, r.top() - hs / 2, hs, hs),
@@ -67,7 +117,7 @@ class ImageItem(QGraphicsPixmapItem):
 
     def _corner_at(self, pos):
         for c in ("tl", "tr", "bl", "br"):
-            if self._corner_rect(c).contains(pos):
+            if self._hit_rect(c).contains(pos):
                 return c
         return None
 
@@ -91,7 +141,7 @@ class ImageItem(QGraphicsPixmapItem):
             painter.setPen(QPen(HANDLE_COLOR, 0))
             painter.setBrush(HANDLE_BRUSH)
             for c in ("tl", "tr", "bl", "br"):
-                painter.drawRect(self._corner_rect(c))
+                painter.drawRect(self._visual_rect(c))
             painter.restore()
 
     def hoverMoveEvent(self, event):

@@ -1,8 +1,9 @@
-from PySide6.QtCore import Qt, Signal, QPropertyAnimation, QEasingCurve, QPointF
+from PySide6.QtCore import Qt, Signal, QPointF
 from PySide6.QtGui import QTransform, QPainter, QColor, QBrush, QMouseEvent
 from PySide6.QtWidgets import QGraphicsView
 
 from app.image_item import ImageItem
+from app.undo_commands import TransformCommand
 
 
 class PdfCanvas(QGraphicsView):
@@ -12,6 +13,7 @@ class PdfCanvas(QGraphicsView):
         super().__init__(scene, parent)
         self._zoom = 1.0
         self._split_tool = None
+        self._undo_snapshots = {}
 
         self.setRenderHints(
             QPainter.Antialiasing
@@ -51,13 +53,11 @@ class PdfCanvas(QGraphicsView):
             self.zoom_level = self._zoom + delta * step
             return
 
+        sb = self.verticalScrollBar()
         delta = event.angleDelta().y()
-        target = self.verticalScrollBar().value() - delta
-        anim = QPropertyAnimation(self.verticalScrollBar(), b"value")
-        anim.setDuration(80)
-        anim.setEndValue(target)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.start()
+        new_val = sb.value() - delta
+        new_val = max(sb.minimum(), min(sb.maximum(), new_val))
+        sb.setValue(new_val)
 
     def mousePressEvent(self, event):
         if self._split_tool and self._split_tool.is_active:
@@ -78,6 +78,9 @@ class PdfCanvas(QGraphicsView):
                 return
             else:
                 return
+
+        if event.button() == Qt.LeftButton:
+            self._undo_snapshots = self._capture_selected_states()
 
         if event.button() == Qt.MiddleButton:
             self.setDragMode(QGraphicsView.ScrollHandDrag)
@@ -113,6 +116,36 @@ class PdfCanvas(QGraphicsView):
         scene = self.scene()
         if hasattr(scene, "check_cross_page_moves"):
             scene.check_cross_page_moves()
+
+        self._commit_undo()
+
+    def _capture_selected_states(self):
+        scene = self.scene()
+        if not hasattr(scene, "selectedItems"):
+            return {}
+        snapshots = {}
+        for item in scene.selectedItems():
+            if isinstance(item, ImageItem):
+                snapshots[item] = item.get_state()
+        return snapshots
+
+    def _commit_undo(self):
+        if not self._undo_snapshots:
+            return
+        scene = self.scene()
+        changes = []
+        for item, old_state in self._undo_snapshots.items():
+            try:
+                if item.scene() != scene:
+                    continue
+            except RuntimeError:
+                continue
+            new_state = item.get_state()
+            if ImageItem.state_changed(old_state, new_state):
+                changes.append((item, old_state, new_state))
+        if changes and hasattr(scene, "_undo_stack") and scene._undo_stack:
+            scene._undo_stack.push(TransformCommand(changes))
+        self._undo_snapshots = {}
 
     def fit_to_width(self):
         sr = self.scene().sceneRect()
