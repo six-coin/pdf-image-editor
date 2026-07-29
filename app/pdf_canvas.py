@@ -79,8 +79,8 @@ class PdfCanvas(QGraphicsView):
             else:
                 return
 
-        if event.button() == Qt.LeftButton:
-            self._undo_snapshots = self._capture_selected_states()
+        if event.button() == Qt.LeftButton and not (self._split_tool and self._split_tool.is_active):
+            self._undo_snapshots = self._capture_editable_states(event)
 
         if event.button() == Qt.MiddleButton:
             self.setDragMode(QGraphicsView.ScrollHandDrag)
@@ -119,13 +119,18 @@ class PdfCanvas(QGraphicsView):
 
         self._commit_undo()
 
-    def _capture_selected_states(self):
+    def _capture_editable_states(self, event):
         scene = self.scene()
         if not hasattr(scene, "selectedItems"):
             return {}
         snapshots = {}
-        for item in scene.selectedItems():
+        pt = event.position().toPoint()
+        scene_pos = self.mapToScene(pt)
+        for item in scene.items(scene_pos):
             if isinstance(item, ImageItem):
+                snapshots[item] = item.get_state()
+        for item in scene.selectedItems():
+            if isinstance(item, ImageItem) and item not in snapshots:
                 snapshots[item] = item.get_state()
         return snapshots
 

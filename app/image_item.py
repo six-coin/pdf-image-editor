@@ -21,6 +21,7 @@ class ImageItem(QGraphicsPixmapItem):
         self._resizing = False
         self._resize_handle = None
         self._resize_params = None
+        self._original_bytes = None
 
         self.setFlags(
             QGraphicsItem.ItemIsSelectable
@@ -37,6 +38,14 @@ class ImageItem(QGraphicsPixmapItem):
     @page_index.setter
     def page_index(self, value):
         self._page_index = value
+
+    @property
+    def original_bytes(self):
+        return self._original_bytes
+
+    @original_bytes.setter
+    def original_bytes(self, value):
+        self._original_bytes = value
 
     def display_rect(self):
         pm = self.pixmap()
@@ -235,7 +244,7 @@ class ImageItem(QGraphicsPixmapItem):
             return
 
         if keep_aspect and pw > 0 and ph > 0:
-            ratio = pw / ph
+            ratio = old_sx / old_sy if old_sy != 0 else 1
             sxd = abs(new_sx / old_sx - 1) if old_sx else 0
             syd = abs(new_sy / old_sy - 1) if old_sy else 0
             if sxd >= syd:

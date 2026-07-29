@@ -104,6 +104,10 @@ class PdfModel:
         return images
 
     def save(self, path, scene_images):
+        if self._doc:
+            self._doc.close()
+            self._doc = None
+
         doc = fitz.open()
         page_rects = [pd["page_size"] for pd in self._pages_data]
         for page_idx, images in enumerate(scene_images):
@@ -120,18 +124,25 @@ class PdfModel:
             for img_info in images:
                 pixmap = img_info["pixmap"]
                 rect = img_info["rect"]
-                buffer = QBuffer()
-                buffer.open(QIODevice.ReadWrite)
-                pixmap.save(buffer, "PNG")
-                png_bytes = bytes(buffer.data())
+                orig = img_info.get("original_bytes")
+                if orig:
+                    stream_bytes = orig
+                else:
+                    buffer = QBuffer()
+                    buffer.open(QIODevice.ReadWrite)
+                    pixmap.save(buffer, "JPG", 85)
+                    stream_bytes = bytes(buffer.data())
                 frect = fitz.Rect(rect.x(), rect.y(), rect.right(), rect.bottom())
                 try:
-                    page.insert_image(frect, stream=png_bytes)
+                    page.insert_image(frect, stream=stream_bytes)
                 except Exception:
                     pass
 
-        doc.save(path)
+        doc.save(path, deflate=True, garbage=4)
         doc.close()
+
+        self._path = path
+        self._doc = fitz.open(path)
 
     def save_split(self, path, page_indices):
         if self._doc is None:

@@ -83,11 +83,9 @@ class MainWindow(QMainWindow):
         edit_menu = mb.addMenu("编辑(&E)")
 
         undo_action = self._undo_stack.createUndoAction(self, "撤销(&U)")
-        undo_action.setShortcut(QKeySequence.Undo)
         edit_menu.addAction(undo_action)
 
         redo_action = self._undo_stack.createRedoAction(self, "重做(&R)")
-        redo_action.setShortcut(QKeySequence.Redo)
         edit_menu.addAction(redo_action)
 
         edit_menu.addSeparator()
@@ -208,6 +206,7 @@ class MainWindow(QMainWindow):
 
         self._scene.build_from_data(pages_data, show_guides=self._guide_action.isChecked())
         self._canvas.fit_to_width()
+        self._undo_stack.setClean()
 
     def _on_save(self):
         if self._current_file:
@@ -232,6 +231,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "错误", f"保存失败:\n{e}")
             return
         QMessageBox.information(self, "完成", "文件已保存")
+        self._undo_stack.setClean()
 
     def _on_split(self):
         if self._model.page_count <= 0:
@@ -322,6 +322,44 @@ class MainWindow(QMainWindow):
 
     def _status_msg(self, msg):
         self.statusBar().showMessage(msg)
+
+    def closeEvent(self, event):
+        if self._undo_stack.isClean():
+            self._model.close()
+            event.accept()
+            return
+
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("未保存的修改")
+        msg_box.setText("文档已修改，是否保存？")
+        msg_box.setIcon(QMessageBox.Warning)
+        save_btn = msg_box.addButton("保存(&S)", QMessageBox.AcceptRole)
+        save_as_btn = msg_box.addButton("另存为(&A)...", QMessageBox.ActionRole)
+        discard_btn = msg_box.addButton("不保存(&D)", QMessageBox.DestructiveRole)
+        cancel_btn = msg_box.addButton("取消(&C)", QMessageBox.RejectRole)
+        msg_box.setDefaultButton(save_btn)
+        msg_box.setEscapeButton(cancel_btn)
+        msg_box.exec()
+        clicked = msg_box.clickedButton()
+
+        if clicked == save_btn:
+            self._on_save()
+            if not self._undo_stack.isClean():
+                event.ignore()
+                return
+        elif clicked == save_as_btn:
+            self._on_save_as()
+            if not self._undo_stack.isClean():
+                event.ignore()
+                return
+        elif clicked == discard_btn:
+            pass
+        else:
+            event.ignore()
+            return
+
+        self._model.close()
+        event.accept()
 
     def keyPressEvent(self, event):
         if self._split_tool.is_active:

@@ -60,6 +60,7 @@ class PdfScene(QGraphicsScene):
             for img_data in pd["images"]:
                 img_item = ImageItem(page_idx)
                 img_item.setPixmap(img_data.pixmap)
+                img_item.original_bytes = img_data.original_bytes
                 bbox = img_data.bbox_pt
                 sx = bbox.width() / img_data.pixmap.width() if img_data.pixmap.width() else 1
                 sy = bbox.height() / img_data.pixmap.height() if img_data.pixmap.height() else 1
@@ -136,6 +137,7 @@ class PdfScene(QGraphicsScene):
                     page_images.append({
                         "pixmap": img.pixmap(),
                         "rect": img.display_rect(),
+                        "original_bytes": img.original_bytes,
                     })
             result.append(page_images)
         return result
