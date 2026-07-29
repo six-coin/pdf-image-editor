@@ -150,6 +150,11 @@ class MainWindow(QMainWindow):
         self._split_cancel_btn.clicked.connect(self._on_split_cancel)
         tb.addWidget(self._split_cancel_btn)
 
+        self._keep_middle_btn = QPushButton("仅保留中间 (Q)")
+        self._keep_middle_btn.setEnabled(False)
+        self._keep_middle_btn.clicked.connect(self._on_keep_middle)
+        tb.addWidget(self._keep_middle_btn)
+
         tb.addSeparator()
 
         add_white_btn = QPushButton("添加白色矩形")
@@ -168,6 +173,9 @@ class MainWindow(QMainWindow):
 
         self._shortcut_undo = QShortcut(QKeySequence("Ctrl+Z"), self)
         self._shortcut_undo.activated.connect(self._on_undo)
+
+        self._shortcut_q = QShortcut(QKeySequence("Q"), self)
+        self._shortcut_q.activated.connect(self._on_keep_middle)
 
     def _connect_signals(self):
         self._canvas.zoom_changed.connect(self._on_zoom_changed)
@@ -310,13 +318,27 @@ class MainWindow(QMainWindow):
             self._update_split_ui()
             self._status_msg("已取消")
 
+    def _on_keep_middle(self):
+        focused = QApplication.focusWidget()
+        if isinstance(focused, (QSpinBox, QLineEdit, QTextEdit)):
+            return
+        if self._split_tool.is_active and self._split_tool.has_cross_hairs:
+            self._split_tool.confirm_keep_middle(self._scene)
+            self._update_split_ui()
+            self._status_msg("已保留中间部分")
+
     def _update_split_ui(self):
         active = self._split_tool.is_active
         self._split_complete_btn.setEnabled(active)
         self._split_cancel_btn.setEnabled(active)
+        can_keep_middle = active and self._split_tool.has_cross_hairs
+        self._keep_middle_btn.setEnabled(can_keep_middle)
         if active:
             mode_name = "水平" if self._split_tool.mode == SplitMode.HORIZONTAL else "竖直"
-            self._status_msg(f"分割模式 [{mode_name}] - 点击放置参考线, Enter完成, Esc取消")
+            base = f"分割模式 [{mode_name}] - 点击放置参考线, Enter/T完成, Esc取消"
+            if can_keep_middle:
+                base += ", Q保留中间"
+            self._status_msg(base)
         else:
             self._status_msg("")
 
@@ -371,7 +393,7 @@ class MainWindow(QMainWindow):
                 self._split_tool.switch_mode(SplitMode.VERTICAL)
                 self._update_split_ui()
                 return
-            elif event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            elif event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_T):
                 self._on_split_complete()
                 return
         super().keyPressEvent(event)

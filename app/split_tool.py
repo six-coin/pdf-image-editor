@@ -139,6 +139,102 @@ class SplitTool:
             self._scene.addItem(line)
             self._placed_lines.append(line)
 
+    @property
+    def has_cross_hairs(self):
+        return len(self._h_guides) == 2 and len(self._v_guides) == 2
+
+    def confirm_keep_middle(self, scene):
+        if not self.has_cross_hairs or self._target_image is None or not self.is_active:
+            return []
+
+        rect = self._target_image.sceneBoundingRect()
+        pixmap = self._target_image.pixmap()
+        if pixmap is None:
+            return []
+
+        h_sorted = sorted(set(self._h_guides))
+        v_sorted = sorted(set(self._v_guides))
+        h_cuts = [0.0] + h_sorted + [1.0]
+        v_cuts = [0.0] + v_sorted + [1.0]
+
+        page_index = self._target_image.page_index
+        parent = self._target_image.parentItem()
+        old_pos = self._target_image.pos()
+        old_t = self._target_image.transform()
+        old_sx = old_t.m11()
+        old_sy = old_t.m22()
+        pw = pixmap.width()
+        ph = pixmap.height()
+
+        target = self._target_image
+        original_state = target.get_state()
+
+        self._cleanup()
+
+        new_items = []
+        for hi in range(len(h_cuts) - 1):
+            for vi in range(len(v_cuts) - 1):
+                h0, h1 = h_cuts[hi], h_cuts[hi + 1]
+                v0, v1 = v_cuts[vi], v_cuts[vi + 1]
+                src_x = int(v0 * pw)
+                src_y = int(h0 * ph)
+                src_w = int((v1 - v0) * pw)
+                src_h = int((h1 - h0) * ph)
+                if src_w <= 0 or src_h <= 0:
+                    continue
+                sub_pixmap = pixmap.copy(src_x, src_y, src_w, src_h)
+                if sub_pixmap.isNull():
+                    continue
+                from app.image_item import ImageItem
+                item = ImageItem(page_index, parent)
+                item.setPixmap(sub_pixmap)
+                new_x = old_pos.x() + v0 * pw * old_sx
+                new_y = old_pos.y() + h0 * ph * old_sy
+                item.setPos(new_x, new_y)
+                item.setTransform(QTransform.fromScale(old_sx, old_sy))
+                new_items.append(item)
+
+        scene.removeItem(target)
+
+        undo_stack = scene._undo_stack if hasattr(scene, "_undo_stack") and scene._undo_stack else None
+        if undo_stack:
+            from app.undo_commands import SplitCommand, DeleteCommand
+            undo_stack.beginMacro("仅保留中间部分")
+            all_states = []
+            for item in new_items:
+                scene.addItem(item)
+                if parent and hasattr(parent, "add_image"):
+                    parent.add_image(item)
+                all_states.append(item.get_state())
+            undo_stack.push(SplitCommand(scene, target, original_state, new_items, all_states))
+
+            middle_idx = 4
+            outer_data = []
+            for i, item in enumerate(new_items):
+                if i != middle_idx:
+                    state = item.get_state()
+                    p = item.parentItem()
+                    outer_data.append({"item": item, "parent": p, "state": state})
+                    if p and hasattr(p, "remove_image"):
+                        p.remove_image(item)
+                    scene.removeItem(item)
+            if outer_data:
+                undo_stack.push(DeleteCommand(scene, outer_data))
+            undo_stack.endMacro()
+            return [new_items[middle_idx]] if middle_idx < len(new_items) else []
+        else:
+            for item in new_items:
+                scene.addItem(item)
+                if parent and hasattr(parent, "add_image"):
+                    parent.add_image(item)
+            middle_idx = 4
+            for i, item in enumerate(new_items):
+                if i != middle_idx:
+                    if item.parentItem() and hasattr(item.parentItem(), "remove_image"):
+                        item.parentItem().remove_image(item)
+                    scene.removeItem(item)
+            return [new_items[middle_idx]] if middle_idx < len(new_items) else []
+
     def confirm(self, scene):
         """Split the image and return the new ImageItems."""
         if self._target_image is None or not self.is_active:
