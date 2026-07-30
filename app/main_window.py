@@ -1,6 +1,6 @@
 import os
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence, QShortcut, QUndoStack
+from PySide6.QtGui import QAction, QKeySequence, QShortcut, QUndoStack, QPixmap, QImage
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QToolBar, QSpinBox,
     QLabel, QWidget, QVBoxLayout, QMessageBox,
@@ -13,6 +13,9 @@ from app.pdf_canvas import PdfCanvas
 from app.split_tool import SplitTool, SplitMode
 from app.image_item import ImageItem
 from app.dialogs.split_dialog import SplitDialog
+from app.dialogs.reference_dialog import ReferenceDialog
+from app.guide_config import load_config, save_config
+from app.utils import mm_to_pt
 
 
 class MainWindow(QMainWindow):
@@ -26,6 +29,7 @@ class MainWindow(QMainWindow):
         self._canvas = PdfCanvas(self._scene)
         self._split_tool = SplitTool(self._scene)
         self._canvas.set_split_tool(self._split_tool)
+        self._split_tool.set_guides_changed_callback(self._update_split_ui)
 
         self._undo_stack = QUndoStack(self)
         self._scene.set_undo_stack(self._undo_stack)
@@ -34,6 +38,7 @@ class MainWindow(QMainWindow):
 
         self._setup_menu()
         self._setup_toolbar()
+        self._setup_statusbar()
         self._setup_shortcuts()
         self._connect_signals()
 
@@ -94,6 +99,10 @@ class MainWindow(QMainWindow):
         add_white_action.triggered.connect(self._on_add_white_rect)
         edit_menu.addAction(add_white_action)
 
+        paste_action = QAction("从剪贴板新增图像", self)
+        paste_action.triggered.connect(self._on_paste_image)
+        edit_menu.addAction(paste_action)
+
         delete_action = QAction("删除选中", self)
         delete_action.setShortcut(QKeySequence.Delete)
         delete_action.triggered.connect(self._on_delete_selected)
@@ -106,6 +115,10 @@ class MainWindow(QMainWindow):
         self._guide_action.setChecked(True)
         self._guide_action.triggered.connect(self._on_toggle_guides)
         view_menu.addAction(self._guide_action)
+
+        ref_action = QAction("参考线设置...", self)
+        ref_action.triggered.connect(self._on_reference_settings)
+        view_menu.addAction(ref_action)
 
         view_menu.addSeparator()
 
@@ -161,6 +174,21 @@ class MainWindow(QMainWindow):
         add_white_btn.clicked.connect(self._on_add_white_rect)
         tb.addWidget(add_white_btn)
 
+        paste_btn = QPushButton("从剪贴板新增图像")
+        paste_btn.clicked.connect(self._on_paste_image)
+        tb.addWidget(paste_btn)
+
+    def _setup_statusbar(self):
+        sb = self.statusBar()
+        self._page_label = QLabel("0 / 0")
+        self._zoom_label = QLabel("100%")
+        sb.addWidget(self._page_label)
+        sb.addPermanentWidget(self._zoom_label)
+
+    def _update_page_label(self):
+        count = self._model.page_count
+        self._page_label.setText(f"页数: {count}" if count > 0 else "0 / 0")
+
     def _setup_shortcuts(self):
         self._shortcut_e = QShortcut(QKeySequence("E"), self)
         self._shortcut_e.activated.connect(lambda: self._enter_split(SplitMode.HORIZONTAL))
@@ -215,6 +243,7 @@ class MainWindow(QMainWindow):
         self._scene.build_from_data(pages_data, show_guides=self._guide_action.isChecked())
         self._canvas.fit_to_width()
         self._undo_stack.setClean()
+        self._update_page_label()
 
     def _on_save(self):
         if self._current_file:
@@ -265,6 +294,15 @@ class MainWindow(QMainWindow):
     def _on_toggle_guides(self, checked):
         self._scene.guide_overlay.set_visible(checked)
 
+    def _on_reference_settings(self):
+        cfg = load_config()
+        dlg = ReferenceDialog(cfg, self)
+        if dlg.exec() == ReferenceDialog.Accepted:
+            new_cfg = dlg.get_values()
+            save_config(new_cfg)
+            self._scene.guide_overlay.reload_config()
+            self._scene.guide_overlay.update_positions(self._scene.pages)
+
     def _on_zoom_spin(self, value):
         self._canvas.zoom_level = value / 100.0
 
@@ -272,6 +310,7 @@ class MainWindow(QMainWindow):
         self._zoom_spin.blockSignals(True)
         self._zoom_spin.setValue(int(zoom * 100))
         self._zoom_spin.blockSignals(False)
+        self._zoom_label.setText(f"{int(zoom * 100)}%")
 
     def _on_add_white_rect(self):
         if self._model.page_count <= 0:
@@ -279,6 +318,48 @@ class MainWindow(QMainWindow):
         item = self._scene.add_white_rectangle()
         if item:
             self._status_msg("已添加白色矩形")
+
+    def _on_paste_image(self):
+        if self._model.page_count <= 0:
+            QMessageBox.warning(self, "提示", "请先打开一个 PDF 文件")
+            return
+
+        clip = QApplication.clipboard()
+        qimg = clip.image()
+        if qimg.isNull():
+            QMessageBox.warning(self, "提示", "剪贴板中没有图像")
+            return
+
+        pixmap = QPixmap.fromImage(qimg)
+        if pixmap.isNull():
+            QMessageBox.warning(self, "提示", "无法读取剪贴板中的图像")
+            return
+
+        active = self._scene.active_page_index()
+        if active < 0:
+            active = 0
+        page = self._scene.get_page_by_index(active)
+        if page is None:
+            return
+
+        x = mm_to_pt(10)
+        y = mm_to_pt(10)
+
+        item = ImageItem(active)
+        item.setPixmap(pixmap)
+        item.setPos(x, y)
+        item.setZValue(10)
+        item.setParentItem(page)
+        self._scene.addItem(item)
+        page.add_image(item)
+        self._scene.clearSelection()
+        item.setSelected(True)
+
+        if self._scene.undo_stack:
+            from app.undo_commands import AddWhiteRectCommand
+            self._scene.undo_stack.push(AddWhiteRectCommand(self._scene, item, page))
+
+        self._status_msg("已从剪贴板添加图像")
 
     def _on_delete_selected(self):
         if self._split_tool.is_active:

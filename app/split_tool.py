@@ -24,6 +24,14 @@ class SplitTool:
         self._v_guides = []
         self._active_line = None
         self._placed_lines = []
+        self._on_guides_changed = None
+
+    def set_guides_changed_callback(self, cb):
+        self._on_guides_changed = cb
+
+    def _notify_guides_changed(self):
+        if self._on_guides_changed:
+            self._on_guides_changed()
 
     @property
     def mode(self):
@@ -94,6 +102,7 @@ class SplitTool:
             self._v_guides.append(frac)
 
         self._redraw_placed()
+        self._notify_guides_changed()
 
     def undo_last(self):
         if not self.is_active:
@@ -105,6 +114,7 @@ class SplitTool:
         else:
             return
         self._redraw_placed()
+        self._notify_guides_changed()
 
     def switch_mode(self, new_mode):
         if self._mode == new_mode or self._mode == SplitMode.IDLE:

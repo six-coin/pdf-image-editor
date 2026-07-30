@@ -3,12 +3,9 @@ from PySide6.QtGui import QPen, QColor
 from PySide6.QtWidgets import QGraphicsLineItem
 
 from app.utils import mm_to_pt
+from app.guide_config import load_config
 
 GUIDE_COLOR = QColor(0, 120, 255, 100)
-LEFT_MM = 10
-RIGHT_MM = 50
-TOP_MM = 10
-BOTTOM_MM = 10
 
 
 class GuideOverlay:
@@ -16,6 +13,18 @@ class GuideOverlay:
         self._scene = scene
         self._lines = []
         self._visible = True
+        cfg = load_config()
+        self._left_mm = cfg["left_cm"] * 10
+        self._top_mm = cfg["top_cm"] * 10
+        self._right_mm = cfg["right_cm"] * 10
+        self._bottom_mm = cfg["bottom_cm"] * 10
+
+    def reload_config(self):
+        cfg = load_config()
+        self._left_mm = cfg["left_cm"] * 10
+        self._top_mm = cfg["top_cm"] * 10
+        self._right_mm = cfg["right_cm"] * 10
+        self._bottom_mm = cfg["bottom_cm"] * 10
 
     def create_for_page(self, page_item):
         rect = page_item.pageRect()
@@ -23,10 +32,10 @@ class GuideOverlay:
         pw = rect.width()
         ph = rect.height()
 
-        left_x = page_origin.x() + mm_to_pt(LEFT_MM)
-        right_x = page_origin.x() + pw - mm_to_pt(RIGHT_MM)
-        top_y = page_origin.y() + mm_to_pt(TOP_MM)
-        bottom_y = page_origin.y() + ph - mm_to_pt(BOTTOM_MM)
+        left_x = page_origin.x() + mm_to_pt(self._left_mm)
+        right_x = page_origin.x() + pw - mm_to_pt(self._right_mm)
+        top_y = page_origin.y() + mm_to_pt(self._top_mm)
+        bottom_y = page_origin.y() + ph - mm_to_pt(self._bottom_mm)
 
         pen = QPen(GUIDE_COLOR, 0)
 
