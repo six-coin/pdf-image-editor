@@ -1,10 +1,12 @@
 import os
-from PySide6.QtCore import Qt
+import random
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut, QUndoStack, QPixmap, QImage
 from PySide6.QtWidgets import (
     QMainWindow, QFileDialog, QToolBar, QSpinBox,
     QLabel, QWidget, QVBoxLayout, QMessageBox,
-    QPushButton, QApplication, QLineEdit, QTextEdit
+    QPushButton, QApplication, QLineEdit, QTextEdit,
+    QDialog, QDialogButtonBox
 )
 
 from app.pdf_model import PdfModel
@@ -35,6 +37,9 @@ class MainWindow(QMainWindow):
         self._scene.set_undo_stack(self._undo_stack)
 
         self._current_file = None
+        self._flash_timer = QTimer(self)
+        self._flash_timer.setSingleShot(True)
+        self._flash_timer.timeout.connect(lambda: self.statusBar().showMessage(""))
 
         self._setup_menu()
         self._setup_toolbar()
@@ -178,16 +183,43 @@ class MainWindow(QMainWindow):
         paste_btn.clicked.connect(self._on_paste_image)
         tb.addWidget(paste_btn)
 
+        tb.addSeparator()
+
+        self._edit_btn = QPushButton("用外部编辑器编辑")
+        self._edit_btn.setEnabled(False)
+        self._edit_btn.clicked.connect(self._on_external_edit)
+        tb.addWidget(self._edit_btn)
+
     def _setup_statusbar(self):
         sb = self.statusBar()
         self._page_label = QLabel("0 / 0")
         self._zoom_label = QLabel("100%")
         sb.addWidget(self._page_label)
         sb.addPermanentWidget(self._zoom_label)
+        self._current_page_idx = 0
 
     def _update_page_label(self):
         count = self._model.page_count
-        self._page_label.setText(f"页数: {count}" if count > 0 else "0 / 0")
+        if count > 0 and self._current_page_idx > 0:
+            self._page_label.setText(f"第{self._current_page_idx}页 / 共{count}页")
+        elif count > 0:
+            self._page_label.setText(f"共{count}页")
+        else:
+            self._page_label.setText("0 / 0")
+
+    def _update_current_page(self):
+        if self._model.page_count <= 0:
+            return
+        vp = self._canvas.viewport()
+        if vp is None:
+            return
+        center = self._canvas.mapToScene(vp.rect().center())
+        page = self._scene.get_page_at_scene_y(center.y())
+        if page:
+            idx = page.page_index + 1
+            if idx != self._current_page_idx:
+                self._current_page_idx = idx
+                self._update_page_label()
 
     def _setup_shortcuts(self):
         self._shortcut_e = QShortcut(QKeySequence("E"), self)
@@ -207,6 +239,8 @@ class MainWindow(QMainWindow):
 
     def _connect_signals(self):
         self._canvas.zoom_changed.connect(self._on_zoom_changed)
+        self._canvas.verticalScrollBar().valueChanged.connect(self._update_current_page)
+        self._scene.selectionChanged.connect(self._on_selection_changed)
 
     def _on_undo(self):
         if self._split_tool.is_active:
@@ -243,6 +277,7 @@ class MainWindow(QMainWindow):
         self._scene.build_from_data(pages_data, show_guides=self._guide_action.isChecked())
         self._canvas.fit_to_width()
         self._undo_stack.setClean()
+        self._current_page_idx = 1
         self._update_page_label()
 
     def _on_save(self):
@@ -267,7 +302,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "错误", f"保存失败:\n{e}")
             return
-        QMessageBox.information(self, "完成", "文件已保存")
+        self._flash_status("文件保存成功")
         self._undo_stack.setClean()
 
     def _on_split(self):
@@ -425,6 +460,72 @@ class MainWindow(QMainWindow):
 
     def _status_msg(self, msg):
         self.statusBar().showMessage(msg)
+
+    def _flash_status(self, msg):
+        self.statusBar().showMessage(msg)
+        self._flash_timer.start(2000)
+
+    def _on_selection_changed(self):
+        for item in self._scene.selectedItems():
+            if isinstance(item, ImageItem):
+                self._edit_btn.setEnabled(True)
+                return
+        self._edit_btn.setEnabled(False)
+
+    def _on_external_edit(self):
+        sel = self._scene.selectedItems()
+        img = None
+        for s in sel:
+            if isinstance(s, ImageItem):
+                img = s
+                break
+        if img is None:
+            return
+
+        pixmap = img.pixmap()
+        if pixmap is None or pixmap.isNull():
+            return
+
+        old_w = pixmap.width()
+        old_h = pixmap.height()
+
+        temp_dir = os.path.join(os.getcwd(), "temp")
+        os.makedirs(temp_dir, exist_ok=True)
+
+        hex_name = format(random.getrandbits(32), "08x")
+        temp_path = os.path.join(temp_dir, f"edit_{hex_name}.png")
+        pixmap.save(temp_path, "PNG")
+
+        os.startfile(temp_path)
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("外部编辑")
+        layout = QVBoxLayout(dlg)
+        layout.addWidget(QLabel("编辑完成后，请点击完成以替换文档中的图片。"))
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.button(QDialogButtonBox.Ok).setText("完成")
+        buttons.accepted.connect(dlg.accept)
+        layout.addWidget(buttons)
+        dlg.exec()
+
+        new_pixmap = QPixmap(temp_path)
+        if new_pixmap.isNull():
+            QMessageBox.warning(self, "错误", "无法读取编辑后的图像")
+            return
+        if new_pixmap.width() != old_w or new_pixmap.height() != old_h:
+            QMessageBox.warning(
+                self, "错误",
+                f"图像尺寸必须保持不变。\n原始: {old_w}×{old_h}\n当前: {new_pixmap.width()}×{new_pixmap.height()}"
+            )
+            return
+
+        old_state = img.get_state()
+        img.setPixmap(new_pixmap)
+        new_state = img.get_state()
+
+        from app.undo_commands import TransformCommand
+        self._undo_stack.push(TransformCommand([(img, old_state, new_state)]))
+        self._flash_status("图像已替换")
 
     def closeEvent(self, event):
         if self._undo_stack.isClean():
