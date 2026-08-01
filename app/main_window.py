@@ -509,23 +509,27 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
         new_pixmap = QPixmap(temp_path)
+        ok = True
         if new_pixmap.isNull():
             QMessageBox.warning(self, "错误", "无法读取编辑后的图像")
-            return
-        if new_pixmap.width() != old_w or new_pixmap.height() != old_h:
+            ok = False
+        elif new_pixmap.width() != old_w or new_pixmap.height() != old_h:
             QMessageBox.warning(
                 self, "错误",
                 f"图像尺寸必须保持不变。\n原始: {old_w}×{old_h}\n当前: {new_pixmap.width()}×{new_pixmap.height()}"
             )
-            return
+            ok = False
 
-        old_state = img.get_state()
-        img.setPixmap(new_pixmap)
-        new_state = img.get_state()
+        if ok:
+            old_state = img.get_state()
+            img.setPixmap(new_pixmap)
+            img.original_bytes = None
+            new_state = img.get_state()
+            from app.undo_commands import TransformCommand
+            self._undo_stack.push(TransformCommand([(img, old_state, new_state)]))
+            self._flash_status("图像已替换")
 
-        from app.undo_commands import TransformCommand
-        self._undo_stack.push(TransformCommand([(img, old_state, new_state)]))
-        self._flash_status("图像已替换")
+        os.remove(temp_path)
 
     def closeEvent(self, event):
         if self._undo_stack.isClean():
