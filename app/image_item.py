@@ -177,9 +177,8 @@ class ImageItem(QGraphicsPixmapItem):
 
     def mouseMoveEvent(self, event):
         if self._resizing:
-            keep_aspect = bool(event.modifiers() & Qt.ShiftModifier)
             mouse_parent = self.mapToParent(event.pos())
-            self._do_resize(mouse_parent, keep_aspect)
+            self._do_resize(mouse_parent, True)
             event.accept()
             return
         super().mouseMoveEvent(event)
@@ -245,9 +244,9 @@ class ImageItem(QGraphicsPixmapItem):
 
         if keep_aspect and pw > 0 and ph > 0:
             ratio = old_sx / old_sy if old_sy != 0 else 1
-            sxd = abs(new_sx / old_sx - 1) if old_sx else 0
-            syd = abs(new_sy / old_sy - 1) if old_sy else 0
-            if sxd >= syd:
+            display_w = pw * old_sx
+            display_h = ph * old_sy
+            if display_w >= display_h:
                 new_sy = new_sx / ratio
             else:
                 new_sx = new_sy * ratio

@@ -130,7 +130,7 @@ class PdfModel:
                 else:
                     buffer = QBuffer()
                     buffer.open(QIODevice.ReadWrite)
-                    pixmap.save(buffer, "JPG", 85)
+                    pixmap.save(buffer, "PNG")
                     stream_bytes = bytes(buffer.data())
                 frect = fitz.Rect(rect.x(), rect.y(), rect.right(), rect.bottom())
                 try:
