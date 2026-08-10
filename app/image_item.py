@@ -22,6 +22,7 @@ class ImageItem(QGraphicsPixmapItem):
         self._resize_handle = None
         self._resize_params = None
         self._original_bytes = None
+        self._cached_lod = 1.0
 
         self.setFlags(
             QGraphicsItem.ItemIsSelectable
@@ -102,20 +103,15 @@ class ImageItem(QGraphicsPixmapItem):
             or old["page_index"] != new["page_index"]
         )
 
-    def _hit_rect(self, corner):
-        r = self.boundingRect()
-        hs = HANDLE_HIT_SIZE
-        mapping = {
-            "tl": QRectF(r.left() - hs / 2, r.top() - hs / 2, hs, hs),
-            "tr": QRectF(r.right() - hs / 2, r.top() - hs / 2, hs, hs),
-            "bl": QRectF(r.left() - hs / 2, r.bottom() - hs / 2, hs, hs),
-            "br": QRectF(r.right() - hs / 2, r.bottom() - hs / 2, hs, hs),
-        }
-        return mapping.get(corner, QRectF())
+    def _handle_size(self, screen_px):
+        lod = getattr(self, '_cached_lod', 1.0)
+        if lod <= 0.001:
+            lod = 1.0
+        return screen_px / lod
 
-    def _visual_rect(self, corner):
+    def _corner_rect(self, corner, screen_px):
         r = self.boundingRect()
-        hs = HANDLE_VISUAL_SIZE
+        hs = self._handle_size(screen_px)
         mapping = {
             "tl": QRectF(r.left() - hs / 2, r.top() - hs / 2, hs, hs),
             "tr": QRectF(r.right() - hs / 2, r.top() - hs / 2, hs, hs),
@@ -126,7 +122,7 @@ class ImageItem(QGraphicsPixmapItem):
 
     def _corner_at(self, pos):
         for c in ("tl", "tr", "bl", "br"):
-            if self._hit_rect(c).contains(pos):
+            if self._corner_rect(c, HANDLE_HIT_SIZE).contains(pos):
                 return c
         return None
 
@@ -146,11 +142,13 @@ class ImageItem(QGraphicsPixmapItem):
     def paint(self, painter, option, widget):
         super().paint(painter, option, widget)
         if self.isSelected() and self.pixmap() is not None:
+            lod = option.levelOfDetailFromTransform(painter.transform())
+            self._cached_lod = max(lod, 0.001)
             painter.save()
             painter.setPen(QPen(HANDLE_COLOR, 0))
             painter.setBrush(HANDLE_BRUSH)
             for c in ("tl", "tr", "bl", "br"):
-                painter.drawRect(self._visual_rect(c))
+                painter.drawRect(self._corner_rect(c, HANDLE_VISUAL_SIZE))
             painter.restore()
 
     def hoverMoveEvent(self, event):
