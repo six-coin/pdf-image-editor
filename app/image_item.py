@@ -8,8 +8,8 @@ from PySide6.QtWidgets import (
     QGraphicsPixmapItem, QGraphicsItem
 )
 
-HANDLE_HIT_SIZE = 20
-HANDLE_VISUAL_SIZE = 8
+HANDLE_HIT_SIZE = 30
+HANDLE_VISUAL_SIZE = 10
 HANDLE_COLOR = QColor(0, 120, 255)
 HANDLE_BRUSH = QBrush(QColor(255, 255, 255, 200))
 
@@ -22,7 +22,6 @@ class ImageItem(QGraphicsPixmapItem):
         self._resize_handle = None
         self._resize_params = None
         self._original_bytes = None
-        self._cached_lod = 1.0
 
         self.setFlags(
             QGraphicsItem.ItemIsSelectable
@@ -31,6 +30,9 @@ class ImageItem(QGraphicsPixmapItem):
         )
         self.setAcceptHoverEvents(True)
         self.setCursor(Qt.OpenHandCursor)
+
+    def itemChange(self, change, value):
+        return super().itemChange(change, value)
 
     @property
     def page_index(self):
@@ -103,20 +105,32 @@ class ImageItem(QGraphicsPixmapItem):
             or old["page_index"] != new["page_index"]
         )
 
-    def _handle_size(self, screen_px):
-        lod = getattr(self, '_cached_lod', 1.0)
-        if lod <= 0.001:
-            lod = 1.0
-        return screen_px / lod
+    def shape(self):
+        path = super().shape()
+        if self.isSelected() and self.pixmap() is not None:
+            path.setFillRule(Qt.WindingFill)
+            for c in ("tl", "tr", "bl", "br"):
+                path.addRect(self._corner_rect(c, HANDLE_HIT_SIZE))
+        return path
 
     def _corner_rect(self, corner, screen_px):
         r = self.boundingRect()
-        hs = self._handle_size(screen_px)
+        scene = self.scene()
+        views = scene.views() if scene else []
+        if not views:
+            hs_x = hs_y = float(screen_px)
+        else:
+            zoom = views[0].transform()
+            st = self.sceneTransform()
+            lod_x = max(abs(zoom.m11() * st.m11()), 0.001)
+            lod_y = max(abs(zoom.m22() * st.m22()), 0.001)
+            hs_x = screen_px / lod_x
+            hs_y = screen_px / lod_y
         mapping = {
-            "tl": QRectF(r.left() - hs / 2, r.top() - hs / 2, hs, hs),
-            "tr": QRectF(r.right() - hs / 2, r.top() - hs / 2, hs, hs),
-            "bl": QRectF(r.left() - hs / 2, r.bottom() - hs / 2, hs, hs),
-            "br": QRectF(r.right() - hs / 2, r.bottom() - hs / 2, hs, hs),
+            "tl": QRectF(r.left(), r.top(), hs_x, hs_y),
+            "tr": QRectF(r.right() - hs_x, r.top(), hs_x, hs_y),
+            "bl": QRectF(r.left(), r.bottom() - hs_y, hs_x, hs_y),
+            "br": QRectF(r.right() - hs_x, r.bottom() - hs_y, hs_x, hs_y),
         }
         return mapping.get(corner, QRectF())
 
@@ -142,13 +156,19 @@ class ImageItem(QGraphicsPixmapItem):
     def paint(self, painter, option, widget):
         super().paint(painter, option, widget)
         if self.isSelected() and self.pixmap() is not None:
-            lod = option.levelOfDetailFromTransform(painter.transform())
-            self._cached_lod = max(lod, 0.001)
+            t = painter.transform()
+            lod_x = max(abs(t.m11()), 0.001)
+            lod_y = max(abs(t.m22()), 0.001)
+            hs_x = HANDLE_VISUAL_SIZE / lod_x
+            hs_y = HANDLE_VISUAL_SIZE / lod_y
             painter.save()
             painter.setPen(QPen(HANDLE_COLOR, 0))
             painter.setBrush(HANDLE_BRUSH)
-            for c in ("tl", "tr", "bl", "br"):
-                painter.drawRect(self._corner_rect(c, HANDLE_VISUAL_SIZE))
+            r = self.boundingRect()
+            painter.drawRect(QRectF(r.left(), r.top(), hs_x, hs_y))
+            painter.drawRect(QRectF(r.right() - hs_x, r.top(), hs_x, hs_y))
+            painter.drawRect(QRectF(r.left(), r.bottom() - hs_y, hs_x, hs_y))
+            painter.drawRect(QRectF(r.right() - hs_x, r.bottom() - hs_y, hs_x, hs_y))
             painter.restore()
 
     def hoverMoveEvent(self, event):
