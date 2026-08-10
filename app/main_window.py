@@ -1,5 +1,6 @@
 import os
 import random
+import shutil
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut, QUndoStack, QPixmap, QImage
 from PySide6.QtWidgets import (
@@ -112,6 +113,12 @@ class MainWindow(QMainWindow):
         delete_action.setShortcut(QKeySequence.Delete)
         delete_action.triggered.connect(self._on_delete_selected)
         edit_menu.addAction(delete_action)
+
+        tools_menu = mb.addMenu("工具(&T)")
+
+        preprocess_action = QAction("PDF预处理...", self)
+        preprocess_action.triggered.connect(self._on_preprocess)
+        tools_menu.addAction(preprocess_action)
 
         view_menu = mb.addMenu("视图(&V)")
 
@@ -236,6 +243,9 @@ class MainWindow(QMainWindow):
 
         self._shortcut_q = QShortcut(QKeySequence("Q"), self)
         self._shortcut_q.activated.connect(self._on_keep_middle)
+
+        self._shortcut_i = QShortcut(QKeySequence("I"), self)
+        self._shortcut_i.activated.connect(self._on_punch_middle)
 
     def _connect_signals(self):
         self._canvas.zoom_changed.connect(self._on_zoom_changed)
@@ -567,6 +577,7 @@ class MainWindow(QMainWindow):
             return
 
         self._model.close()
+        self._clean_temp()
         event.accept()
 
     def keyPressEvent(self, event):
@@ -582,4 +593,107 @@ class MainWindow(QMainWindow):
             elif event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_T):
                 self._on_split_complete()
                 return
+            elif event.key() == Qt.Key_I and self._split_tool.has_cross_hairs:
+                self._on_punch_middle()
+                return
         super().keyPressEvent(event)
+
+    def _clean_temp(self):
+        temp_dir = os.path.join(os.getcwd(), "temp")
+        if os.path.isdir(temp_dir):
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+
+    def _on_punch_middle(self):
+        focused = QApplication.focusWidget()
+        if isinstance(focused, (QSpinBox, QLineEdit, QTextEdit)):
+            return
+        if self._split_tool.is_active and self._split_tool.has_cross_hairs:
+            self._split_tool.confirm_punch_middle(self._scene)
+            self._update_split_ui()
+            self._status_msg("已提取中间部分")
+
+    def _on_preprocess(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择要预处理的 PDF", "", "PDF 文件 (*.pdf);;所有文件 (*)"
+        )
+        if not path:
+            return
+
+        save_path, _ = QFileDialog.getSaveFileName(
+            self, "保存预处理结果", "", "PDF 文件 (*.pdf)"
+        )
+        if not save_path:
+            return
+
+        try:
+            self._preprocess_pdf(path, save_path)
+        except Exception as e:
+            QMessageBox.critical(self, "错误", f"预处理失败:\n{e}")
+            return
+
+        reply = QMessageBox.question(
+            self, "完成", "预处理完成。是否在编辑器中打开结果？",
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply == QMessageBox.Yes:
+            self._load_file(save_path)
+
+    def _preprocess_pdf(self, input_path, output_path, threshold=235):
+        import numpy as np
+        from PIL import Image
+        import io as io_module
+
+        def make_grayscale(image_bytes, threshold):
+            image = Image.open(io_module.BytesIO(image_bytes))
+            if image.mode not in ("RGB", "RGBA", "LA", "L", "P"):
+                image = image.convert("RGB")
+            if image.mode in ("RGBA", "LA"):
+                background = Image.new("RGB", image.size, (255, 255, 255))
+                background.paste(image, mask=image.split()[-1])
+                image = background
+            elif image.mode == "P":
+                image = image.convert("RGBA")
+                background = Image.new("RGB", image.size, (255, 255, 255))
+                background.paste(image, mask=image.split()[-1])
+                image = background
+            if image.mode != "L":
+                image = image.convert("L")
+            img_array = np.array(image, dtype=np.uint8)
+            img_array[img_array >= threshold] = 255
+            result_img = Image.fromarray(img_array, mode="L")
+            output_io = io_module.BytesIO()
+            result_img.save(output_io, format="PNG", icc_profile=None)
+            return output_io.getvalue()
+
+        import fitz
+        doc = fitz.open(input_path)
+        processed_xrefs = {}
+
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            image_list = page.get_images(full=True)
+            for img in image_list:
+                xref = img[0]
+                if xref in processed_xrefs:
+                    stream = processed_xrefs[xref]
+                else:
+                    try:
+                        base_image = doc.extract_image(xref)
+                        original_bytes = base_image["image"]
+                        gray_png = make_grayscale(original_bytes, threshold)
+                        processed_xrefs[xref] = gray_png
+                        stream = gray_png
+                    except Exception as e:
+                        print(f"警告：处理图像 xref={xref} 时出错: {e}")
+                        continue
+                try:
+                    page.replace_image(xref, stream=stream)
+                except Exception as e:
+                    print(f"警告：替换图像 xref={xref} 时出错: {e}")
+
+        doc.save(output_path, garbage=4, deflate=True)
+        doc.close()
+        print(f"黑白转换完成 -> {output_path}")

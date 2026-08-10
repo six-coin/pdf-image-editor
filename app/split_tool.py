@@ -322,6 +322,85 @@ class SplitTool:
 
         return new_items
 
+    def confirm_punch_middle(self, scene):
+        if not self.has_cross_hairs or self._target_image is None or not self.is_active:
+            return []
+
+        pixmap = self._target_image.pixmap()
+        if pixmap is None:
+            return []
+
+        h_sorted = sorted(set(self._h_guides))
+        v_sorted = sorted(set(self._v_guides))
+        h0, h1 = h_sorted[0], h_sorted[1]
+        v0, v1 = v_sorted[0], v_sorted[1]
+
+        page_index = self._target_image.page_index
+        parent = self._target_image.parentItem()
+        old_pos = self._target_image.pos()
+        old_t = self._target_image.transform()
+        old_sx = old_t.m11()
+        old_sy = old_t.m22()
+        pw = pixmap.width()
+        ph = pixmap.height()
+
+        target = self._target_image
+        original_state = target.get_state()
+
+        self._cleanup()
+
+        src_x = int(v0 * pw)
+        src_y = int(h0 * ph)
+        src_w = int((v1 - v0) * pw)
+        src_h = int((h1 - h0) * ph)
+
+        middle_pixmap = pixmap.copy(src_x, src_y, src_w, src_h)
+
+        from PySide6.QtGui import QPainter
+        from PySide6.QtCore import Qt
+        hole_pixmap = pixmap.copy()
+        painter = QPainter(hole_pixmap)
+        painter.setCompositionMode(QPainter.CompositionMode_Source)
+        painter.setBrush(Qt.white)
+        painter.setPen(Qt.NoPen)
+        painter.drawRect(QRectF(src_x, src_y, src_w, src_h))
+        painter.end()
+
+        from app.image_item import ImageItem
+        new_item = ImageItem(page_index, parent)
+        new_item.setPixmap(middle_pixmap)
+        new_x = old_pos.x() + v0 * pw * old_sx
+        new_y = old_pos.y() + h0 * ph * old_sy
+        new_item.setPos(new_x, new_y)
+        new_item.setTransform(QTransform.fromScale(old_sx, old_sy))
+
+        scene.removeItem(target)
+
+        target.setPixmap(hole_pixmap)
+        target.setPos(old_pos)
+        target.setTransform(QTransform.fromScale(old_sx, old_sy))
+        target._page_index = page_index
+        scene.addItem(target)
+        if parent and hasattr(parent, "add_image"):
+            parent.add_image(target)
+
+        scene.addItem(new_item)
+        if parent and hasattr(parent, "add_image"):
+            parent.add_image(new_item)
+
+        undo_stack = scene._undo_stack if hasattr(scene, "_undo_stack") and scene._undo_stack else None
+        if undo_stack:
+            from app.undo_commands import SplitCommand
+            undo_stack.beginMacro("提取中间")
+            undo_stack.push(SplitCommand(
+                scene, target, original_state,
+                [target, new_item],
+                [target.get_state(), new_item.get_state()]
+            ))
+            undo_stack.endMacro()
+
+        return [target, new_item]
+
     def cancel(self):
         self._cleanup()
 

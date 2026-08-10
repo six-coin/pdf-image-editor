@@ -178,7 +178,7 @@ class ImageItem(QGraphicsPixmapItem):
     def mouseMoveEvent(self, event):
         if self._resizing:
             mouse_parent = self.mapToParent(event.pos())
-            self._do_resize(mouse_parent, True)
+            self._do_resize(mouse_parent)
             event.accept()
             return
         super().mouseMoveEvent(event)
@@ -207,7 +207,7 @@ class ImageItem(QGraphicsPixmapItem):
             "fixed_pt": self._fixed_point_parent(corner),
         }
 
-    def _do_resize(self, mouse_parent, keep_aspect):
+    def _do_resize(self, mouse_parent):
         p = self._resize_params
         handle = self._resize_handle
         old_sx, old_sy = p["start_sx"], p["start_sy"]
@@ -242,7 +242,7 @@ class ImageItem(QGraphicsPixmapItem):
         else:
             return
 
-        if keep_aspect and pw > 0 and ph > 0:
+        if pw > 0 and ph > 0:
             ratio = old_sx / old_sy if old_sy != 0 else 1
             display_w = pw * old_sx
             display_h = ph * old_sy
