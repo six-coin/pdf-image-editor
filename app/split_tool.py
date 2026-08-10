@@ -373,6 +373,7 @@ class SplitTool:
         new_y = old_pos.y() + h0 * ph * old_sy
         new_item.setPos(new_x, new_y)
         new_item.setTransform(QTransform.fromScale(old_sx, old_sy))
+        new_item.setZValue(15)
 
         scene.removeItem(target)
 

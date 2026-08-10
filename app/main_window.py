@@ -4,9 +4,9 @@ import shutil
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence, QShortcut, QUndoStack, QPixmap, QImage
 from PySide6.QtWidgets import (
-    QMainWindow, QFileDialog, QToolBar, QSpinBox,
+    QMainWindow, QFileDialog, QSpinBox, QInputDialog,
     QLabel, QWidget, QVBoxLayout, QMessageBox,
-    QPushButton, QApplication, QLineEdit, QTextEdit,
+    QApplication, QLineEdit, QTextEdit,
     QDialog, QDialogButtonBox
 )
 
@@ -43,7 +43,6 @@ class MainWindow(QMainWindow):
         self._flash_timer.timeout.connect(lambda: self.statusBar().showMessage(""))
 
         self._setup_menu()
-        self._setup_toolbar()
         self._setup_statusbar()
         self._setup_shortcuts()
         self._connect_signals()
@@ -80,9 +79,13 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
-        split_action = QAction("PDF 分割...", self)
+        split_action = QAction("PDF 分割(&C)...", self)
         split_action.triggered.connect(self._on_split)
         file_menu.addAction(split_action)
+
+        preprocess_action = QAction("PDF 预处理(&V)...", self)
+        preprocess_action.triggered.connect(self._on_preprocess)
+        file_menu.addAction(preprocess_action)
 
         file_menu.addSeparator()
 
@@ -93,10 +96,14 @@ class MainWindow(QMainWindow):
 
         edit_menu = mb.addMenu("编辑(&E)")
 
-        undo_action = self._undo_stack.createUndoAction(self, "撤销(&U)")
+        undo_action = QAction("撤销", self)
+        undo_action.setShortcut(QKeySequence("Ctrl+Z"))
+        undo_action.triggered.connect(self._on_undo)
         edit_menu.addAction(undo_action)
 
-        redo_action = self._undo_stack.createRedoAction(self, "重做(&R)")
+        redo_action = QAction("重做", self)
+        redo_action.setShortcut(QKeySequence("Ctrl+Y"))
+        redo_action.triggered.connect(self._on_redo)
         edit_menu.addAction(redo_action)
 
         edit_menu.addSeparator()
@@ -109,26 +116,61 @@ class MainWindow(QMainWindow):
         paste_action.triggered.connect(self._on_paste_image)
         edit_menu.addAction(paste_action)
 
+        self._edit_action = QAction("用外部编辑器编辑", self)
+        self._edit_action.setEnabled(False)
+        self._edit_action.triggered.connect(self._on_external_edit)
+        edit_menu.addAction(self._edit_action)
+
+        edit_menu.addSeparator()
+
         delete_action = QAction("删除选中", self)
         delete_action.setShortcut(QKeySequence.Delete)
         delete_action.triggered.connect(self._on_delete_selected)
         edit_menu.addAction(delete_action)
 
-        tools_menu = mb.addMenu("工具(&T)")
+        edit_menu.addSeparator()
 
-        preprocess_action = QAction("PDF预处理...", self)
-        preprocess_action.triggered.connect(self._on_preprocess)
-        tools_menu.addAction(preprocess_action)
+        front_action = QAction("置顶选中图片", self)
+        front_action.setShortcut(QKeySequence("Ctrl+U"))
+        front_action.triggered.connect(self._on_bring_to_front)
+        edit_menu.addAction(front_action)
+
+        back_action = QAction("置底选中图片", self)
+        back_action.setShortcut(QKeySequence("Ctrl+L"))
+        back_action.triggered.connect(self._on_send_to_back)
+        edit_menu.addAction(back_action)
+
+        edit_menu.addSeparator()
+
+        self._split_complete_action = QAction("完成分割 (T)", self)
+        self._split_complete_action.setEnabled(False)
+        self._split_complete_action.triggered.connect(self._on_split_complete)
+        edit_menu.addAction(self._split_complete_action)
+
+        self._split_cancel_action = QAction("取消分割 (Esc)", self)
+        self._split_cancel_action.setEnabled(False)
+        self._split_cancel_action.triggered.connect(self._on_split_cancel)
+        edit_menu.addAction(self._split_cancel_action)
+
+        self._keep_middle_action = QAction("仅保留中间 (Q)", self)
+        self._keep_middle_action.setEnabled(False)
+        self._keep_middle_action.triggered.connect(self._on_keep_middle)
+        edit_menu.addAction(self._keep_middle_action)
+
+        self._punch_middle_action = QAction("提取中间部分 (I)", self)
+        self._punch_middle_action.setEnabled(False)
+        self._punch_middle_action.triggered.connect(self._on_punch_middle)
+        edit_menu.addAction(self._punch_middle_action)
 
         view_menu = mb.addMenu("视图(&V)")
 
-        self._guide_action = QAction("显示参考线", self)
+        self._guide_action = QAction("显示参考线(&V)", self)
         self._guide_action.setCheckable(True)
         self._guide_action.setChecked(True)
         self._guide_action.triggered.connect(self._on_toggle_guides)
         view_menu.addAction(self._guide_action)
 
-        ref_action = QAction("参考线设置...", self)
+        ref_action = QAction("参考线设置(&S)...", self)
         ref_action.triggered.connect(self._on_reference_settings)
         view_menu.addAction(ref_action)
 
@@ -149,53 +191,9 @@ class MainWindow(QMainWindow):
         fit_action.triggered.connect(self._canvas.fit_to_width)
         view_menu.addAction(fit_action)
 
-    def _setup_toolbar(self):
-        tb = QToolBar("工具栏")
-        tb.setMovable(False)
-        self.addToolBar(tb)
-
-        tb.addWidget(QLabel("缩放: "))
-        self._zoom_spin = QSpinBox()
-        self._zoom_spin.setRange(10, 1000)
-        self._zoom_spin.setValue(100)
-        self._zoom_spin.setSuffix("%")
-        self._zoom_spin.setFixedWidth(80)
-        self._zoom_spin.valueChanged.connect(self._on_zoom_spin)
-        tb.addWidget(self._zoom_spin)
-
-        tb.addSeparator()
-
-        self._split_complete_btn = QPushButton("完成分割 (Enter)")
-        self._split_complete_btn.setEnabled(False)
-        self._split_complete_btn.clicked.connect(self._on_split_complete)
-        tb.addWidget(self._split_complete_btn)
-
-        self._split_cancel_btn = QPushButton("取消分割 (Esc)")
-        self._split_cancel_btn.setEnabled(False)
-        self._split_cancel_btn.clicked.connect(self._on_split_cancel)
-        tb.addWidget(self._split_cancel_btn)
-
-        self._keep_middle_btn = QPushButton("仅保留中间 (Q)")
-        self._keep_middle_btn.setEnabled(False)
-        self._keep_middle_btn.clicked.connect(self._on_keep_middle)
-        tb.addWidget(self._keep_middle_btn)
-
-        tb.addSeparator()
-
-        add_white_btn = QPushButton("添加白色矩形")
-        add_white_btn.clicked.connect(self._on_add_white_rect)
-        tb.addWidget(add_white_btn)
-
-        paste_btn = QPushButton("从剪贴板新增图像")
-        paste_btn.clicked.connect(self._on_paste_image)
-        tb.addWidget(paste_btn)
-
-        tb.addSeparator()
-
-        self._edit_btn = QPushButton("用外部编辑器编辑")
-        self._edit_btn.setEnabled(False)
-        self._edit_btn.clicked.connect(self._on_external_edit)
-        tb.addWidget(self._edit_btn)
+        zoom_custom_action = QAction("手动调节缩放(&T)...", self)
+        zoom_custom_action.triggered.connect(self._on_custom_zoom)
+        view_menu.addAction(zoom_custom_action)
 
     def _setup_statusbar(self):
         sb = self.statusBar()
@@ -238,9 +236,6 @@ class MainWindow(QMainWindow):
         self._shortcut_esc = QShortcut(QKeySequence(Qt.Key_Escape), self)
         self._shortcut_esc.activated.connect(self._on_esc)
 
-        self._shortcut_undo = QShortcut(QKeySequence("Ctrl+Z"), self)
-        self._shortcut_undo.activated.connect(self._on_undo)
-
         self._shortcut_q = QShortcut(QKeySequence("Q"), self)
         self._shortcut_q.activated.connect(self._on_keep_middle)
 
@@ -258,11 +253,12 @@ class MainWindow(QMainWindow):
         else:
             self._undo_stack.undo()
 
+    def _on_redo(self):
+        self._undo_stack.redo()
+
     def _on_esc(self):
         if self._split_tool.is_active:
             self._on_split_cancel()
-        else:
-            pass
 
     def _on_open(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -315,6 +311,14 @@ class MainWindow(QMainWindow):
         self._flash_status("文件保存成功")
         self._undo_stack.setClean()
 
+    def _on_custom_zoom(self):
+        current = int(self._canvas.zoom_level * 100)
+        value, ok = QInputDialog.getInt(
+            self, "手动调节缩放", "缩放百分比:", current, 10, 1000, 10
+        )
+        if ok:
+            self._canvas.zoom_level = value / 100.0
+
     def _on_split(self):
         if self._model.page_count <= 0:
             QMessageBox.warning(self, "提示", "请先打开一个 PDF 文件")
@@ -348,13 +352,7 @@ class MainWindow(QMainWindow):
             self._scene.guide_overlay.reload_config()
             self._scene.guide_overlay.update_positions(self._scene.pages)
 
-    def _on_zoom_spin(self, value):
-        self._canvas.zoom_level = value / 100.0
-
     def _on_zoom_changed(self, zoom):
-        self._zoom_spin.blockSignals(True)
-        self._zoom_spin.setValue(int(zoom * 100))
-        self._zoom_spin.blockSignals(False)
         self._zoom_label.setText(f"{int(zoom * 100)}%")
 
     def _on_add_white_rect(self):
@@ -362,7 +360,7 @@ class MainWindow(QMainWindow):
             return
         item = self._scene.add_white_rectangle()
         if item:
-            self._status_msg("已添加白色矩形")
+            self._flash_status("已添加白色矩形")
 
     def _on_paste_image(self):
         if self._model.page_count <= 0:
@@ -404,13 +402,31 @@ class MainWindow(QMainWindow):
             from app.undo_commands import AddWhiteRectCommand
             self._scene.undo_stack.push(AddWhiteRectCommand(self._scene, item, page))
 
-        self._status_msg("已从剪贴板添加图像")
+        self._flash_status("已从剪贴板添加图像")
 
     def _on_delete_selected(self):
         if self._split_tool.is_active:
             return
         self._scene.delete_selected()
         self._status_msg("")
+
+    def _on_bring_to_front(self):
+        max_z = 10
+        for item in self._scene.items():
+            if isinstance(item, ImageItem):
+                max_z = max(max_z, item.zValue())
+        for item in self._scene.selectedItems():
+            if isinstance(item, ImageItem):
+                item.setZValue(max_z + 1)
+
+    def _on_send_to_back(self):
+        min_z = 10
+        for item in self._scene.items():
+            if isinstance(item, ImageItem):
+                min_z = min(min_z, item.zValue())
+        for item in self._scene.selectedItems():
+            if isinstance(item, ImageItem):
+                item.setZValue(max(min_z - 1, 1))
 
     def _enter_split(self, mode):
         focused = QApplication.focusWidget()
@@ -424,7 +440,7 @@ class MainWindow(QMainWindow):
                     img = s
                     break
             if img is None:
-                self._status_msg("请先选中一张图片")
+                self._flash_status("请先选中一张图片")
                 return
             self._split_tool.start(img, mode)
             self._update_split_ui()
@@ -436,13 +452,13 @@ class MainWindow(QMainWindow):
         if self._split_tool.is_active:
             self._split_tool.confirm(self._scene)
             self._update_split_ui()
-            self._status_msg("分割完成")
+            self._flash_status("分割完成")
 
     def _on_split_cancel(self):
         if self._split_tool.is_active:
             self._split_tool.cancel()
             self._update_split_ui()
-            self._status_msg("已取消")
+            self._flash_status("已取消")
 
     def _on_keep_middle(self):
         focused = QApplication.focusWidget()
@@ -451,19 +467,29 @@ class MainWindow(QMainWindow):
         if self._split_tool.is_active and self._split_tool.has_cross_hairs:
             self._split_tool.confirm_keep_middle(self._scene)
             self._update_split_ui()
-            self._status_msg("已保留中间部分")
+            self._flash_status("已保留中间部分")
+
+    def _on_punch_middle(self):
+        focused = QApplication.focusWidget()
+        if isinstance(focused, (QSpinBox, QLineEdit, QTextEdit)):
+            return
+        if self._split_tool.is_active and self._split_tool.has_cross_hairs:
+            self._split_tool.confirm_punch_middle(self._scene)
+            self._update_split_ui()
+            self._flash_status("已提取中间部分")
 
     def _update_split_ui(self):
         active = self._split_tool.is_active
-        self._split_complete_btn.setEnabled(active)
-        self._split_cancel_btn.setEnabled(active)
-        can_keep_middle = active and self._split_tool.has_cross_hairs
-        self._keep_middle_btn.setEnabled(can_keep_middle)
+        self._split_complete_action.setEnabled(active)
+        self._split_cancel_action.setEnabled(active)
+        can_cross = active and self._split_tool.has_cross_hairs
+        self._keep_middle_action.setEnabled(can_cross)
+        self._punch_middle_action.setEnabled(can_cross)
         if active:
             mode_name = "水平" if self._split_tool.mode == SplitMode.HORIZONTAL else "竖直"
-            base = f"分割模式 [{mode_name}] - 点击放置参考线, Enter/T完成, Esc取消"
-            if can_keep_middle:
-                base += ", Q保留中间"
+            base = f"分割模式 [{mode_name}] - 点击放置参考线, T完成, Esc取消"
+            if can_cross:
+                base += ", Q保留中间, I提取中间"
             self._status_msg(base)
         else:
             self._status_msg("")
@@ -473,14 +499,14 @@ class MainWindow(QMainWindow):
 
     def _flash_status(self, msg):
         self.statusBar().showMessage(msg)
-        self._flash_timer.start(2000)
+        self._flash_timer.start(5000)
 
     def _on_selection_changed(self):
         for item in self._scene.selectedItems():
             if isinstance(item, ImageItem):
-                self._edit_btn.setEnabled(True)
+                self._edit_action.setEnabled(True)
                 return
-        self._edit_btn.setEnabled(False)
+        self._edit_action.setEnabled(False)
 
     def _on_external_edit(self):
         sel = self._scene.selectedItems()
@@ -544,6 +570,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self._undo_stack.isClean():
             self._model.close()
+            self._clean_temp()
             event.accept()
             return
 
@@ -590,7 +617,7 @@ class MainWindow(QMainWindow):
                 self._split_tool.switch_mode(SplitMode.VERTICAL)
                 self._update_split_ui()
                 return
-            elif event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_T):
+            elif event.key() == Qt.Key_T:
                 self._on_split_complete()
                 return
             elif event.key() == Qt.Key_I and self._split_tool.has_cross_hairs:
@@ -605,15 +632,6 @@ class MainWindow(QMainWindow):
                 shutil.rmtree(temp_dir)
             except Exception:
                 pass
-
-    def _on_punch_middle(self):
-        focused = QApplication.focusWidget()
-        if isinstance(focused, (QSpinBox, QLineEdit, QTextEdit)):
-            return
-        if self._split_tool.is_active and self._split_tool.has_cross_hairs:
-            self._split_tool.confirm_punch_middle(self._scene)
-            self._update_split_ui()
-            self._status_msg("已提取中间部分")
 
     def _on_preprocess(self):
         path, _ = QFileDialog.getOpenFileName(
