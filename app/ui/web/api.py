@@ -334,7 +334,7 @@ class EditorApi:
             pieces = split_ops.build_split(
                 self._state.objects, str(object_id), _floats(cuts_x), _floats(cuts_y), self._store
             )
-            return self._swap_pieces(str(object_id), pieces, "edit.split", keep_original=False)
+            return self._swap_pieces(str(object_id), pieces, "edit.split")
 
     def keep_cell(
         self,
@@ -356,7 +356,7 @@ class EditorApi:
                 int(col),
                 self._store,
             )
-            return self._swap_pieces(str(object_id), pieces, "edit.keep", keep_original=False)
+            return self._swap_pieces(str(object_id), pieces, "edit.keep")
 
     def punch_cell(
         self,
@@ -367,9 +367,10 @@ class EditorApi:
         col: int = 0,
     ) -> dict[str, Any]:
         with self._lock:
-            if self._stack is None:
+            stack = self._stack
+            if stack is None:
                 return self._snapshot()
-            pieces = split_ops.punch_cell(
+            result = split_ops.punch_cell(
                 self._state.objects,
                 str(object_id),
                 _floats(cuts_x),
@@ -378,14 +379,21 @@ class EditorApi:
                 int(col),
                 self._store,
             )
-            return self._swap_pieces(str(object_id), pieces, "edit.punch", keep_original=True)
+            original = self._state.find(str(object_id))
+            if result is None or original is None:
+                return self._snapshot()
+
+            hole_image, piece = result
+            before = self._state.clone_objects()
+            original.image_id = hole_image
+            self._state.objects.append(piece)
+            self._state.renormalize(original.page)
+            self._state.selection = [piece.id]
+            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.punch"))
+            return self._snapshot()
 
     def _swap_pieces(
-        self,
-        object_id: str,
-        pieces: list[ImageObject] | None,
-        label: str,
-        keep_original: bool,
+        self, object_id: str, pieces: list[ImageObject] | None, label: str
     ) -> dict[str, Any]:
         stack = self._stack
         if pieces is None or stack is None:
@@ -395,11 +403,8 @@ class EditorApi:
             return self._snapshot()
 
         before = self._state.clone_objects()
-        if keep_original:
-            self._state.objects.extend(pieces)
-        else:
-            self._state.objects = [obj for obj in self._state.objects if obj.id != object_id]
-            self._state.objects.extend(pieces)
+        self._state.objects = [obj for obj in self._state.objects if obj.id != object_id]
+        self._state.objects.extend(pieces)
         self._state.renormalize(original.page)
         self._state.selection = [obj.id for obj in pieces]
         stack.push(StructureChanged(before, self._state.clone_objects(), label))
@@ -716,16 +721,6 @@ class EditorApi:
     def dirty(self) -> bool:
         with self._lock:
             return bool(self._stack and self._stack.dirty)
-
-    def request_quit(self) -> dict[str, Any]:
-        """Ctrl+Q：和点窗口关闭按钮走同一套未保存确认。"""
-        if self._window is None:
-            return {"ok": False}
-        if not self.dirty or self._close_confirmed:
-            self._window.destroy()
-            return {"ok": True}
-        self.request_close_prompt()
-        return {"ok": True}
 
     def request_close_prompt(self) -> None:
         if self._window is None:

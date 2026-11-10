@@ -4,7 +4,7 @@ import { call, T, toast } from './bridge.js';
 import { openModal } from './modal.js';
 import { state } from './state.js';
 
-function countPages(text, max) {
+function parsePages(text, max) {
   const pages = new Set();
   for (const raw of String(text || '').replace(/\s/g, '').split(',')) {
     if (!raw) continue;
@@ -22,7 +22,7 @@ function countPages(text, max) {
       if (page >= 1 && page <= max) pages.add(page);
     }
   }
-  return pages.size;
+  return [...pages].sort((a, b) => a - b);
 }
 
 export async function openExport() {
@@ -44,8 +44,10 @@ export async function openExport() {
   preview.className = 'hint';
 
   const refresh = () => {
-    const count = countPages(input.value, data.doc.page_count);
-    preview.textContent = count ? T('export.preview', { count }) : T('export.empty');
+    const pages = parsePages(input.value, data.doc.page_count);
+    preview.textContent = pages.length
+      ? T('export.preview', { count: pages.length, pages: pages.join(', ') })
+      : T('export.empty');
   };
   input.addEventListener('input', refresh);
 
@@ -70,7 +72,7 @@ export async function openExport() {
   if (choice !== 'ok') return;
 
   const text = input.value.trim();
-  if (!countPages(text, data.doc.page_count)) {
+  if (!parsePages(text, data.doc.page_count).length) {
     toast(T('export.empty'), false);
     return;
   }

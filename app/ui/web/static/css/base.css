@@ -54,7 +54,7 @@ body {
     transform 0.08s ease;
 }
 
-.btn:hover {
+.btn:hover:not(:disabled) {
   background: var(--surface-sunken);
   border-color: var(--muted);
 }
@@ -70,7 +70,7 @@ body {
   color: #fff;
 }
 
-.btn.primary:hover {
+.btn.primary:hover:not(:disabled) {
   background: var(--blue-dark);
   border-color: var(--blue-text);
 }
@@ -82,7 +82,7 @@ body {
   font-size: 13.5px;
 }
 
-.btn.ghost:hover {
+.btn.ghost:hover:not(:disabled) {
   background: var(--surface-active);
   border-color: transparent;
 }
@@ -93,7 +93,7 @@ body {
   color: var(--text);
 }
 
-.btn.soft:hover {
+.btn.soft:hover:not(:disabled) {
   background: var(--blue-soft);
   border-color: transparent;
   color: var(--blue-text);
@@ -105,7 +105,7 @@ body {
   color: #fff;
 }
 
-.btn.danger:hover {
+.btn.danger:hover:not(:disabled) {
   background: var(--red-dark);
   border-color: var(--danger-text);
 }
@@ -116,7 +116,7 @@ body {
   color: var(--danger-text);
 }
 
-.btn.danger-ghost:hover {
+.btn.danger-ghost:hover:not(:disabled) {
   background: var(--danger-soft);
   border-color: transparent;
 }
@@ -148,7 +148,7 @@ body {
     color 0.14s ease;
 }
 
-.icon-btn:hover {
+.icon-btn:hover:not(:disabled) {
   background: var(--surface-active);
   color: var(--text);
 }
@@ -196,7 +196,7 @@ body {
   font-size: 13px;
 }
 
-.btn.sm:hover {
+.btn.sm:hover:not(:disabled) {
   border-color: var(--border-strong);
   color: var(--text);
 }
@@ -209,6 +209,20 @@ kbd {
   font-family: Consolas, "Courier New", monospace;
   font-size: 11px;
   letter-spacing: 0.3px;
+}
+
+/* 按钮里的快捷键提示要更轻，不能抢走按钮本身的重量 */
+.btn kbd {
+  padding: 0 5px;
+  background: var(--surface-muted);
+  font-size: 10.5px;
+  line-height: 1.6;
+}
+
+.btn.primary kbd,
+.btn.danger kbd {
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.92);
 }
 
 /* ---------- 焦点环 ---------- */

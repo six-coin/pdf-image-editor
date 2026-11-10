@@ -44,7 +44,8 @@ export function toast(text, ok = true) {
   root.innerHTML = '';
   const node = document.createElement('div');
   node.className = ok ? 'toast' : 'toast error';
-  node.textContent = text;
+  // 状态栏永远不带句号，这里是最后一道保险。
+  node.textContent = String(text).replace(/[。.]$/, '');
   root.appendChild(node);
 
   clearTimeout(toastTimer);

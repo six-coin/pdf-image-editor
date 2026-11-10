@@ -19,13 +19,12 @@ const GLOBAL_DEFS = [
   ['zoom_out', 'Ctrl+-', 'toolbar.zoom_out'],
   ['zoom_fit', 'Ctrl+0', 'toolbar.fit_width'],
   ['zoom_reset', 'Ctrl+1', 'toolbar.zoom_reset'],
-  ['split', 'S', 'toolbar.split'],
+  ['split', 'E', 'toolbar.split'],
   ['front', 'Ctrl+U', 'toolbar.front'],
   ['back', 'Ctrl+L', 'toolbar.back'],
   ['external', 'Ctrl+Shift+E', 'inspector.external'],
   ['settings', 'Ctrl+,', 'toolbar.settings'],
   ['toggle_inspector', 'Ctrl+I', 'cmd.toggle_inspector'],
-  ['quit', 'Ctrl+Q', 'cmd.quit'],
 ];
 
 const SPLIT_DEFS = [

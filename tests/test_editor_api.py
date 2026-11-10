@@ -129,14 +129,18 @@ def test_keep_cell_out_of_range_is_noop(editor, opened):
     assert [o["id"] for o in snapshot["objects"]] == [o["id"] for o in before]
 
 
-def test_punch_keeps_original(editor, opened):
+def test_punch_whitens_original_and_extracts_piece(editor, opened):
     instance, _server = editor
     opened()
     obj = _objects(instance)[0]
     snapshot = instance.punch_cell(obj["id"], [0.5], [0.5], 0, 0)
+
     ids = [o["id"] for o in snapshot["objects"]]
     assert obj["id"] in ids
-    assert len(ids) == 3
+    assert len(ids) == 2  # 原图 + 抠出来的一块，没有白色叠层
+    kept = [o for o in snapshot["objects"] if o["id"] == obj["id"]][0]
+    assert kept["image"] != obj["image"]  # 原图被换成挖过洞的版本
+    assert len(snapshot["selection"]) == 1
 
 
 def test_undo_redo_after_split(editor, opened):

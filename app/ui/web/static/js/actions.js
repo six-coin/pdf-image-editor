@@ -281,7 +281,3 @@ export async function toggleInspector() {
   const snapshot = await call('update_settings', { show_inspector: next });
   if (snapshot) apply(snapshot);
 }
-
-export async function quit() {
-  await call('request_quit');
-}

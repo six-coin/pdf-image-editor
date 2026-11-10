@@ -13,16 +13,6 @@ from app.core.geometry import cell_matrix
 from app.core.imagestore import ImageStore
 from app.models import ImageObject, Rect
 
-_WHITE_PNG: bytes | None = None
-
-
-def white_png() -> bytes:
-    """1×1 白图，拉伸后当遮罩用。比存一张全尺寸白图省得多。"""
-    global _WHITE_PNG
-    if _WHITE_PNG is None:
-        _WHITE_PNG = pymupdf.Pixmap(pymupdf.csRGB, 1, 1, b"\xff\xff\xff", False).tobytes("png")
-    return _WHITE_PNG
-
 
 def crop_pixmap(pix: pymupdf.Pixmap, x: int, y: int, w: int, h: int) -> pymupdf.Pixmap:
     """按像素裁一块。手写行拷贝，不依赖版本相关的裁剪 API。"""
@@ -48,15 +38,8 @@ def _find(objects: list[ImageObject], object_id: str) -> ImageObject | None:
     return None
 
 
-def _piece(
-    obj: ImageObject,
-    cell: tuple[int, int, Rect],
-    pix: pymupdf.Pixmap,
-    store: ImageStore,
-    suffix: str,
-    z: int,
-) -> ImageObject:
-    row, col, rect = cell
+def _pixel_rect(obj: ImageObject, rect: Rect, pix: pymupdf.Pixmap) -> tuple[int, int, int, int]:
+    """把页内矩形换算成原图的像素矩形。"""
     image_w, image_h = pix.width, pix.height
     fx0 = (rect.x - obj.rect.x) / obj.rect.w
     fy0 = (rect.y - obj.rect.y) / obj.rect.h
@@ -67,7 +50,33 @@ def _piece(
     sy0 = max(0, int(round(fy0 * image_h)))
     sx1 = min(image_w, max(sx0 + 1, int(round(fx1 * image_w))))
     sy1 = min(image_h, max(sy0 + 1, int(round(fy1 * image_h))))
-    sub = crop_pixmap(pix, sx0, sy0, sx1 - sx0, sy1 - sy0)
+    return sx0, sy0, max(1, sx1 - sx0), max(1, sy1 - sy0)
+
+
+def fill_white(pix: pymupdf.Pixmap, x: int, y: int, w: int, h: int) -> pymupdf.Pixmap:
+    """把一块区域涂成不透明白色。所有分量都填 255，带 alpha 的图也不会半透明。"""
+    components = pix.n
+    stride = pix.stride
+    buffer = bytearray(pix.samples)
+    run = b"\xff" * (w * components)
+    for row in range(y, min(y + h, pix.height)):
+        start = row * stride + x * components
+        end = min(start + len(run), (row + 1) * stride)
+        buffer[start:end] = run[: end - start]
+    return pymupdf.Pixmap(pix.colorspace, pix.width, pix.height, bytes(buffer), pix.alpha)
+
+
+def _piece(
+    obj: ImageObject,
+    cell: tuple[int, int, Rect],
+    pix: pymupdf.Pixmap,
+    store: ImageStore,
+    suffix: str,
+    z: int,
+) -> ImageObject:
+    row, col, rect = cell
+    sx0, sy0, sw, sh = _pixel_rect(obj, rect, pix)
+    sub = crop_pixmap(pix, sx0, sy0, sw, sh)
 
     return ImageObject(
         id=f"{obj.id}-{suffix}-{row}{col}",
@@ -131,10 +140,10 @@ def punch_cell(
     row: int,
     col: int,
     store: ImageStore,
-) -> list[ImageObject] | None:
-    """挖掉 (row, col)：原图盖一块白，挖出来的那格叠在最上面。
+) -> tuple[str, ImageObject] | None:
+    """挖掉 (row, col)：把原图那一格涂白，抠出来的部分独立成一个对象。
 
-    返回 ``[白块, 抠出来的格子]``，调用方把原图留在原位即可。
+    返回 ``(挖洞后的原图 image_id, 抠出来的格子)``，调用方把原图换成新图即可。
     """
     obj = _find(objects, object_id)
     if obj is None or not obj.rect.is_valid():
@@ -145,12 +154,9 @@ def punch_cell(
         return None
     pix = pymupdf.Pixmap(store.get(obj.image_id))
     cell = target[0]
-    piece = _piece(obj, cell, pix, store, "p", obj.z + 2)
-    hole = ImageObject(
-        id=f"{obj.id}-hole-{row}{col}",
-        page=obj.page,
-        rect=cell[2],
-        image_id=store.put(white_png()),
-        z=obj.z + 1,
-    )
-    return [hole, piece]
+    sx0, sy0, sw, sh = _pixel_rect(obj, cell[2], pix)
+
+    piece = _piece(obj, cell, pix, store, "p", obj.z)
+    # 洞是直接挖在原图像素上的，不叠白色矩形：叠层在缩放时会被插值成半透明。
+    hole = fill_white(pix, sx0, sy0, sw, sh)
+    return store.put(hole.tobytes("png")), piece

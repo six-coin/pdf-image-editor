@@ -2,7 +2,7 @@
    前端不维护业务数据，快照变了就整体重绘；只有纯视图状态留在这边。 */
 
 import { T } from './bridge.js';
-import { setBindings } from './keymap.js';
+import { accelFor, setBindings } from './keymap.js';
 import { objectsOf, pageInfo, pxPerPt, state } from './state.js';
 
 const $ = (id) => document.getElementById(id);
@@ -83,6 +83,7 @@ export function apply(data) {
   }
 
   renderInspector();
+  applyShortcutHints();
 }
 
 function applyChrome() {
@@ -332,26 +333,54 @@ function renderInspector() {
 }
 
 const ACTIONS = {
-  split: ['toolbar.split', 'btn sm'],
-  front: ['toolbar.front', 'btn sm'],
-  back: ['toolbar.back', 'btn sm'],
-  external: ['inspector.external', 'btn sm'],
-  delete: ['toolbar.delete', 'btn sm danger-ghost'],
-  paste: ['edit.paste', 'btn sm'],
+  split: ['toolbar.split', 'btn sm', 'split'],
+  front: ['toolbar.front', 'btn sm', 'front'],
+  back: ['toolbar.back', 'btn sm', 'back'],
+  external: ['inspector.external', 'btn sm', 'external'],
+  delete: ['toolbar.delete', 'btn sm danger-ghost', 'delete'],
+  paste: ['edit.paste', 'btn sm', 'paste'],
 };
+
+const SPLIT_ACTIONS = {
+  'keep-cell': 'split_keep',
+  'punch-cell': 'split_punch',
+  'split-all': 'split_all',
+  'split-cancel': 'split_cancel',
+};
+
+function shortcutTag(accel) {
+  if (!accel) return null;
+  const kbd = document.createElement('kbd');
+  kbd.textContent = accel;
+  return kbd;
+}
 
 function actionRow(keys) {
   const row = document.createElement('div');
   row.className = 'inspector-actions';
   for (const key of keys) {
-    const [label, className] = ACTIONS[key];
+    const [label, className, command] = ACTIONS[key];
     const button = document.createElement('button');
     button.className = className;
     button.dataset.act = key;
     button.textContent = T(label);
+    const tag = shortcutTag(accelFor('global', command));
+    if (tag) button.appendChild(tag);
     row.appendChild(button);
   }
   return row;
+}
+
+/** 分割工具条上的按键提示。键位可改，所以每次快照都重刷一遍。 */
+export function applyShortcutHints() {
+  document.querySelectorAll('#splitBar [data-act]').forEach((button) => {
+    const kbd = button.querySelector('kbd');
+    if (!kbd) return;
+    const command = SPLIT_ACTIONS[button.dataset.act];
+    const accel = command ? accelFor('split', command) : '';
+    kbd.textContent = accel || '';
+    kbd.hidden = !accel;
+  });
 }
 
 /* ---------- 供其它模块使用 ---------- */

@@ -39,7 +39,6 @@ const GLOBAL_RUNNERS = {
   external: actions.externalEdit,
   settings: openSettings,
   toggle_inspector: actions.toggleInspector,
-  quit: actions.quit,
 };
 
 const SPLIT_RUNNERS = {

@@ -113,15 +113,22 @@
 .pages {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* 不能用 align-items:center：内容比容器宽时，左边那一半会滚不到。
+     auto margin 在溢出时会解析成 0，左右都能滚到。 */
+  align-items: flex-start;
   gap: var(--canvas-gap);
-  padding: 24px;
+  padding: 24px 48px;
+  /* max-content 让容器宽度跟着页面走，左右内边距才会真正算进可滚动区域；
+     配 min-width:100% 让小页面时仍然撑满、由 auto margin 居中。 */
+  width: max-content;
+  min-width: 100%;
   min-height: 100%;
 }
 
 .page {
   position: relative;
   flex: none;
+  margin-inline: auto;
   background: #fff;
   box-shadow: var(--page-shadow);
   outline: 1px solid var(--page-edge);

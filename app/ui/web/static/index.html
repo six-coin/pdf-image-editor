@@ -109,13 +109,18 @@
 
 <div class="split-bar hidden" id="splitBar">
   <span class="split-hint" id="splitHint"></span>
-  <button class="btn sm" id="splitKeep" data-act="keep-cell" data-i18n="split.keep"
-          disabled>仅保留此格</button>
-  <button class="btn sm" id="splitPunch" data-act="punch-cell" data-i18n="split.extract"
-          disabled>提取此格</button>
-  <button class="btn sm" id="splitAll" data-act="split-all" data-i18n="split.all"
-          disabled>按格切分</button>
-  <button class="btn sm ghost" data-act="split-cancel" data-i18n="dialog.cancel">取消</button>
+  <button class="btn sm" id="splitKeep" data-act="keep-cell" disabled>
+    <span data-i18n="split.keep">仅保留此格</span><kbd></kbd>
+  </button>
+  <button class="btn sm" id="splitPunch" data-act="punch-cell" disabled>
+    <span data-i18n="split.extract">提取此格</span><kbd></kbd>
+  </button>
+  <button class="btn sm" id="splitAll" data-act="split-all" disabled>
+    <span data-i18n="split.all">按格切分</span><kbd></kbd>
+  </button>
+  <button class="btn sm ghost" data-act="split-cancel">
+    <span data-i18n="dialog.cancel">取消</span><kbd></kbd>
+  </button>
 </div>
 
 <div id="modalRoot"></div>

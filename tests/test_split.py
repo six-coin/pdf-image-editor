@@ -5,7 +5,7 @@ from __future__ import annotations
 import pymupdf
 import pytest
 
-from app.core.split import build_split, keep_cell, punch_cell, white_png
+from app.core.split import build_split, keep_cell, punch_cell
 from app.models import ImageObject, Rect
 
 
@@ -87,15 +87,26 @@ def test_missing_object_returns_none(store):
     assert build_split([], "nope", [0.5], [0.5], store) is None
 
 
-def test_punch_cell_returns_hole_and_piece(store):
+def test_punch_cell_returns_new_image_and_piece(store):
     obj = _object(store)
+    before = obj.image_id
     result = punch_cell([obj], "o1", [0.5], [0.5], 0, 0, store)
     assert result is not None
-    hole, piece = result
-    assert hole.rect == Rect(50, 60, 100, 80)
-    assert hole.z == obj.z + 1
-    assert piece.z == obj.z + 2
-    assert store.get(hole.image_id) == white_png()
+    hole_image, piece = result
+
+    assert hole_image != before
+    assert piece.image_id != before
+    assert piece.rect == Rect(50, 60, 100, 80)
+    # 挖洞不改变原图尺寸，只是把那一格涂白
+    assert pymupdf.Pixmap(store.get(hole_image)).width == 100
+
+
+def test_punch_fills_only_the_cell(store):
+    obj = _object(store)
+    hole_image, _piece = punch_cell([obj], "o1", [0.5], [0.5], 0, 0, store)
+    hole = pymupdf.Pixmap(store.get(hole_image))
+    assert hole.pixel(10, 10) == (255, 255, 255)
+    assert hole.pixel(80, 70) == (10, 20, 30)
 
 
 def test_punch_cell_out_of_range_returns_none(store):
