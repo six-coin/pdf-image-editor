@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import os
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -57,6 +58,7 @@ class EditorApi:
         self._window: webview.Window | None = None
         self._settings = settings.load_app()
         self._reference = settings.load_reference()
+        _sweep_temp()
         self._close_confirmed = False
 
     # ---- 装配 ----
@@ -578,12 +580,15 @@ class EditorApi:
         try:
             data = source.read_bytes()
         except OSError:
+            _cleanup_session(source)
             return {"ok": False, "message": i18n.t("error.external_edit_failed")}
         if not data:
+            _cleanup_session(source)
             return {"ok": False, "message": i18n.t("error.external_edit_failed")}
         try:
             pymupdf.Pixmap(data)
         except Exception:
+            _cleanup_session(source)
             return {"ok": False, "message": i18n.t("error.external_edit_failed")}
 
         with self._lock:
@@ -798,6 +803,25 @@ def _cleanup_session(path: Path) -> None:
         parent.rmdir()
     except OSError:
         pass
+
+
+def _sweep_temp(max_age_seconds: float = 86400.0) -> None:
+    """清掉上次运行留下的编辑临时目录。只动 edit-* 且超过一天的。"""
+    root = paths.TEMP_DIR
+    if not root.is_dir():
+        return
+    now = time.time()
+    for entry in root.glob("edit-*"):
+        if not entry.is_dir():
+            continue
+        try:
+            if now - entry.stat().st_mtime < max_age_seconds:
+                continue
+            for item in entry.iterdir():
+                item.unlink(missing_ok=True)
+            entry.rmdir()
+        except OSError:
+            continue
 
 
 def _first_path(result: Any) -> str | None:

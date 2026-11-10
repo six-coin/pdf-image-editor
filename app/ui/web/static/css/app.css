@@ -253,6 +253,21 @@
   cursor: nwse-resize;
 }
 
+.page-chip {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 5;
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text-soft);
+  font-size: 12px;
+  box-shadow: 0 4px 12px var(--shadow);
+  pointer-events: none;
+}
+
 /* ---------- 空状态 ---------- */
 .empty {
   display: flex;

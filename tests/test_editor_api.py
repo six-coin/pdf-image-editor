@@ -368,3 +368,21 @@ def test_preprocess_worker_finishes_task(editor, pdf_factory, tmp_path):
     assert status["state"] == "ready"
     assert status["result"]["count"] == 1
     assert target.is_file()
+
+
+def test_external_edit_cleans_temp_on_failure(editor, opened, monkeypatch):
+    from app import paths
+
+    instance, _server = editor
+    opened()
+    monkeypatch.setattr("app.ui.web.api.opener.open_external", lambda path: True)
+    monkeypatch.setattr(paths, "TEMP_DIR", paths.TEMP_DIR)
+
+    obj = _objects(instance)[0]
+    opened_result = instance.edit_external(obj["id"])
+    bad = Path(opened_result["path"])
+    bad.write_bytes(b"not an image")
+
+    assert instance.replace_image(obj["id"], str(bad))["ok"] is False
+    # 失败也要把临时目录收掉，不能留在 temp/ 里
+    assert not bad.parent.exists()

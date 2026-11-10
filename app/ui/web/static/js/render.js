@@ -48,7 +48,9 @@ export function applyTheme(theme) {
     /* 隐私模式下写不进去，不影响使用 */
   }
   document.querySelectorAll('#themeSeg .seg-item').forEach((node) => {
-    node.classList.toggle('active', node.dataset.themeValue === next);
+    const active = node.dataset.themeValue === next;
+    node.classList.toggle('active', active);
+    node.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
 }
 
@@ -114,6 +116,19 @@ function applyChrome() {
 
   $('app').classList.toggle('inspector-hidden', !hasDoc);
   renderZoom();
+  renderPageIndicator(0);
+}
+
+/** 底部页码浮标。视口滚动时由 canvas.js 调用。 */
+export function renderPageIndicator(index) {
+  const chip = $('pageChip');
+  if (!chip) return;
+  const total = state.data ? state.data.pages.length : 0;
+  chip.hidden = total === 0;
+  if (total) {
+    const current = Math.min(total, Math.max(1, index + 1));
+    chip.textContent = T('page.indicator', { current, total });
+  }
 }
 
 export function renderZoom() {

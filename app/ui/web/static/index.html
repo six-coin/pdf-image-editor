@@ -28,36 +28,36 @@
 <body>
 <div class="app" id="app">
 
-  <header class="topbar">
+  <header class="topbar" role="toolbar" data-i18n-aria="app.title">
     <button class="btn" data-act="open" data-i18n="toolbar.open">打开</button>
     <button class="btn primary" data-act="save" data-i18n="toolbar.save" disabled>保存</button>
     <button class="btn ghost" data-act="save-as" data-i18n="toolbar.save_as" disabled>另存为</button>
 
     <div class="doc-name" id="docName" hidden>
       <span id="docTitle"></span>
-      <i class="dirty-dot hidden" id="dirtyDot"></i>
+      <i class="dirty-dot hidden" id="dirtyDot" aria-hidden="true"></i>
     </div>
 
-    <span class="topbar-sep"></span>
+    <span class="topbar-sep" aria-hidden="true"></span>
 
     <button class="btn ghost" data-act="undo" data-i18n="toolbar.undo" disabled>撤销</button>
     <button class="btn ghost" data-act="redo" data-i18n="toolbar.redo" disabled>重做</button>
 
-    <span class="topbar-sep"></span>
+    <span class="topbar-sep" aria-hidden="true"></span>
 
-    <div class="zoom-box">
-      <button class="btn ghost" data-act="zoom-out" data-i18n-title="toolbar.zoom_out"
+    <div class="zoom-box" role="group" data-i18n-aria="toolbar.fit_width">
+      <button class="btn ghost" data-act="zoom-out" data-i18n-aria="toolbar.zoom_out"
               aria-label="zoom out">−</button>
       <button class="zoom-value" id="zoomValue" data-act="zoom-reset"
-              data-i18n-title="toolbar.zoom_reset">100%</button>
-      <button class="btn ghost" data-act="zoom-in" data-i18n-title="toolbar.zoom_in"
+              data-i18n-aria="toolbar.zoom_reset">100%</button>
+      <button class="btn ghost" data-act="zoom-in" data-i18n-aria="toolbar.zoom_in"
               aria-label="zoom in">+</button>
       <button class="btn sm" data-act="fit-width" data-i18n="toolbar.fit_width">适合宽度</button>
     </div>
 
     <span class="spacer"></span>
 
-    <div class="busy hidden" id="busy">
+    <div class="busy hidden" id="busy" role="status" aria-live="polite">
       <span id="busyText"></span>
       <div class="busy-bar"><i id="busyBar"></i></div>
     </div>
@@ -66,21 +66,24 @@
     <button class="btn ghost" data-act="settings" data-i18n="toolbar.settings">设置</button>
 
     <div class="seg compact" id="themeSeg" role="group" data-i18n-aria="theme.label">
-      <button class="seg-item" data-theme-value="light" data-i18n="theme.light">浅色</button>
-      <button class="seg-item" data-theme-value="dark" data-i18n="theme.dark">深色</button>
+      <button class="seg-item" data-theme-value="light" data-i18n="theme.light"
+              aria-pressed="false">浅色</button>
+      <button class="seg-item" data-theme-value="dark" data-i18n="theme.dark"
+              aria-pressed="false">深色</button>
     </div>
   </header>
 
-  <main class="viewport" id="viewport">
+  <main class="viewport" id="viewport" role="region" data-i18n-aria="app.title">
     <div class="empty" id="empty">
       <h2 data-i18n="empty.title">还没有打开文件</h2>
       <p data-i18n="empty.hint">打开一个 PDF，就能开始切分和替换里面的图片。</p>
       <button class="btn primary" data-act="open" data-i18n="empty.open">打开 PDF</button>
     </div>
     <div class="pages" id="pages" hidden></div>
+    <div class="page-chip hidden" id="pageChip" role="status" aria-live="polite"></div>
   </main>
 
-  <aside class="inspector" id="inspector">
+  <aside class="inspector" id="inspector" role="complementary" data-i18n-aria="inspector.title">
     <h2 data-i18n="inspector.title">属性</h2>
     <div id="inspectorBody"></div>
   </aside>

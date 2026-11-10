@@ -10,7 +10,7 @@ import {
   mergeObjects,
   state,
 } from './state.js';
-import { layoutPages, pageEl, renderObjects, renderZoom } from './render.js';
+import { layoutPages, pageEl, renderObjects, renderPageIndicator, renderZoom } from './render.js';
 
 const visible = new Set();
 const inflight = new Map();
@@ -153,6 +153,15 @@ export function currentPage() {
 
 export function bindCanvas() {
   const box = viewport();
+
+  let scrollFrame = 0;
+  box.addEventListener('scroll', () => {
+    if (scrollFrame) return;
+    scrollFrame = window.requestAnimationFrame(() => {
+      scrollFrame = 0;
+      renderPageIndicator(currentPage());
+    });
+  });
 
   box.addEventListener(
     'wheel',

@@ -12,8 +12,36 @@
 水印。用通用 PDF 编辑器做这些事，要么得把整页栅格化（文字层就没了），要么得在
 Illustrator 里折腾。
 
-这个工具把每一页拆成「背景 + 独立的图片对象」：背景保留原文档的文字与矢量内容，
+这个工具把每一页拆成「背景 + 独立的图片对象」：背景保留原文档的文字、矢量与批注，
 图片对象可以单独拖动、缩放、切分、删除。保存时只把图片换掉，其余内容原样不动。
+
+---
+
+## 功能
+
+**看**
+- 页面按目标 DPI 渲染，缩放不发虚；滚轮滚动、`Ctrl`+滚轮以指针为锚缩放
+- 浅色 / 深色两套主题，跟随系统或手动切换
+- 页边距参考线，边距可调
+
+**改**
+- 拖动、四角等比缩放（`Alt` 自由比例）、框选、多选
+- 跨页拖动：拖到另一页就归到那一页
+- 切分：放几条切线，然后「仅保留此格 / 提取此格 / 按格切分」
+- 置顶 / 置底、删除、方向键微调
+- 从剪贴板粘贴图片（`Ctrl+V`）
+- 用系统默认程序外部编辑某张图，改完回填
+
+**存**
+- **保留原文档**（默认）：只替换图片，文字、矢量、批注、书签全部保留
+- **整页重建**：整页重新成像，仅用于纯扫描件（会丢文字层，界面上有明确提示）
+- 先写临时文件再替换，就地保存时首次留一份 `.bak.pdf`
+- 导出指定页为新 PDF
+
+**其它**
+- 撤销 / 重做，命令只存几何与图片 id，不复制像素
+- PDF 黑白化预处理（去底灰）
+- 中英文界面
 
 ---
 
@@ -34,18 +62,36 @@ setup.bat
 run.bat
 ```
 
-`run.bat` 用 `pythonw.exe` 启动，不会弹控制台。从任何目录调用都行，工作目录不影响行为。
+用 `pythonw.exe` 启动，不会弹控制台。从任何目录调用都行，工作目录不影响行为。
+
+---
+
+## 快捷键
+
+| 键 | 作用 |
+|---|---|
+| `Ctrl+O` | 打开 |
+| `Ctrl+S` / `Ctrl+Shift+S` | 保存 / 另存为 |
+| `Ctrl+Z` / `Ctrl+Y` | 撤销 / 重做 |
+| `Ctrl+A` | 全选 |
+| `Ctrl+V` | 粘贴图片 |
+| `Ctrl+0` / `Ctrl+=` / `Ctrl+-` | 适合宽度 / 放大 / 缩小 |
+| `Delete` | 删除选中 |
+| `S` | 进入分割模式 |
+| `Esc` | 退出分割 / 取消选择 |
+| `方向键`（`Shift` 加速） | 微调位置 |
+| `Space` + 拖动 / 中键拖动 | 平移画布 |
 
 ---
 
 ## 开发
 
 ```bash
-uv sync                      # 装环境
-uv run pytest                # 跑测试
-uv run ruff check .          # 静态检查
-uv run ruff format .         # 格式化
-uv run python -m app.ui.web.app   # 临时起界面
+uv sync                            # 装环境
+uv run pytest                      # 跑测试
+uv run ruff check .                # 静态检查
+uv run ruff format .               # 格式化
+uv run python -m app.ui.web.app    # 临时起界面
 ```
 
 提交前三项全绿：
@@ -66,12 +112,17 @@ app/
 ├─ logging_setup.py   loguru + excepthook + 致命错误弹窗
 ├─ locales/           zh-CN.json / en-US.json
 ├─ core/              纯逻辑，零界面依赖
-├─ system/            剪贴板、资源服务、外部打开、预处理
-└─ ui/web/            pywebview 窗口 + js_api + 静态页面
+│  ├─ units.py        pt/mm 换算、页码范围解析
+│  ├─ geometry.py     夹取、等比缩放、命中、切分矩阵
+│  ├─ imagestore.py   内容寻址的图片仓库
+│  ├─ document.py     PDF 句柄、页信息、可编辑图片
+│  ├─ render.py       页面光栅化 + LRU 缓存
+│  ├─ split.py        切分与打孔（纯函数）
+│  ├─ undo.py         命令栈
+│  └─ save.py         双模式保存 + 保存报告
+├─ system/            剪贴板、本地资源服务、外部打开、预处理
+└─ ui/web/            窗口 + js_api + 静态页面（零构建，ES module）
 ```
-
-`core/` 不导入任何界面库，可以被纯 pytest 覆盖；这条由
-`tests/test_source_hygiene.py` 用 AST 静态守住。
 
 ### 数据流
 
@@ -87,10 +138,12 @@ pdf_image_editor.pyw
  static/*（HTML/CSS/JS，只经 api.py 通信）
 ```
 
-### 两条不能破的约定
+### 四条不能破的约定
 
 1. **坐标一律是 PDF 点（pt）**，原点在页面左上角，y 向下。只有前端渲染时才乘缩放系数。
 2. **图片按内容寻址存在 `ImageStore` 里**（sha1 → bytes）。撤销只改 `image_id`，不复制像素。
+3. **`ImageObject` 同时存 `rect` 与 `src_rect`**。前者是当前位置，后者是原文档里的原始位置——保存时按 `src_rect` redaction、按 `rect` 重新插入，否则「移动」只能表达成「整页重来」。
+4. **`core/` 不导入任何界面库**，由 `tests/test_source_hygiene.py` 用 AST 静态守住。
 
 ---
 
@@ -101,7 +154,12 @@ pdf_image_editor.pyw
 | `preserve`（默认） | 用 `apply_redactions` 把原图摘掉，再把画布上的图插回去。文字、矢量、注释、书签全部保留 | 所有情况 |
 | `raster` | 整页重新成像，只留图片 | 纯扫描件，且明确接受丢失文字层 |
 
-落盘先写临时文件再 `os.replace`；就地保存时第一次会留一份 `<文件名>.bak.pdf`。
+两个细节值得知道：
+
+- **批注**：`apply_redactions` 会连带删掉落在矩形里的批注，所以保存时先把页面的
+  `/Annots` 数组临时摘下来，做完再挂回去。批注对象一个字节都不动。
+- **旋转图片**：`insert_image` 只能按 90° 步进放置，所以非轴对齐的图片不参与编辑，
+  原样保留在背景里。
 
 ---
 
@@ -110,4 +168,4 @@ pdf_image_editor.pyw
 每次启动在 `logs/` 下新建一个 `pdf_image_editor_<时间戳>.log`。出问题先看这里，
 启动期的致命错误会弹窗并给出日志路径。
 
-`config/` 与 `logs/` 不进版本库，删掉会自动重建。
+`config/`、`logs/`、`temp/` 不进版本库，删掉会自动重建。

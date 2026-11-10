@@ -17,15 +17,22 @@ function field(labelKey, control) {
 function segmented(options, current, onChange) {
   const box = document.createElement('div');
   box.className = 'seg';
+  box.setAttribute('role', 'group');
   for (const option of options) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'seg-item';
-    if (option.value === current) button.classList.add('active');
+    const active = option.value === current;
+    if (active) button.classList.add('active');
+    button.setAttribute('aria-pressed', active ? 'true' : 'false');
     button.textContent = option.label;
     button.addEventListener('click', () => {
-      box.querySelectorAll('.seg-item').forEach((node) => node.classList.remove('active'));
+      box.querySelectorAll('.seg-item').forEach((node) => {
+        node.classList.remove('active');
+        node.setAttribute('aria-pressed', 'false');
+      });
       button.classList.add('active');
+      button.setAttribute('aria-pressed', 'true');
       onChange(option.value);
     });
     box.appendChild(button);
