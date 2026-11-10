@@ -1,0 +1,625 @@
+/* 基础层：重置、字体、通用组件。
+   组件样式取自根目录 styles.css，只保留本应用实际用到的部分；
+   列表型骨架（.sidebar / .group / .item / .search / .picker）不迁移。 */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Microsoft YaHei", "Segoe UI", "Helvetica Neue", sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---------- 按钮 ---------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 15px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    border-color 0.14s ease,
+    color 0.14s ease,
+    transform 0.08s ease;
+}
+
+.btn:hover {
+  background: var(--surface-sunken);
+  border-color: var(--muted);
+}
+
+.btn:active {
+  background: var(--surface-muted);
+  transform: translateY(1px);
+}
+
+.btn.primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+.btn.primary:hover {
+  background: var(--blue-dark);
+  border-color: var(--blue-text);
+}
+
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.btn.ghost:hover {
+  background: var(--surface-active);
+  border-color: transparent;
+}
+
+.btn.soft {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+
+.btn.soft:hover {
+  background: var(--blue-soft);
+  border-color: transparent;
+  color: var(--blue-text);
+}
+
+.btn.danger {
+  background: var(--red);
+  border-color: var(--red);
+  color: #fff;
+}
+
+.btn.danger:hover {
+  background: var(--red-dark);
+  border-color: var(--danger-text);
+}
+
+.btn.danger-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--danger-text);
+}
+
+.btn.danger-ghost:hover {
+  background: var(--danger-soft);
+  border-color: transparent;
+}
+
+.btn:disabled {
+  background: var(--surface-muted);
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: default;
+  transform: none;
+}
+
+.btn.sm {
+  height: 32px;
+  padding: 0 13px;
+  border-color: var(--border);
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.btn.sm:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+kbd {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--surface-active);
+  color: var(--text-soft);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+/* ---------- 焦点环 ---------- */
+.btn:focus-visible,
+.seg-item:focus-visible,
+.select:focus-visible,
+.select-option:focus-visible,
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.modal-card:focus {
+  outline: none;
+}
+
+/* ---------- 分段控件 ---------- */
+.seg {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--surface-muted);
+}
+
+.seg-item {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-soft);
+  font-family: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.seg-item:hover {
+  color: var(--text);
+}
+
+.seg-item.active {
+  background: var(--panel);
+  color: var(--text-strong);
+  box-shadow: 0 1px 3px var(--shadow);
+}
+
+.seg.compact .seg-item {
+  padding: 4px 11px;
+  font-size: 12.5px;
+}
+
+/* ---------- 开关 ---------- */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-track {
+  position: relative;
+  width: 36px;
+  height: 21px;
+  border-radius: 999px;
+  background: var(--switch-track);
+  transition: background 0.18s ease;
+  flex: none;
+}
+
+.switch-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--knob);
+  transition: transform 0.18s var(--ease);
+}
+
+.switch input:checked + .switch-track {
+  background: var(--blue);
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(15px);
+}
+
+.switch-label {
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+/* ---------- 弹窗 ---------- */
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--backdrop);
+  animation: fade-in 0.16s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal.leaving {
+  animation: fade-out 0.16s ease forwards;
+}
+
+.modal.leaving .modal-card {
+  animation: card-out 0.16s var(--ease) forwards;
+}
+
+@keyframes fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes card-out {
+  to {
+    opacity: 0;
+    transform: scale(0.98) translateY(5px);
+  }
+}
+
+.modal-card {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: 82vh;
+  background: var(--panel);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 18px 48px var(--shadow-strong);
+  overflow: hidden;
+  animation: card-in 0.2s var(--ease);
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.modal-card.narrow {
+  width: min(440px, 100%);
+  padding-bottom: 18px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px 12px;
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.modal-text {
+  margin: 0;
+  padding: 0 22px 18px;
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+.modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0 22px 18px;
+  overflow-y: auto;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 22px 0;
+}
+
+/* ---------- 轻提示 ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 60;
+  max-width: 70vw;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--toast-bg);
+  color: #fff;
+  font-size: 13px;
+  box-shadow: 0 10px 30px var(--shadow-strong);
+  transform: translateX(-50%);
+  animation: toast-in 0.2s var(--ease);
+}
+
+.toast.error {
+  background: var(--toast-error);
+}
+
+.toast.leaving {
+  animation: toast-out 0.2s ease forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, 8px) scale(0.97);
+  }
+}
+
+/* ---------- 自绘下拉框 ---------- */
+.select {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 34px 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.select:hover {
+  border-color: var(--muted);
+}
+
+.select:focus-visible,
+.select.open {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.select-value {
+  flex: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.select-arrow {
+  position: absolute;
+  right: 11px;
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 0.16s var(--ease);
+}
+
+.select.open .select-arrow {
+  transform: rotate(180deg);
+}
+
+.select-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: none;
+  max-height: 240px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 12px 28px var(--shadow);
+}
+
+.select.open .select-menu {
+  display: block;
+  animation: menu-in 0.14s var(--ease);
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.select-option {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.select-option:hover {
+  background: var(--surface-active);
+}
+
+.select-option.active {
+  background: var(--blue-soft);
+  color: var(--blue-text);
+  font-weight: 500;
+}
+
+/* ---------- 表单 ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+}
+
+.field > label {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+input[type="text"],
+input[type="number"] {
+  width: 100%;
+  height: 38px;
+  padding: 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  transition:
+    border-color 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+input[type="text"]::placeholder {
+  color: var(--placeholder);
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.hint code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--surface-active);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11.5px;
+}
+
+.divider {
+  height: 1px;
+  margin: 18px 0;
+  background: var(--border);
+}
+
+.card {
+  margin-bottom: 16px;
+  padding: 20px 22px 22px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.chip {
+  flex: none;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue-text);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.chip.warn {
+  background: var(--amber-soft);
+  color: var(--amber-text);
+}
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

@@ -1,0 +1,150 @@
+/* 弹窗。
+   自绘对话框，支持 inert 背景、Tab 循环、Esc 关闭、进出场动画。 */
+
+const EXIT_MS = 170;
+
+let openCount = 0;
+let lastFocus = null;
+
+export function isOpen() {
+  return openCount > 0;
+}
+
+function root() {
+  return document.getElementById('modalRoot');
+}
+
+/**
+ * 打开一个弹窗。
+ * @param {object} options
+ * @param {string} options.title      标题（已本地化）
+ * @param {string} [options.text]     正文（纯文本）
+ * @param {Node}   [options.body]     自定义内容
+ * @param {Array}  options.actions    [{label, value, kind}]
+ * @param {boolean}[options.narrow]   窄版
+ * @returns {Promise<string>}         选中的 value；Esc 或点遮罩返回 'cancel'
+ */
+export function openModal({ title, text, body, actions = [], narrow = false }) {
+  return new Promise((resolve) => {
+    const app = document.getElementById('app');
+    const host = root();
+
+    const layer = document.createElement('div');
+    layer.className = 'modal';
+
+    const card = document.createElement('div');
+    card.className = narrow ? 'modal-card narrow' : 'modal-card';
+    card.tabIndex = -1;
+    card.setAttribute('role', 'dialog');
+    card.setAttribute('aria-modal', 'true');
+
+    const head = document.createElement('div');
+    head.className = 'modal-head';
+    const heading = document.createElement('h2');
+    heading.textContent = title;
+    head.appendChild(heading);
+
+    card.appendChild(head);
+
+    if (text) {
+      const paragraph = document.createElement('p');
+      paragraph.className = 'modal-text';
+      paragraph.textContent = text;
+      card.appendChild(paragraph);
+    }
+
+    if (body) {
+      const box = document.createElement('div');
+      box.className = 'modal-body';
+      box.appendChild(body);
+      card.appendChild(box);
+    }
+
+    const footer = document.createElement('div');
+    footer.className = 'modal-actions';
+
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      close(layer, app, card);
+      resolve(value);
+    };
+
+    for (const action of actions) {
+      const button = document.createElement('button');
+      button.className = `btn ${action.kind || ''}`.trim();
+      button.textContent = action.label;
+      button.addEventListener('click', () => finish(action.value));
+      footer.appendChild(button);
+    }
+    card.appendChild(footer);
+
+    layer.appendChild(card);
+    layer.addEventListener('mousedown', (event) => {
+      if (event.target === layer) finish('cancel');
+    });
+
+    lastFocus = document.activeElement;
+    app.inert = true;
+    host.appendChild(layer);
+    openCount += 1;
+    card.focus();
+
+    const onKey = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        finish('cancel');
+        return;
+      }
+      if (event.key === 'Tab') trapTab(event, card);
+    };
+    layer.addEventListener('keydown', onKey);
+    layer._cleanup = () => {
+      layer.removeEventListener('keydown', onKey);
+      openCount = Math.max(0, openCount - 1);
+      app.inert = false;
+      if (lastFocus && lastFocus.isConnected) lastFocus.focus();
+    };
+  });
+}
+
+function close(layer, app, card) {
+  layer.classList.add('leaving');
+  app.inert = false;
+  window.setTimeout(() => {
+    if (typeof layer._cleanup === 'function') layer._cleanup();
+    layer.remove();
+  }, EXIT_MS);
+  card.blur();
+}
+
+function trapTab(event, card) {
+  const focusable = card.querySelectorAll(
+    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+  );
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
+}
+
+/** 关闭握手用：页面里的"未保存"询问。 */
+export function askUnsaved(labels) {
+  return openModal({
+    title: labels.title,
+    text: labels.text,
+    narrow: true,
+    actions: [
+      { label: labels.cancel, value: 'cancel', kind: 'ghost' },
+      { label: labels.discard, value: 'discard', kind: 'danger-ghost' },
+      { label: labels.save, value: 'save', kind: 'primary' },
+    ],
+  });
+}

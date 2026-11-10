@@ -1,0 +1,824 @@
+"""js_api 对象。
+
+前端只能通过这里的方法碰后端。约定：
+- 越界或非法参数不抛异常，原样返回当前快照（网页拿到 traceback 最难排查）。
+- 所有对文档状态的读写都在同一把锁里；pywebview 给每次调用单起一个线程。
+- 长任务返回 task id，前端轮询 ``poll_task``。
+"""
+
+from __future__ import annotations
+
+import math
+import os
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from threading import RLock
+from typing import Any
+
+import pymupdf
+import webview
+from loguru import logger
+
+from app import i18n, paths, settings
+from app.core import split as split_ops
+from app.core.document import PdfDocument
+from app.core.geometry import MIN_SIZE, clamp_rect_to_page
+from app.core.imagestore import ImageStore
+from app.core.render import RenderCache
+from app.core.save import VALID_MODES
+from app.core.save import save as save_to_disk
+from app.core.undo import ImageReplaced, ObjectsChanged, StructureChanged, UndoStack
+from app.core.units import parse_page_range
+from app.errors import AppError
+from app.models import DocumentState, ImageObject, PageInfo, Rect
+from app.system import clipboard, opener, preprocess
+from app.system.asset_server import AssetServer
+
+PREVIEW_PX = 320
+CANVAS_PX = 1600
+_TASK_HISTORY = 20
+
+
+class EditorApi:
+    def __init__(self) -> None:
+        self._lock = RLock()
+        self._store = ImageStore()
+        self._doc: PdfDocument | None = None
+        self._state = DocumentState()
+        self._cache: RenderCache | None = None
+        self._stack: UndoStack | None = None
+        self._loaded_pages: set[int] = set()
+        self._generation = 0
+        self._tasks: dict[str, dict[str, Any]] = {}
+        self._task_seq = 0
+        self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pdfedit")
+        self._server: AssetServer | None = None
+        self._window: webview.Window | None = None
+        self._settings = settings.load_app()
+        self._reference = settings.load_reference()
+        self._close_confirmed = False
+
+    # ---- 装配 ----
+
+    def attach_server(self, server: AssetServer) -> None:
+        self._server = server
+
+    def attach_window(self, window: webview.Window) -> None:
+        self._window = window
+
+    @property
+    def settings_snapshot(self) -> dict[str, Any]:
+        return dict(self._settings)
+
+    @property
+    def store(self) -> ImageStore:
+        return self._store
+
+    def shutdown(self) -> None:
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        with self._lock:
+            if self._doc is not None:
+                self._doc.close()
+                self._doc = None
+
+    # ---- 读取 ----
+
+    def get_strings(self) -> dict[str, str]:
+        return i18n.strings()
+
+    def get_state(self) -> dict[str, Any]:
+        with self._lock:
+            return self._snapshot()
+
+    def poll_task(self, task_id: str) -> dict[str, Any]:
+        with self._lock:
+            task = self._tasks.get(str(task_id))
+            return dict(task) if task else {"state": "unknown"}
+
+    # ---- 文档 ----
+
+    def browse_pdf(self) -> str | None:
+        if self._window is None:
+            return None
+        result = self._window.create_file_dialog(
+            webview.OPEN_DIALOG,
+            file_types=("PDF 文件 (*.pdf)", "所有文件 (*.*)"),
+        )
+        return _first_path(result)
+
+    def open_path(self, path: str, force: bool = False) -> dict[str, Any]:
+        if not path:
+            return {"ok": False, "reason": "invalid", "message": i18n.t("error.pdf_open", name="")}
+        with self._lock:
+            if self._stack is not None and self._stack.dirty and not force:
+                return {
+                    "ok": False,
+                    "reason": "dirty",
+                    "message": i18n.t("dialog.unsaved_text"),
+                }
+            self._generation += 1
+            generation = self._generation
+            task_id = self._new_task("open")
+        self._executor.submit(self._open_worker, Path(path), generation, task_id)
+        return {"ok": True, "task": task_id}
+
+    def _open_worker(self, path: Path, generation: int, task_id: str) -> None:
+        try:
+            doc = PdfDocument.open(path, self._store)
+            pages: list[PageInfo] = []
+            for index in range(doc.page_count):
+                width, height = doc.page_pt_size(index)
+                pages.append(PageInfo(index=index, width=width, height=height))
+        except AppError as exc:
+            logger.warning("打开失败 {}: {}", path, exc)
+            self._finish_task(task_id, "error", str(exc))
+            return
+        except Exception:
+            logger.exception("打开失败 {}", path)
+            self._finish_task(task_id, "error", i18n.t("error.unexpected"))
+            return
+
+        with self._lock:
+            if generation != self._generation:
+                doc.close()
+                self._finish_task(task_id, "ready")
+                return
+            if self._doc is not None:
+                self._doc.close()
+            self._doc = doc
+            self._cache = RenderCache(doc)
+            self._state = DocumentState(path=doc.path, pages=pages)
+            self._stack = UndoStack(self._state, limit=int(self._settings["undo_limit"]))
+            self._loaded_pages.clear()
+            self._finish_task(task_id, "ready")
+        logger.info("已打开 {} 共 {} 页", path, len(pages))
+
+    # ---- 渲染 ----
+
+    def load_page(self, index: int, dpi: int = 150) -> dict[str, Any]:
+        with self._lock:
+            doc = self._doc
+            if doc is None:
+                return {"ok": False, "message": i18n.t("error.no_document")}
+            try:
+                page_index = int(index)
+                page_dpi = int(dpi)
+            except (TypeError, ValueError):
+                return {"ok": False, "message": i18n.t("error.invalid_argument", name="page")}
+            if not 0 <= page_index < doc.page_count:
+                return {
+                    "ok": False,
+                    "message": i18n.t("error.pdf_page_out_of_range", page=page_index + 1),
+                }
+
+            info = doc.page_info(page_index)
+            if 0 <= page_index < len(self._state.pages):
+                self._state.pages[page_index] = info
+
+            objects = doc.editable_images(page_index)
+            known = {obj.id for obj in self._state.objects}
+            for obj in objects:
+                if obj.id not in known:
+                    self._state.objects.append(obj)
+            self._loaded_pages.add(page_index)
+
+            if self._cache is not None:
+                self._cache.page_png(page_index, page_dpi)
+
+            url = (
+                self._server.page_url(page_index, page_dpi, self._generation)
+                if self._server
+                else ""
+            )
+            return {
+                "ok": True,
+                "url": url,
+                "w": info.width,
+                "h": info.height,
+                "objects": [self._payload(obj) for obj in objects],
+            }
+
+    def render_page(self, index: int, dpi: int = 150) -> bytes:
+        """给资源服务用。不加装饰器：它必须抛异常，让服务返回 500。"""
+        with self._lock:
+            if self._cache is None:
+                raise AppError(key="error.no_document")
+            return self._cache.page_png(int(index), int(dpi))
+
+    # ---- 选择与编辑 ----
+
+    def select(self, ids: list[str] | None = None) -> dict[str, Any]:
+        with self._lock:
+            if self._doc is None:
+                return self._snapshot()
+            known = {obj.id for obj in self._state.objects}
+            self._state.selection = [str(item) for item in (ids or []) if str(item) in known]
+            return self._snapshot()
+
+    def commit_transform(self, items: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+        """提交一次拖动或缩放。越界在这里夹取，前端算错了也不会把图存到页外。"""
+        with self._lock:
+            doc = self._doc
+            stack = self._stack
+            if doc is None or stack is None:
+                return self._snapshot()
+
+            before: list[ImageObject] = []
+            after: list[ImageObject] = []
+            for raw in items or []:
+                if not isinstance(raw, dict):
+                    continue
+                obj = self._state.find(str(raw.get("id", "")))
+                if obj is None:
+                    continue
+                try:
+                    x = float(raw["x"])
+                    y = float(raw["y"])
+                    w = float(raw["w"])
+                    h = float(raw["h"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if not all(math.isfinite(value) for value in (x, y, w, h)):
+                    continue
+
+                page = obj.page
+                try:
+                    requested = int(raw.get("page", page))
+                except (TypeError, ValueError):
+                    requested = page
+                if 0 <= requested < doc.page_count:
+                    page = requested
+
+                page_w, page_h = doc.page_pt_size(page)
+                rect = clamp_rect_to_page(Rect(x, y, w, h), page_w, page_h)
+                if rect.w < MIN_SIZE or rect.h < MIN_SIZE:
+                    continue
+
+                updated = obj.clone()
+                updated.page = page
+                updated.rect = rect
+                before.append(obj.clone())
+                after.append(updated)
+
+            if after:
+                stack.push(ObjectsChanged(before, after, "edit.move"))
+            return self._snapshot()
+
+    def delete_objects(self, ids: list[str] | None = None) -> dict[str, Any]:
+        with self._lock:
+            stack = self._stack
+            if stack is None:
+                return self._snapshot()
+            doomed = {str(item) for item in (ids or [])}
+            targets = [obj for obj in self._state.objects if obj.id in doomed]
+            if not targets:
+                return self._snapshot()
+
+            before = self._state.clone_objects()
+            for obj in targets:
+                # 对象没了，但它在原文件里还占着位置，保存时仍要 redaction。
+                self._state.mark_removed(obj.page, obj.src_rect)
+            self._state.drop([obj.id for obj in targets])
+            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.delete"))
+            return self._snapshot()
+
+    def reorder_objects(self, ids: list[str] | None = None, mode: str = "front") -> dict[str, Any]:
+        with self._lock:
+            stack = self._stack
+            if stack is None:
+                return self._snapshot()
+            wanted = {str(item) for item in (ids or [])}
+            targets = [obj for obj in self._state.objects if obj.id in wanted]
+            if not targets:
+                return self._snapshot()
+
+            page = targets[0].page
+            before = self._state.clone_objects()
+            same_page = [obj for obj in self._state.objects if obj.page == page]
+            chosen = [obj for obj in same_page if obj.id in wanted]
+            rest = [obj for obj in same_page if obj.id not in wanted]
+            ordered = rest + chosen if mode == "front" else chosen + rest
+            for offset, obj in enumerate(ordered):
+                obj.z = 10 + offset
+            stack.push(ObjectsChanged(before, self._state.clone_objects(), "edit.reorder"))
+            return self._snapshot()
+
+    def undo(self) -> dict[str, Any]:
+        with self._lock:
+            if self._stack is not None:
+                self._stack.undo()
+            return self._snapshot()
+
+    def redo(self) -> dict[str, Any]:
+        with self._lock:
+            if self._stack is not None:
+                self._stack.redo()
+            return self._snapshot()
+
+    # ---- 切分与打孔 ----
+
+    def split_object(
+        self, object_id: str, cuts_x: list[float] | None = None, cuts_y: list[float] | None = None
+    ) -> dict[str, Any]:
+        with self._lock:
+            if self._stack is None:
+                return self._snapshot()
+            pieces = split_ops.build_split(
+                self._state.objects, str(object_id), _floats(cuts_x), _floats(cuts_y), self._store
+            )
+            return self._swap_pieces(str(object_id), pieces, "edit.split", keep_original=False)
+
+    def keep_cell(
+        self,
+        object_id: str,
+        cuts_x: list[float] | None = None,
+        cuts_y: list[float] | None = None,
+        row: int = 0,
+        col: int = 0,
+    ) -> dict[str, Any]:
+        with self._lock:
+            if self._stack is None:
+                return self._snapshot()
+            pieces = split_ops.keep_cell(
+                self._state.objects,
+                str(object_id),
+                _floats(cuts_x),
+                _floats(cuts_y),
+                int(row),
+                int(col),
+                self._store,
+            )
+            return self._swap_pieces(str(object_id), pieces, "edit.keep", keep_original=False)
+
+    def punch_cell(
+        self,
+        object_id: str,
+        cuts_x: list[float] | None = None,
+        cuts_y: list[float] | None = None,
+        row: int = 0,
+        col: int = 0,
+    ) -> dict[str, Any]:
+        with self._lock:
+            if self._stack is None:
+                return self._snapshot()
+            pieces = split_ops.punch_cell(
+                self._state.objects,
+                str(object_id),
+                _floats(cuts_x),
+                _floats(cuts_y),
+                int(row),
+                int(col),
+                self._store,
+            )
+            return self._swap_pieces(str(object_id), pieces, "edit.punch", keep_original=True)
+
+    def _swap_pieces(
+        self,
+        object_id: str,
+        pieces: list[ImageObject] | None,
+        label: str,
+        keep_original: bool,
+    ) -> dict[str, Any]:
+        stack = self._stack
+        if pieces is None or stack is None:
+            return self._snapshot()
+        original = self._state.find(object_id)
+        if original is None:
+            return self._snapshot()
+
+        before = self._state.clone_objects()
+        if keep_original:
+            self._state.objects.extend(pieces)
+        else:
+            self._state.objects = [obj for obj in self._state.objects if obj.id != object_id]
+            self._state.objects.extend(pieces)
+        self._state.renormalize(original.page)
+        self._state.selection = [obj.id for obj in pieces]
+        stack.push(StructureChanged(before, self._state.clone_objects(), label))
+        return self._snapshot()
+
+    # ---- 保存 ----
+
+    def save_document(self, mode: str | None = None, path: str | None = None) -> dict[str, Any]:
+        """保存。给了 path 就是另存为，保存后以目标文件为新基线。"""
+        with self._lock:
+            doc = self._doc
+            if doc is None:
+                return {"ok": False, "message": i18n.t("error.no_document")}
+            source = doc.path
+            target = Path(path) if path else source
+            state = self._state
+            store = self._store
+            use_mode = mode if mode in VALID_MODES else self._settings.get("save_mode", "preserve")
+            # 只读文件原地保存会撞 WinError 5，提前拦下来给一句人话。
+            if target.exists() and not os.access(target, os.W_OK):
+                return {"ok": False, "message": i18n.t("error.file_readonly", name=target.name)}
+            # Windows 上 os.replace 覆盖不了仍被打开的文件，先放掉句柄。
+            doc.close()
+            self._doc = None
+
+        try:
+            report = save_to_disk(source, target, state, store, mode=use_mode)
+        except AppError as exc:
+            logger.warning("保存失败 {}: {}", target, exc)
+            with self._lock:
+                # 文件没动过，编辑也还在：只把句柄接回去，不重建状态。
+                self._restore_handle(source)
+            return {"ok": False, "message": str(exc)}
+
+        with self._lock:
+            self._generation += 1
+            self._reset_to_file(target)
+        logger.info("已保存 {}，替换 {} 张图", target, report.replaced)
+        return {"ok": True, **report.to_dict(), "generation": self._generation}
+
+    def _restore_handle(self, path: Path) -> None:
+        """保存失败后把文档句柄接回来，内存里的编辑原样保留。"""
+        try:
+            doc = PdfDocument.open(path, self._store)
+        except AppError:
+            logger.exception("保存失败后无法重新打开 {}", path)
+            self._doc = None
+            self._cache = None
+            return
+        self._doc = doc
+        self._cache = RenderCache(doc)
+
+    def _reset_to_file(self, path: Path) -> None:
+        """保存成功后以文件为新基线：对象与撤销栈全部重建，src_rect 刷新到新位置。"""
+        doc = PdfDocument.open(path, self._store)
+        self._doc = doc
+        self._cache = RenderCache(doc)
+        state = DocumentState(path=doc.path)
+        for index in range(doc.page_count):
+            width, height = doc.page_pt_size(index)
+            state.pages.append(PageInfo(index=index, width=width, height=height))
+        self._state = state
+        self._stack = UndoStack(state, limit=int(self._settings["undo_limit"]))
+        self._loaded_pages.clear()
+
+    # ---- 另存与导出 ----
+
+    def browse_save(self, suggested: str = "") -> str | None:
+        if self._window is None:
+            return None
+        result = self._window.create_file_dialog(
+            webview.SAVE_DIALOG,
+            save_filename=str(suggested or ""),
+            file_types=("PDF 文件 (*.pdf)",),
+        )
+        return _first_path(result)
+
+    def export_pages(self, text: str, path: str) -> dict[str, Any]:
+        """把指定页导出成一个新 PDF。页码解析放在后端，前端不再写一份。"""
+        with self._lock:
+            doc = self._doc
+            if doc is None:
+                return {"ok": False, "message": i18n.t("error.no_document")}
+            if self._stack is not None and self._stack.dirty:
+                return {"ok": False, "message": i18n.t("error.save_first")}
+
+            pages, problems = parse_page_range(str(text or ""), doc.page_count)
+            if not pages:
+                return {"ok": False, "message": i18n.t("error.page_range_empty")}
+
+            target = Path(path)
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                out = pymupdf.open()
+                try:
+                    for index in pages:
+                        out.insert_pdf(doc.doc, from_page=index, to_page=index)
+                    out.save(target, garbage=4, deflate=True)
+                finally:
+                    out.close()
+            except Exception as exc:
+                logger.exception("导出失败")
+                return {"ok": False, "message": i18n.t("error.save_failed", reason=str(exc))}
+
+            logger.info("已导出 {} 页到 {}", len(pages), target)
+            return {
+                "ok": True,
+                "path": str(target),
+                "pages": len(pages),
+                "errors": [{"code": code, "token": token} for code, token in problems],
+            }
+
+    # ---- 剪贴板与外部编辑 ----
+
+    def paste_image(self, page: int = 0) -> dict[str, Any]:
+        data = clipboard.read_image()
+        if not data:
+            return {**self._snapshot(), "ok": False, "message": i18n.t("error.clipboard_empty")}
+
+        with self._lock:
+            doc = self._doc
+            stack = self._stack
+            if doc is None or stack is None:
+                return {**self._snapshot(), "ok": False, "message": i18n.t("error.no_document")}
+            try:
+                index = int(page)
+            except (TypeError, ValueError):
+                index = 0
+            if not 0 <= index < doc.page_count:
+                index = 0
+
+            try:
+                pix = pymupdf.Pixmap(data)
+            except Exception:
+                return {
+                    **self._snapshot(),
+                    "ok": False,
+                    "message": i18n.t("error.image_invalid"),
+                }
+
+            page_w, page_h = doc.page_pt_size(index)
+            width = page_w * 0.4
+            height = width * pix.height / pix.width if pix.width else width
+            rect = clamp_rect_to_page(
+                Rect((page_w - width) / 2, (page_h - height) / 2, width, height), page_w, page_h
+            )
+            obj = ImageObject(
+                id=f"paste-{uuid.uuid4().hex[:8]}",
+                page=index,
+                rect=rect,
+                image_id=self._store.put(data),
+                z=self._state.next_z(index),
+            )
+            before = self._state.clone_objects()
+            self._state.objects.append(obj)
+            self._state.selection = [obj.id]
+            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.paste"))
+            return self._snapshot()
+
+    def edit_external(self, object_id: str) -> dict[str, Any]:
+        """把图片落到临时文件并用系统默认程序打开。"""
+        with self._lock:
+            obj = self._state.find(str(object_id))
+            if obj is None:
+                return {"ok": False, "message": i18n.t("error.invalid_argument", name="id")}
+            data = self._store.get(obj.image_id)
+
+        session = paths.session_temp_dir(f"edit-{uuid.uuid4().hex[:8]}")
+        try:
+            session.mkdir(parents=True, exist_ok=True)
+            target = session / "image.png"
+            target.write_bytes(data)
+        except OSError as exc:
+            return {"ok": False, "message": i18n.t("error.save_failed", reason=str(exc))}
+
+        if not opener.open_external(target):
+            return {"ok": False, "message": i18n.t("error.external_open")}
+        return {"ok": True, "path": str(target)}
+
+    def replace_image(self, object_id: str, path: str) -> dict[str, Any]:
+        """外部编辑器改完之后回填。图片尺寸可以变，显示矩形保持不变。"""
+        source = Path(str(path))
+        try:
+            data = source.read_bytes()
+        except OSError:
+            return {"ok": False, "message": i18n.t("error.external_edit_failed")}
+        if not data:
+            return {"ok": False, "message": i18n.t("error.external_edit_failed")}
+        try:
+            pymupdf.Pixmap(data)
+        except Exception:
+            return {"ok": False, "message": i18n.t("error.external_edit_failed")}
+
+        with self._lock:
+            obj = self._state.find(str(object_id))
+            stack = self._stack
+            if obj is None or stack is None:
+                return self._snapshot()
+            stack.push(ImageReplaced(obj.id, obj.image_id, self._store.put(data), "edit.image"))
+            snapshot = self._snapshot()
+
+        _cleanup_session(source)
+        return snapshot
+
+    # ---- 预处理 ----
+
+    def preprocess_pdf(self) -> dict[str, Any]:
+        if self._window is None:
+            return {"ok": False, "reason": "cancel"}
+        source = _first_path(
+            self._window.create_file_dialog(
+                webview.OPEN_DIALOG, file_types=("PDF 文件 (*.pdf)", "所有文件 (*.*)")
+            )
+        )
+        if not source:
+            return {"ok": False, "reason": "cancel"}
+        target = _first_path(
+            self._window.create_file_dialog(
+                webview.SAVE_DIALOG,
+                save_filename=f"{Path(source).stem}-bw.pdf",
+                file_types=("PDF 文件 (*.pdf)",),
+            )
+        )
+        if not target:
+            return {"ok": False, "reason": "cancel"}
+
+        task_id = self._new_task("preprocess")
+        self._executor.submit(self._preprocess_worker, Path(source), Path(target), task_id)
+        return {"ok": True, "task": task_id}
+
+    def _preprocess_worker(self, source: Path, target: Path, task_id: str) -> None:
+        threshold = int(self._settings.get("preprocess_threshold", 235))
+        try:
+            count = preprocess.process(
+                source,
+                target,
+                threshold,
+                lambda done, total: self._set_progress(task_id, done, total),
+            )
+        except AppError as exc:
+            logger.warning("预处理失败 {}: {}", source, exc)
+            self._finish_task(task_id, "error", str(exc))
+            return
+        except Exception:
+            logger.exception("预处理失败 {}", source)
+            self._finish_task(task_id, "error", i18n.t("error.unexpected"))
+            return
+        logger.info("预处理完成 {} -> {}（{} 张图）", source, target, count)
+        self._finish_task(task_id, "ready", result={"path": str(target), "count": count})
+
+    def _set_progress(self, task_id: str, done: int, total: int) -> None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is not None:
+                task["progress"] = {"done": done, "total": total}
+
+    # ---- 参考线 ----
+
+    def update_reference(self, values: dict[str, Any] | None = None) -> dict[str, Any]:
+        with self._lock:
+            merged = dict(self._reference)
+            if isinstance(values, dict):
+                merged.update(values)
+            try:
+                settings.save_reference(merged)
+                self._reference = settings.load_reference()
+            except AppError as exc:
+                logger.warning("保存参考线失败: {}", exc)
+                return {**self._snapshot(), "ok": False, "message": str(exc)}
+            return self._snapshot()
+
+    # ---- 设置 ----
+
+    def update_settings(self, patch: dict[str, Any] | None = None) -> dict[str, Any]:
+        with self._lock:
+            merged = dict(self._settings)
+            if isinstance(patch, dict):
+                merged.update(patch)
+            try:
+                settings.save_app(merged)
+                self._settings = settings.load_app()
+            except AppError as exc:
+                logger.warning("保存设置失败: {}", exc)
+                return {**self._snapshot(), "ok": False, "message": str(exc)}
+            i18n.set_language(self._settings["language"])
+            return self._snapshot()
+
+    def set_language(self, code: str) -> dict[str, Any]:
+        return self.update_settings({"language": code})
+
+    # ---- 关闭 ----
+
+    @property
+    def close_confirmed(self) -> bool:
+        return self._close_confirmed
+
+    def confirm_close(self) -> None:
+        self._close_confirmed = True
+
+    @property
+    def dirty(self) -> bool:
+        with self._lock:
+            return bool(self._stack and self._stack.dirty)
+
+    def request_close_prompt(self) -> None:
+        if self._window is None:
+            return
+        self._executor.submit(self._ask_unsaved)
+
+    def _ask_unsaved(self) -> None:
+        try:
+            self._window.evaluate_js(
+                "window.host && window.host.askUnsaved && window.host.askUnsaved()"
+            )
+        except Exception:
+            logger.exception("关闭询问失败")
+
+    def answer_close(self, action: str) -> dict[str, Any]:
+        if action in ("discard", "close"):
+            self._close_confirmed = True
+            if self._window is not None:
+                self._window.destroy()
+        elif action == "cancel":
+            self._close_confirmed = False
+        return {"ok": True}
+
+    # ---- 内部 ----
+
+    def _payload(self, obj: ImageObject) -> dict[str, Any]:
+        data = obj.to_dict()
+        if self._server is not None:
+            data["thumb"] = self._server.image_url(obj.image_id, PREVIEW_PX)
+            data["src"] = self._server.image_url(obj.image_id, CANVAS_PX)
+        else:
+            data["thumb"] = ""
+            data["src"] = ""
+        return data
+
+    def _snapshot(self) -> dict[str, Any]:
+        doc = self._doc
+        pages = [page.to_dict() for page in self._state.pages]
+        objects = [self._payload(obj) for obj in self._state.objects]
+        return {
+            "ok": True,
+            "message": "",
+            "doc": {
+                "path": str(doc.path) if doc else "",
+                "name": doc.path.name if doc else "",
+                "dirty": bool(self._stack and self._stack.dirty),
+                "page_count": doc.page_count if doc else 0,
+                "save_mode": self._settings.get("save_mode", "preserve"),
+                "generation": self._generation,
+                "can_save": doc is not None,
+            },
+            "pages": pages,
+            "objects": objects,
+            "selection": list(self._state.selection),
+            "history": {
+                "can_undo": bool(self._stack and self._stack.can_undo),
+                "can_redo": bool(self._stack and self._stack.can_redo),
+                "label": self._stack.label if self._stack else "",
+            },
+            "language": i18n.current(),
+            "languages": i18n.available(),
+            "theme": self._settings.get("theme", "light"),
+            "show_guides": bool(self._settings.get("show_guides", True)),
+            "reference": dict(self._reference),
+            "undo_limit": int(self._settings.get("undo_limit", 100)),
+        }
+
+    def _new_task(self, label: str) -> str:
+        self._task_seq += 1
+        task_id = f"{label}-{self._task_seq}"
+        self._tasks[task_id] = {"state": "running", "progress": {}, "message": ""}
+        while len(self._tasks) > _TASK_HISTORY:
+            self._tasks.pop(next(iter(self._tasks)))
+        return task_id
+
+    def _finish_task(
+        self,
+        task_id: str,
+        state: str,
+        message: str = "",
+        result: dict[str, Any] | None = None,
+    ) -> None:
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is not None:
+                task["state"] = state
+                task["message"] = message
+                if result is not None:
+                    task["result"] = result
+
+
+def _cleanup_session(path: Path) -> None:
+    """删掉本次外部编辑的临时目录。只碰 TEMP_DIR 下面自己建的那一层。"""
+    try:
+        parent = path.parent
+        if parent.parent != paths.TEMP_DIR:
+            return
+        for item in parent.iterdir():
+            item.unlink(missing_ok=True)
+        parent.rmdir()
+    except OSError:
+        pass
+
+
+def _first_path(result: Any) -> str | None:
+    """文件对话框有时返回 str，有时返回 list，统一成一个路径。"""
+    if not result:
+        return None
+    if isinstance(result, (list, tuple)):
+        return str(result[0]) if result else None
+    return str(result)
+
+
+def _floats(values: Any) -> list[float]:
+    """把前端传来的切分线夹到 (0,1) 并丢掉非法值。"""
+    if not isinstance(values, (list, tuple)):
+        return []
+    result: list[float] = []
+    for raw in values:
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value) and 0.0 < value < 1.0:
+            result.append(value)
+    return result

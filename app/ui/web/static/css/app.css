@@ -1,0 +1,479 @@
+/* 应用壳与画布。
+   三层分离：背景是 <img>（按目标 DPI 由后端渲染），对象是 <div>（只改 transform），
+   参考线与选框是 <canvas>（避免 1px 线在 DOM 里抖动）。 */
+
+.app {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-rows: 48px minmax(0, 1fr);
+  height: 100vh;
+}
+
+.app.inspector-hidden {
+  grid-template-columns: minmax(0, 1fr) 0;
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  min-width: 0;
+}
+
+.topbar-sep {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--border);
+}
+
+.spacer {
+  flex: 1;
+}
+
+.doc-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-left: 6px;
+}
+
+.doc-name span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.doc-name .dirty-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--amber);
+  animation: pop-in 0.18s var(--ease);
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.zoom-box {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoom-value {
+  min-width: 58px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.zoom-value:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-sunken);
+}
+
+/* ---------- 画布 ---------- */
+.viewport {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background: var(--canvas-bg);
+  user-select: none;
+}
+
+.pages {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--canvas-gap);
+  padding: 24px;
+  min-height: 100%;
+}
+
+.page {
+  position: relative;
+  flex: none;
+  background: #fff;
+  box-shadow: var(--page-shadow);
+  outline: 1px solid var(--page-edge);
+  /* 页面尺寸由 JS 按 zoom 设定；这里只兜底，避免首帧塌成 0 */
+  min-width: 1px;
+  min-height: 1px;
+}
+
+.page.loading {
+  background: var(--surface-muted);
+  animation: page-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes page-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+.page-bg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.objects {
+  position: absolute;
+  inset: 0;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.page-no {
+  position: absolute;
+  left: 50%;
+  bottom: -19px;
+  transform: translateX(-50%);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.page.locked .page-no {
+  color: var(--amber-text);
+}
+
+/* ---------- 图片对象 ---------- */
+.obj {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.obj img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.obj.selected {
+  outline: 1px solid var(--obj-outline);
+  outline-offset: 0;
+}
+
+.obj .handles {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+
+.obj.selected .handles {
+  display: block;
+}
+
+.handles i {
+  position: absolute;
+  width: var(--handle-size);
+  height: var(--handle-size);
+  background: var(--handle-fill);
+  border: 1px solid var(--handle-stroke);
+  border-radius: 2px;
+  box-shadow: 0 1px 2px var(--shadow);
+}
+
+.handles i[data-corner="tl"] {
+  left: calc(var(--handle-size) / -2);
+  top: calc(var(--handle-size) / -2);
+  cursor: nwse-resize;
+}
+
+.handles i[data-corner="tr"] {
+  right: calc(var(--handle-size) / -2);
+  top: calc(var(--handle-size) / -2);
+  cursor: nesw-resize;
+}
+
+.handles i[data-corner="bl"] {
+  left: calc(var(--handle-size) / -2);
+  bottom: calc(var(--handle-size) / -2);
+  cursor: nesw-resize;
+}
+
+.handles i[data-corner="br"] {
+  right: calc(var(--handle-size) / -2);
+  bottom: calc(var(--handle-size) / -2);
+  cursor: nwse-resize;
+}
+
+/* ---------- 空状态 ---------- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: auto;
+  padding: 40px;
+  text-align: center;
+}
+
+.empty h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.empty p {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+
+/* ---------- 属性面板 ---------- */
+.inspector {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 18px 16px;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.app.inspector-hidden .inspector {
+  display: none;
+}
+
+.inspector h2 {
+  margin: 0 0 14px;
+  color: var(--text-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.inspector .empty-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+.kv dt {
+  color: var(--muted);
+}
+
+.kv dd {
+  margin: 0;
+  color: var(--text);
+  font-family: Consolas, "Courier New", monospace;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.inspector .thumb {
+  width: 100%;
+  max-height: 140px;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  object-fit: contain;
+  background: var(--surface-sunken);
+}
+
+/* ---------- 分割模式 ---------- */
+.split-bar {
+  position: fixed;
+  left: 50%;
+  top: 60px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 48px);
+  padding: 8px 10px 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 12px 28px var(--shadow);
+  transform: translateX(-50%);
+  animation: toast-in 0.18s var(--ease);
+}
+
+.split-hint {
+  color: var(--text-soft);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.viewport.splitting {
+  cursor: crosshair;
+}
+
+.obj.splitting {
+  outline: 1px solid var(--split-line);
+}
+
+/* ---------- 属性面板动作 ---------- */
+.inspector-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+/* ---------- 弹窗里的表单 ---------- */
+.settings,
+.save-mode,
+.export-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.save-mode,
+.export-form {
+  gap: 10px;
+}
+
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field-label {
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.margin-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.margin-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.margin-cell span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.margin-cell input {
+  height: 34px;
+  font-size: 13px;
+}
+
+/* ---------- 保存警告 ---------- */
+.warning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+
+.warning-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.warning-row .chip {
+  margin-top: 1px;
+}
+
+/* ---------- 进度 ---------- */
+.busy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 12.5px;
+}
+
+.busy-bar {
+  width: 120px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  overflow: hidden;
+}
+
+.busy-bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--blue);
+  transition: width 0.2s var(--ease);
+}

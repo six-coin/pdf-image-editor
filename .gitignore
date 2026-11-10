@@ -1,7 +1,14 @@
-# 默认忽略的文件
-/shelf/
-/workspace.xml
-# 基于编辑器的 HTTP 客户端请求
-/httpRequests/
-.idea
-/pdfs
+__pycache__/
+*.py[oc]
+.venv/
+.idea/
+.vscode/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+logs/
+config/
+temp/
+pdfs/
+*.bak.pdf
+old/
