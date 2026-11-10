@@ -26,6 +26,11 @@ body {
   display: none !important;
 }
 
+/* 元素上的 hidden 属性要能压过 .empty / .pages 这类 display:flex 规则 */
+[hidden] {
+  display: none !important;
+}
+
 /* ---------- 按钮 ---------- */
 .btn {
   display: inline-flex;
@@ -122,6 +127,65 @@ body {
   color: var(--muted);
   cursor: default;
   transform: none;
+}
+
+/* ---------- 图标按钮 ---------- */
+.icon-btn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.14s ease,
+    color 0.14s ease;
+}
+
+.icon-btn:hover {
+  background: var(--surface-active);
+  color: var(--text);
+}
+
+.icon-btn:disabled {
+  background: transparent;
+  color: var(--border-strong);
+  cursor: default;
+}
+
+.icon-btn svg {
+  display: block;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-btn[aria-pressed="true"] {
+  color: var(--blue-text);
+}
+
+/* 浅色下显示月亮（切到深色），深色下显示太阳（切回浅色）。
+   选择器要带上 .icon-btn，否则被上面的 `.icon-btn svg { display:block }` 压过。 */
+.icon-btn .icon-sun {
+  display: none;
+}
+
+[data-theme="dark"] .icon-btn .icon-sun {
+  display: block;
+}
+
+[data-theme="dark"] .icon-btn .icon-moon {
+  display: none;
 }
 
 .btn.sm {
@@ -320,7 +384,6 @@ kbd {
 
 .modal-card.narrow {
   width: min(440px, 100%);
-  padding-bottom: 18px;
 }
 
 .modal-head {
@@ -356,7 +419,8 @@ kbd {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 14px 22px 0;
+  /* 下方必须留白，否则按钮贴着卡片底边 */
+  padding: 14px 22px 18px;
 }
 
 /* ---------- 轻提示 ---------- */

@@ -1,6 +1,7 @@
 /* 设置面板。表单值先改在本地草稿里，点「保存」才写盘并整体重绘。 */
 
 import { call, setStrings, T, toast } from './bridge.js';
+import { COMMANDS, DEFAULT_BINDINGS, accelOf, bindings, findConflicts } from './keymap.js';
 import { openModal } from './modal.js';
 import { apply, applyStrings } from './render.js';
 import { state } from './state.js';
@@ -12,6 +13,13 @@ function field(labelKey, control) {
   label.textContent = T(labelKey);
   wrap.append(label, control);
   return wrap;
+}
+
+function section(labelKey) {
+  const title = document.createElement('h3');
+  title.className = 'settings-section-title';
+  title.textContent = T(labelKey);
+  return title;
 }
 
 function segmented(options, current, onChange) {
@@ -72,6 +80,70 @@ function languageLabel(code) {
   return text === `lang.${code}` ? code : text;
 }
 
+/* ---------- 快捷键 ---------- */
+
+function keyRow(scope, command, draft) {
+  const row = document.createElement('div');
+  row.className = 'key-row';
+
+  const label = document.createElement('span');
+  label.className = 'key-label';
+  label.textContent = T(command.labelKey);
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'key-binding';
+  button.textContent = draft[scope][command.id] || '—';
+
+  button.addEventListener('click', () => {
+    if (button.classList.contains('capturing')) return;
+    button.classList.add('capturing');
+    button.textContent = T('settings.press_key');
+
+    const stop = () => {
+      document.removeEventListener('keydown', onKey, true);
+      button.classList.remove('capturing');
+      button.textContent = draft[scope][command.id] || '—';
+    };
+
+    const onKey = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === 'Escape') {
+        stop();
+        return;
+      }
+      const accel = accelOf(event);
+      if (!accel) return;
+      draft[scope][command.id] = accel;
+      button.textContent = accel;
+      document.removeEventListener('keydown', onKey, true);
+      button.classList.remove('capturing');
+    };
+
+    document.addEventListener('keydown', onKey, true);
+  });
+
+  row.append(label, button);
+  return row;
+}
+
+function keySection(scope, draft) {
+  const wrap = document.createElement('div');
+  wrap.className = 'key-section';
+  wrap.appendChild(section(scope === 'global' ? 'settings.scope_global' : 'settings.scope_split'));
+
+  const grid = document.createElement('div');
+  grid.className = 'key-grid';
+  for (const command of COMMANDS[scope]) {
+    grid.appendChild(keyRow(scope, command, draft));
+  }
+  wrap.appendChild(grid);
+  return wrap;
+}
+
+/* ---------- 主入口 ---------- */
+
 export async function openSettings() {
   if (!state.data) return;
 
@@ -83,6 +155,7 @@ export async function openSettings() {
     show_guides: state.data.show_guides,
   };
   const margins = { ...state.data.reference };
+  const keys = bindings();
 
   const body = document.createElement('div');
   body.className = 'settings';
@@ -146,18 +219,18 @@ export async function openSettings() {
     )
   );
 
-  const guides = document.createElement('div');
-  guides.className = 'field-row';
+  const guidesRow = document.createElement('div');
+  guidesRow.className = 'field-row';
   const guidesLabel = document.createElement('span');
   guidesLabel.className = 'field-label';
   guidesLabel.textContent = T('settings.guides');
-  guides.append(
+  guidesRow.append(
     guidesLabel,
     toggle(draft.show_guides, (value) => {
       draft.show_guides = value;
     })
   );
-  body.appendChild(guides);
+  body.appendChild(guidesRow);
 
   const marginGrid = document.createElement('div');
   marginGrid.className = 'margin-grid';
@@ -174,6 +247,26 @@ export async function openSettings() {
   }
   body.appendChild(field('settings.margins', marginGrid));
 
+  body.appendChild(section('settings.shortcuts'));
+
+  const resetButton = document.createElement('button');
+  resetButton.type = 'button';
+  resetButton.className = 'btn sm';
+  resetButton.textContent = T('settings.reset_shortcuts');
+  resetButton.addEventListener('click', () => {
+    keys.global = { ...DEFAULT_BINDINGS.global };
+    keys.split = { ...DEFAULT_BINDINGS.split };
+    body.querySelectorAll('.key-binding').forEach((node) => {
+      node.textContent = '—';
+    });
+    // 重建两张表，最省事也最不容易漏。
+    body.querySelectorAll('.key-section').forEach((node) => node.remove());
+    body.append(keySection('global', keys), keySection('split', keys));
+  });
+  body.appendChild(resetButton);
+
+  body.append(keySection('global', keys), keySection('split', keys));
+
   const choice = await openModal({
     title: T('settings.title'),
     body,
@@ -184,7 +277,15 @@ export async function openSettings() {
   });
   if (choice !== 'ok') return;
 
-  const snapshot = await call('update_settings', draft);
+  for (const scope of ['global', 'split']) {
+    const conflicts = findConflicts(keys[scope]);
+    if (conflicts.length) {
+      toast(T('settings.conflict', { accel: conflicts[0][0] }), false);
+      return;
+    }
+  }
+
+  const snapshot = await call('update_settings', { ...draft, keybindings: keys });
   if (snapshot) apply(snapshot);
   await call('update_reference', margins);
 
@@ -194,5 +295,4 @@ export async function openSettings() {
 
   const fresh = await call('get_state');
   if (fresh) apply(fresh);
-  toast(T('status.ready'));
 }

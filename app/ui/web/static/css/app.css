@@ -446,6 +446,79 @@
   font-size: 13px;
 }
 
+/* ---------- 快捷键表 ---------- */
+.settings-section-title {
+  margin: 6px 0 0;
+  color: var(--text-soft);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+}
+
+.key-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.key-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 18px;
+}
+
+.key-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.key-label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.key-binding {
+  flex: none;
+  min-width: 96px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text-soft);
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    background 0.14s ease,
+    color 0.14s ease;
+}
+
+.key-binding:hover {
+  border-color: var(--blue);
+  color: var(--blue-text);
+}
+
+.key-binding.capturing {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue-text);
+  animation: key-pulse 1s ease-in-out infinite;
+}
+
+@keyframes key-pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+
 /* ---------- 保存警告 ---------- */
 .warning-list {
   display: flex;

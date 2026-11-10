@@ -2,7 +2,7 @@
    拖动只改 transform 与 left/top，不重排布局；松手时一次性提交给后端。 */
 
 import { call } from './bridge.js';
-import { applySelection, objectEl, pageEl } from './render.js';
+import { apply, applySelection, objectEl, pageEl } from './render.js';
 import { pxPerPt, state } from './state.js';
 import { isSplitActive } from './split.js';
 
@@ -148,8 +148,13 @@ function onDown(event) {
     startMarquee(event, Number(pageNode.dataset.page));
   } else {
     applySelection([]);
-    call('select', []);
+    commitSelection([]);
   }
+}
+
+/** 选中变化要立刻应用快照：属性面板靠它更新。 */
+function commitSelection(ids) {
+  call('select', ids).then((snapshot) => snapshot && apply(snapshot));
 }
 
 function capture(event) {
@@ -361,7 +366,7 @@ function finishMarquee() {
   clearOverlay(gesture.pageIndex);
   if (!band || band.w < 1 || band.h < 1) {
     applySelection([]);
-    call('select', []);
+    commitSelection([]);
     return;
   }
   const hits = state.data.objects
@@ -375,7 +380,7 @@ function finishMarquee() {
     )
     .map((obj) => obj.id);
   applySelection(hits);
-  call('select', hits);
+  commitSelection(hits);
 }
 
 /* ---------- 平移 ---------- */
@@ -443,7 +448,7 @@ function onUp(event) {
   if (current.kind === 'move') {
     if (!current.moved) {
       applySelection(current.ids);
-      call('select', current.ids);
+      commitSelection(current.ids);
       return;
     }
     commitMove(current);
@@ -451,7 +456,7 @@ function onUp(event) {
   }
   if (current.kind === 'resize') {
     if (current.moved && current.item.next) commitResize(current.item);
-    else call('select', [current.item.id]);
+    else commitSelection([current.item.id]);
   }
 }
 
@@ -472,7 +477,7 @@ function commitMove(current) {
     });
   }
   if (!payload.length) return;
-  call('commit_transform', payload).then((snapshot) => snapshot && dispatch(snapshot));
+  call('commit_transform', payload).then((snapshot) => snapshot && apply(snapshot));
 }
 
 function commitResize(item) {
@@ -485,12 +490,7 @@ function commitResize(item) {
       w: item.next.w,
       h: item.next.h,
     },
-  ]).then((snapshot) => snapshot && dispatch(snapshot));
-}
-
-/** 延迟导入，避免 render 与 interact 之间的模块环。 */
-function dispatch(snapshot) {
-  import('./render.js').then((mod) => mod.apply(snapshot));
+  ]).then((snapshot) => snapshot && apply(snapshot));
 }
 
 /* ---------- 键盘微调 ---------- */
@@ -505,5 +505,5 @@ export function nudge(dx, dy) {
     payload.push({ id, page: obj.page, x: obj.x + dx, y: obj.y + dy, w: obj.w, h: obj.h });
   }
   if (!payload.length) return;
-  call('commit_transform', payload).then((snapshot) => snapshot && dispatch(snapshot));
+  call('commit_transform', payload).then((snapshot) => snapshot && apply(snapshot));
 }

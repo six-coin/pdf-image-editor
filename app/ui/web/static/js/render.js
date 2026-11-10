@@ -2,6 +2,7 @@
    前端不维护业务数据，快照变了就整体重绘；只有纯视图状态留在这边。 */
 
 import { T } from './bridge.js';
+import { setBindings } from './keymap.js';
 import { objectsOf, pageInfo, pxPerPt, state } from './state.js';
 
 const $ = (id) => document.getElementById(id);
@@ -47,11 +48,6 @@ export function applyTheme(theme) {
   } catch (error) {
     /* 隐私模式下写不进去，不影响使用 */
   }
-  document.querySelectorAll('#themeSeg .seg-item').forEach((node) => {
-    const active = node.dataset.themeValue === next;
-    node.classList.toggle('active', active);
-    node.setAttribute('aria-pressed', active ? 'true' : 'false');
-  });
 }
 
 /* ---------- 主入口 ---------- */
@@ -71,6 +67,7 @@ export function apply(data) {
     !previous || previous.selection.join() !== data.selection.join();
 
   state.data = data;
+  setBindings(data.keybindings);
   applyTheme(data.theme);
   applyChrome();
 
@@ -114,7 +111,14 @@ function applyChrome() {
   $('docTitle').title = doc.path || '';
   $('dirtyDot').classList.toggle('hidden', !doc.dirty);
 
-  $('app').classList.toggle('inspector-hidden', !hasDoc);
+  const showInspector = hasDoc && Boolean(state.data.show_inspector);
+  $('app').classList.toggle('inspector-hidden', !showInspector);
+  const toggle = $('btnInspector');
+  if (toggle) {
+    toggle.disabled = !hasDoc;
+    toggle.setAttribute('aria-pressed', showInspector ? 'true' : 'false');
+  }
+
   renderZoom();
   renderPageIndicator(0);
 }

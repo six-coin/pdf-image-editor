@@ -280,10 +280,13 @@ def test_paste_image_without_clipboard(editor, opened, monkeypatch):
     assert len(snapshot["objects"]) == 1
 
 
-def test_external_edit_roundtrip(editor, opened, monkeypatch):
+def test_external_edit_roundtrip(editor, opened, monkeypatch, tmp_path):
+    from app import paths
+
     instance, _server = editor
     opened()
     monkeypatch.setattr("app.ui.web.api.opener.open_external", lambda path: True)
+    monkeypatch.setattr(paths, "TEMP_DIR", tmp_path / "temp")
 
     obj = _objects(instance)[0]
     opened_result = instance.edit_external(obj["id"])
@@ -303,9 +306,12 @@ def test_external_edit_roundtrip(editor, opened, monkeypatch):
 
 
 def test_external_edit_rejects_garbage(editor, opened, monkeypatch, tmp_path):
+    from app import paths
+
     instance, _server = editor
     opened()
     monkeypatch.setattr("app.ui.web.api.opener.open_external", lambda path: True)
+    monkeypatch.setattr(paths, "TEMP_DIR", tmp_path / "temp")
     obj = _objects(instance)[0]
     opened_result = instance.edit_external(obj["id"])
 
@@ -370,13 +376,13 @@ def test_preprocess_worker_finishes_task(editor, pdf_factory, tmp_path):
     assert target.is_file()
 
 
-def test_external_edit_cleans_temp_on_failure(editor, opened, monkeypatch):
+def test_external_edit_cleans_temp_on_failure(editor, opened, monkeypatch, tmp_path):
     from app import paths
 
     instance, _server = editor
     opened()
     monkeypatch.setattr("app.ui.web.api.opener.open_external", lambda path: True)
-    monkeypatch.setattr(paths, "TEMP_DIR", paths.TEMP_DIR)
+    monkeypatch.setattr(paths, "TEMP_DIR", tmp_path / "temp")
 
     obj = _objects(instance)[0]
     opened_result = instance.edit_external(obj["id"])

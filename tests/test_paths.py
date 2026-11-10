@@ -32,3 +32,10 @@ def test_session_temp_dir_is_a_child():
     result = paths.session_temp_dir("s1")
     assert result.parent == paths.TEMP_DIR
     assert isinstance(result, Path)
+
+
+def test_ensure_pdfs_dir_creates_it(monkeypatch, tmp_path):
+    monkeypatch.setattr(paths, "PDFS_DIR", tmp_path / "pdfs")
+    created = paths.ensure_pdfs_dir()
+    assert created.is_dir()
+    assert paths.ensure_pdfs_dir() == created

@@ -1,35 +1,61 @@
-/* 键位表。所有快捷键只在这里注册一次，不在业务模块里各绑一遍。 */
+/* 键位分发。
+   分割模式有独立作用域：进入分割后只认 split 表，全局快捷键一律不响应，
+   所以两边可以绑同一个键而不打架。 */
 
 import * as actions from './actions.js';
+import { fitWidth, resetZoom, zoomBy } from './canvas.js';
+import { openExport } from './export.js';
 import { nudge, setSpaceHeld } from './interact.js';
-import { cancelSplit, isSplitActive, splitAll, startSplit, undoCut } from './split.js';
+import { accelOf, lookup } from './keymap.js';
 import { isOpen as modalOpen } from './modal.js';
+import { openSettings } from './settings.js';
+import {
+  cancelSplit,
+  isSplitActive,
+  keepCell,
+  punchCell,
+  splitAll,
+  startSplit,
+  undoCut,
+} from './split.js';
 
-const ARROW_STEP = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+const GLOBAL_RUNNERS = {
+  open: actions.openPdf,
+  save: actions.saveDoc,
+  save_as: actions.saveAs,
+  export: openExport,
+  undo: actions.undo,
+  redo: actions.redo,
+  delete: actions.deleteSelection,
+  select_all: actions.selectAll,
+  paste: actions.pasteImage,
+  zoom_in: () => zoomBy(1.2),
+  zoom_out: () => zoomBy(1 / 1.2),
+  zoom_fit: fitWidth,
+  zoom_reset: resetZoom,
+  split: startSplit,
+  front: () => actions.reorder('front'),
+  back: () => actions.reorder('back'),
+  external: actions.externalEdit,
+  settings: openSettings,
+  toggle_inspector: actions.toggleInspector,
+  quit: actions.quit,
+};
+
+const SPLIT_RUNNERS = {
+  split_keep: keepCell,
+  split_punch: punchCell,
+  split_all: splitAll,
+  split_undo: undoCut,
+  split_cancel: cancelSplit,
+};
+
+const ARROWS = { Up: [0, -1], Down: [0, 1], Left: [-1, 0], Right: [1, 0] };
 
 function inEditable(target) {
   if (!target) return false;
   const tag = target.tagName;
   return tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable;
-}
-
-function handleSplit(event) {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    cancelSplit();
-    return true;
-  }
-  if (event.key === 'Enter') {
-    event.preventDefault();
-    splitAll();
-    return true;
-  }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
-    event.preventDefault();
-    undoCut();
-    return true;
-  }
-  return false;
 }
 
 function onKeyDown(event) {
@@ -40,82 +66,33 @@ function onKeyDown(event) {
     event.preventDefault();
     return;
   }
-  if (isSplitActive() && handleSplit(event)) return;
 
-  const mod = event.ctrlKey || event.metaKey;
-  const key = event.key;
+  const accel = accelOf(event);
+  if (!accel) return;
 
-  if (mod) {
-    const lower = key.toLowerCase();
-    if (lower === 'o') {
+  if (isSplitActive()) {
+    const command = lookup('split', accel);
+    if (command && SPLIT_RUNNERS[command]) {
       event.preventDefault();
-      actions.openPdf();
-      return;
+      SPLIT_RUNNERS[command]();
     }
-    if (lower === 's') {
-      event.preventDefault();
-      if (event.shiftKey) actions.saveAs();
-      else actions.saveDoc();
-      return;
-    }
-    if (lower === 'v') {
-      event.preventDefault();
-      actions.pasteImage();
-      return;
-    }
-    if (lower === 'z') {
-      event.preventDefault();
-      if (event.shiftKey) actions.redo();
-      else actions.undo();
-      return;
-    }
-    if (lower === 'y') {
-      event.preventDefault();
-      actions.redo();
-      return;
-    }
-    if (lower === 'a') {
-      event.preventDefault();
-      actions.selectAll();
-      return;
-    }
-    if (key === '0') {
-      event.preventDefault();
-      import('./canvas.js').then((m) => m.fitWidth());
-      return;
-    }
-    if (key === '=' || key === '+') {
-      event.preventDefault();
-      import('./canvas.js').then((m) => m.zoomBy(1.2));
-      return;
-    }
-    if (key === '-') {
-      event.preventDefault();
-      import('./canvas.js').then((m) => m.zoomBy(1 / 1.2));
-      return;
-    }
+    // 分割模式下不响应全局快捷键：作用域隔离。
     return;
   }
 
-  if (key === 'Delete' || key === 'Backspace') {
+  const command = lookup('global', accel);
+  if (command && GLOBAL_RUNNERS[command]) {
     event.preventDefault();
-    actions.deleteSelection();
+    GLOBAL_RUNNERS[command]();
     return;
   }
-  if (key === 'Escape') {
-    actions.clearSelection();
-    return;
-  }
-  if (key === 's' || key === 'S') {
+
+  // 方向键微调不参与自定义键位，避免和上面的表互相干扰。
+  const arrow = ARROWS[accel];
+  if (arrow) {
     event.preventDefault();
-    startSplit();
-    return;
-  }
-  if (ARROW_STEP[key]) {
-    event.preventDefault();
-    const [dx, dy] = ARROW_STEP[key];
     const step = event.shiftKey ? 10 : 1;
-    nudge(dx * step, dy * step);
+    nudge(arrow[0] * step, arrow[1] * step);
   }
 }
 

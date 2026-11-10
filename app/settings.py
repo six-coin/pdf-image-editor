@@ -25,6 +25,9 @@ DEFAULT_APP: dict[str, Any] = {
     "render_dpi_cap": 300,
     "preprocess_threshold": 235,
     "show_guides": True,
+    "show_inspector": True,
+    # 空表示用前端的默认键位表；用户改过才会写进来。
+    "keybindings": {},
 }
 
 DEFAULT_REFERENCE: dict[str, Any] = {
@@ -78,6 +81,24 @@ def _boolean(value: Any, default: bool) -> bool:
     return default
 
 
+def _bindings(value: Any) -> dict[str, dict[str, str]]:
+    """键位表：{scope: {command: accel}}。只接受非空字符串，其余原样丢弃。"""
+    if not isinstance(value, dict):
+        return {}
+    cleaned: dict[str, dict[str, str]] = {}
+    for scope, table in value.items():
+        if not isinstance(table, dict):
+            continue
+        entries = {
+            str(command): str(accel).strip()
+            for command, accel in table.items()
+            if isinstance(accel, str) and accel.strip()
+        }
+        if entries:
+            cleaned[str(scope)] = entries
+    return cleaned
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -122,6 +143,8 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
         raw.get("preprocess_threshold"), DEFAULT_APP["preprocess_threshold"], 0, 255
     )
     merged["show_guides"] = _boolean(raw.get("show_guides"), DEFAULT_APP["show_guides"])
+    merged["show_inspector"] = _boolean(raw.get("show_inspector"), DEFAULT_APP["show_inspector"])
+    merged["keybindings"] = _bindings(raw.get("keybindings"))
     return merged
 
 

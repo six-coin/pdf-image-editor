@@ -11,4 +11,4 @@ config/
 temp/
 pdfs/
 *.bak.pdf
-old/
+.workbuddy-ai/

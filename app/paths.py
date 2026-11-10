@@ -14,6 +14,8 @@ PROGRAM_DIR = PACKAGE_DIR.parent
 CONFIG_DIR = PROGRAM_DIR / "config"
 LOG_DIR = PROGRAM_DIR / "logs"
 TEMP_DIR = PROGRAM_DIR / "temp"
+# 打开 PDF 时的默认目录。软件启动时若不存在会自动创建。
+PDFS_DIR = PROGRAM_DIR / "pdfs"
 
 LOCALES_DIR = PACKAGE_DIR / "locales"
 WEB_DIR = PACKAGE_DIR / "ui" / "web" / "static"
@@ -39,3 +41,9 @@ def resolve_user_path(raw: str | None) -> Path:
 def session_temp_dir(session_id: str) -> Path:
     """本次运行的临时目录。只允许清理这个子目录，不碰 TEMP_DIR 本身。"""
     return TEMP_DIR / session_id
+
+
+def ensure_pdfs_dir() -> Path:
+    """确保 PDF 默认目录存在，返回它。"""
+    PDFS_DIR.mkdir(parents=True, exist_ok=True)
+    return PDFS_DIR

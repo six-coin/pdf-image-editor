@@ -89,3 +89,33 @@ def test_legacy_reference_is_migrated(temp_config):
     assert config["left_mm"] == pytest.approx(10.0)
     assert config["right_mm"] == pytest.approx(50.0)
     assert (temp_config / "reference.json").is_file()
+
+
+def test_keybindings_are_normalized(temp_config):
+    (temp_config / "app.json").write_text(
+        json.dumps(
+            {
+                "keybindings": {
+                    "global": {"save": "Ctrl+S", "bad": 123, "empty": "  "},
+                    "split": {"split_keep": "1"},
+                    "nonsense": "not a dict",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = settings.load_app()
+    assert config["keybindings"]["global"] == {"save": "Ctrl+S"}
+    assert config["keybindings"]["split"] == {"split_keep": "1"}
+    assert "nonsense" not in config["keybindings"]
+
+
+def test_keybindings_reject_non_dict(temp_config):
+    (temp_config / "app.json").write_text(json.dumps({"keybindings": ["a", "b"]}), encoding="utf-8")
+    assert settings.load_app()["keybindings"] == {}
+
+
+def test_show_inspector_default_and_clamp(temp_config):
+    assert settings.load_app()["show_inspector"] is True
+    (temp_config / "app.json").write_text(json.dumps({"show_inspector": "false"}), encoding="utf-8")
+    assert settings.load_app()["show_inspector"] is False

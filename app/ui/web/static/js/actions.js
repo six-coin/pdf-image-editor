@@ -265,3 +265,23 @@ export async function preprocessPdf() {
   const result = done.result || {};
   toast(T('status.preprocess_done', { count: result.count ?? 0, path: result.path ?? '' }));
 }
+
+/* ---------- 界面 ---------- */
+
+export async function toggleInspector() {
+  if (!state.data) return;
+  const next = !state.data.show_inspector;
+  // 先改界面再落盘：属性栏的收放不该等一次桥接往返。
+  state.data.show_inspector = next;
+  const app = document.getElementById('app');
+  if (app) app.classList.toggle('inspector-hidden', !next);
+  const button = document.getElementById('btnInspector');
+  if (button) button.setAttribute('aria-pressed', next ? 'true' : 'false');
+
+  const snapshot = await call('update_settings', { show_inspector: next });
+  if (snapshot) apply(snapshot);
+}
+
+export async function quit() {
+  await call('request_quit');
+}

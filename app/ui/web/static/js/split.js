@@ -1,6 +1,6 @@
 /* 分割模式。
-   切线是纯视图状态（切了哪几刀），后端只收 cuts 与显式的 (row, col)。
-   格子永远用行列号定位，不存在"第几格就是中心"这种假设。 */
+   切线是纯视图状态，按落笔顺序记在一个数组里——撤销就是弹最后一条，
+   而不是"先撤竖线再撤横线"。后端只收 cuts 与显式的 (row, col)。 */
 
 import { call, T, toast } from './bridge.js';
 import { apply, pageEl } from './render.js';
@@ -13,8 +13,7 @@ const split = {
   objectId: null,
   page: 0,
   rect: null,
-  cutsH: [],
-  cutsV: [],
+  marks: [],
   hover: null,
   pointer: null,
   vertical: false,
@@ -26,6 +25,10 @@ export function isSplitActive() {
 
 function viewport() {
   return document.getElementById('viewport');
+}
+
+function cutsOf(axis) {
+  return split.marks.filter((mark) => mark.axis === axis).map((mark) => mark.value);
 }
 
 /* ---------- 进出 ---------- */
@@ -43,8 +46,7 @@ export function startSplit() {
   split.objectId = obj.id;
   split.page = obj.page;
   split.rect = { x: obj.x, y: obj.y, w: obj.w, h: obj.h };
-  split.cutsH = [];
-  split.cutsV = [];
+  split.marks = [];
   split.hover = null;
   split.pointer = null;
   split.vertical = false;
@@ -69,6 +71,7 @@ export function cancelSplit() {
   split.rect = null;
   split.hover = null;
   split.pointer = null;
+  split.marks = [];
 }
 
 /* ---------- 坐标 ---------- */
@@ -83,19 +86,17 @@ function pointerPt(event) {
 
 function inside(point) {
   const r = split.rect;
-  return (
-    point.x >= r.x && point.x <= r.x + r.w && point.y >= r.y && point.y <= r.y + r.h
-  );
+  return point.x >= r.x && point.x <= r.x + r.w && point.y >= r.y && point.y <= r.y + r.h;
 }
 
-function bounds(cuts) {
-  return [0, ...cuts.slice().sort((a, b) => a - b), 1];
+function bounds(values) {
+  return [0, ...values.slice().sort((a, b) => a - b), 1];
 }
 
 function cellAt(point) {
   const r = split.rect;
-  const xs = bounds(split.cutsV);
-  const ys = bounds(split.cutsH);
+  const xs = bounds(cutsOf('v'));
+  const ys = bounds(cutsOf('h'));
   const fx = (point.x - r.x) / r.w;
   const fy = (point.y - r.y) / r.h;
   let col = -1;
@@ -112,8 +113,8 @@ function cellAt(point) {
 
 function cellRect(row, col) {
   const r = split.rect;
-  const xs = bounds(split.cutsV);
-  const ys = bounds(split.cutsH);
+  const xs = bounds(cutsOf('v'));
+  const ys = bounds(cutsOf('h'));
   return {
     x: r.x + xs[col] * r.w,
     y: r.y + ys[row] * r.h,
@@ -171,14 +172,14 @@ function redraw() {
 
   ctx.strokeStyle = styles.getPropertyValue('--split-line').trim();
   ctx.lineWidth = 1 / k;
-  for (const cut of split.cutsH) {
+  for (const cut of cutsOf('h')) {
     const y = r.y + cut * r.h;
     ctx.beginPath();
     ctx.moveTo(r.x, y);
     ctx.lineTo(r.x + r.w, y);
     ctx.stroke();
   }
-  for (const cut of split.cutsV) {
+  for (const cut of cutsOf('v')) {
     const x = r.x + cut * r.w;
     ctx.beginPath();
     ctx.moveTo(x, r.y);
@@ -211,14 +212,14 @@ function redraw() {
 /* ---------- 工具条 ---------- */
 
 function updateBar() {
-  const cuts = split.cutsH.length + split.cutsV.length;
+  const total = split.marks.length;
   $('splitHint').textContent = `${T('split.hint')} · ${T('split.cuts', {
-    h: split.cutsH.length,
-    v: split.cutsV.length,
+    h: cutsOf('h').length,
+    v: cutsOf('v').length,
   })}`;
   $('splitKeep').disabled = !split.hover;
   $('splitPunch').disabled = !split.hover;
-  $('splitAll').disabled = cuts === 0;
+  $('splitAll').disabled = total === 0;
 }
 
 /* ---------- 事件 ---------- */
@@ -241,11 +242,9 @@ function onPointerDown(event) {
   const point = pointerPt(event);
   if (!point || !inside(point)) return;
   const r = split.rect;
-  if (event.shiftKey) {
-    split.cutsV.push(Math.min(0.999, Math.max(0.001, (point.x - r.x) / r.w)));
-  } else {
-    split.cutsH.push(Math.min(0.999, Math.max(0.001, (point.y - r.y) / r.h)));
-  }
+  const axis = event.shiftKey ? 'v' : 'h';
+  const raw = axis === 'v' ? (point.x - r.x) / r.w : (point.y - r.y) / r.h;
+  split.marks.push({ axis, value: Math.min(0.999, Math.max(0.001, raw)) });
   split.hover = cellAt(point);
   redraw();
   updateBar();
@@ -274,32 +273,32 @@ async function applyEdit(method, args) {
   }
 }
 
-function cuts() {
-  return [split.cutsV.slice(), split.cutsH.slice()];
+function cutArgs() {
+  return [cutsOf('v'), cutsOf('h')];
 }
 
 export function splitAll() {
-  if (!split.cutsH.length && !split.cutsV.length) return;
-  const [cutsX, cutsY] = cuts();
+  if (!split.active || !split.marks.length) return;
+  const [cutsX, cutsY] = cutArgs();
   applyEdit('split_object', [split.objectId, cutsX, cutsY]);
 }
 
 export function keepCell() {
-  if (!split.hover) return;
-  const [cutsX, cutsY] = cuts();
+  if (!split.active || !split.hover) return;
+  const [cutsX, cutsY] = cutArgs();
   applyEdit('keep_cell', [split.objectId, cutsX, cutsY, split.hover.row, split.hover.col]);
 }
 
 export function punchCell() {
-  if (!split.hover) return;
-  const [cutsX, cutsY] = cuts();
+  if (!split.active || !split.hover) return;
+  const [cutsX, cutsY] = cutArgs();
   applyEdit('punch_cell', [split.objectId, cutsX, cutsY, split.hover.row, split.hover.col]);
 }
 
+/** 撤销最后一刀——按落笔顺序，不区分横竖。 */
 export function undoCut() {
-  if (!split.active) return;
-  if (split.cutsV.length) split.cutsV.pop();
-  else if (split.cutsH.length) split.cutsH.pop();
+  if (!split.active || !split.marks.length) return;
+  split.marks.pop();
   split.hover = split.pointer ? cellAt(split.pointer) : null;
   redraw();
   updateBar();

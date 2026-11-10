@@ -103,8 +103,13 @@ class EditorApi:
     def browse_pdf(self) -> str | None:
         if self._window is None:
             return None
+        try:
+            directory = str(paths.ensure_pdfs_dir())
+        except OSError:
+            directory = ""
         result = self._window.create_file_dialog(
             webview.OPEN_DIALOG,
+            directory=directory,
             file_types=("PDF 文件 (*.pdf)", "所有文件 (*.*)"),
         )
         return _first_path(result)
@@ -465,8 +470,18 @@ class EditorApi:
     def browse_save(self, suggested: str = "") -> str | None:
         if self._window is None:
             return None
+        directory = ""
+        with self._lock:
+            if self._doc is not None:
+                directory = str(self._doc.path.parent)
+            else:
+                try:
+                    directory = str(paths.ensure_pdfs_dir())
+                except OSError:
+                    directory = ""
         result = self._window.create_file_dialog(
             webview.SAVE_DIALOG,
+            directory=directory,
             save_filename=str(suggested or ""),
             file_types=("PDF 文件 (*.pdf)",),
         )
@@ -702,6 +717,16 @@ class EditorApi:
         with self._lock:
             return bool(self._stack and self._stack.dirty)
 
+    def request_quit(self) -> dict[str, Any]:
+        """Ctrl+Q：和点窗口关闭按钮走同一套未保存确认。"""
+        if self._window is None:
+            return {"ok": False}
+        if not self.dirty or self._close_confirmed:
+            self._window.destroy()
+            return {"ok": True}
+        self.request_close_prompt()
+        return {"ok": True}
+
     def request_close_prompt(self) -> None:
         if self._window is None:
             return
@@ -764,6 +789,8 @@ class EditorApi:
             "languages": i18n.available(),
             "theme": self._settings.get("theme", "light"),
             "show_guides": bool(self._settings.get("show_guides", True)),
+            "show_inspector": bool(self._settings.get("show_inspector", True)),
+            "keybindings": dict(self._settings.get("keybindings") or {}),
             "reference": dict(self._reference),
             "undo_limit": int(self._settings.get("undo_limit", 100)),
         }

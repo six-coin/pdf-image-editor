@@ -8,6 +8,7 @@ import { bindGuides } from './guides.js';
 import { bindInteract } from './interact.js';
 import { askUnsaved } from './modal.js';
 import { apply, applyStrings, applyTheme } from './render.js';
+import { state } from './state.js';
 import { openSettings } from './settings.js';
 import { bindShortcuts } from './shortcuts.js';
 import { bindSplit, cancelSplit, keepCell, punchCell, splitAll, startSplit } from './split.js';
@@ -18,6 +19,12 @@ const ACTIONS = {
   'save-as': actions.saveAs,
   export: openExport,
   settings: openSettings,
+  'toggle-theme': async () => {
+    const next = state.view.theme === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    await call('update_settings', { theme: next });
+  },
+  'toggle-inspector': actions.toggleInspector,
   undo: actions.undo,
   redo: actions.redo,
   'zoom-in': () => zoomBy(1.2),
@@ -72,13 +79,6 @@ function installHost() {
 
 function bindClicks() {
   document.addEventListener('click', async (event) => {
-    const themeButton = event.target.closest('[data-theme-value]');
-    if (themeButton) {
-      applyTheme(themeButton.dataset.themeValue);
-      await call('update_settings', { theme: themeButton.dataset.themeValue });
-      return;
-    }
-
     const trigger = event.target.closest('[data-act]');
     if (!trigger || trigger.disabled) return;
     const handler = ACTIONS[trigger.dataset.act];
