@@ -91,10 +91,6 @@
   --split-line: var(--green);
   --split-fill: rgba(16, 185, 129, 0.14);
   --split-cell-hover: rgba(16, 185, 129, 0.22);
-
-  /* 选框 */
-  --marquee-fill: rgba(59, 130, 246, 0.1);
-  --marquee-stroke: var(--blue);
 }
 
 [data-theme="dark"] {
@@ -173,6 +169,4 @@
 
   --split-fill: rgba(47, 191, 143, 0.16);
   --split-cell-hover: rgba(47, 191, 143, 0.26);
-
-  --marquee-fill: rgba(76, 141, 246, 0.12);
 }

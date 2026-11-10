@@ -51,6 +51,7 @@ class EditorApi:
         self._stack: UndoStack | None = None
         self._loaded_pages: set[int] = set()
         self._generation = 0
+        self._rev = 0
         self._tasks: dict[str, dict[str, Any]] = {}
         self._task_seq = 0
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pdfedit")
@@ -183,12 +184,12 @@ class EditorApi:
             if 0 <= page_index < len(self._state.pages):
                 self._state.pages[page_index] = info
 
-            objects = doc.editable_images(page_index)
-            known = {obj.id for obj in self._state.objects}
-            for obj in objects:
-                if obj.id not in known:
+            # 只在第一次装载某页时从文档里抽图。之后再抽会把用户已经删掉/切掉的
+            # 原图重新塞回模型——"保留一格之后大图又回来"就是这么来的。
+            if page_index not in self._loaded_pages:
+                for obj in doc.editable_images(page_index):
                     self._state.objects.append(obj)
-            self._loaded_pages.add(page_index)
+                self._loaded_pages.add(page_index)
 
             if self._cache is not None:
                 self._cache.page_png(page_index, page_dpi)
@@ -198,13 +199,7 @@ class EditorApi:
                 if self._server
                 else ""
             )
-            return {
-                "ok": True,
-                "url": url,
-                "w": info.width,
-                "h": info.height,
-                "objects": [self._payload(obj) for obj in objects],
-            }
+            return {"ok": True, "url": url, "w": info.width, "h": info.height}
 
     def render_page(self, index: int, dpi: int = 150) -> bytes:
         """给资源服务用。不加装饰器：它必须抛异常，让服务返回 500。"""
@@ -223,8 +218,15 @@ class EditorApi:
             self._state.selection = [str(item) for item in (ids or []) if str(item) in known]
             return self._snapshot()
 
-    def commit_transform(self, items: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        """提交一次拖动或缩放。越界在这里夹取，前端算错了也不会把图存到页外。"""
+    def commit_transform(
+        self,
+        items: list[dict[str, Any]] | None = None,
+        selection: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """提交一次拖动或缩放。越界在这里夹取，前端算错了也不会把图存到页外。
+
+        ``selection`` 一起提交，拖谁就选谁，省掉一次额外往返。
+        """
         with self._lock:
             doc = self._doc
             stack = self._stack
@@ -270,6 +272,9 @@ class EditorApi:
 
             if after:
                 stack.push(ObjectsChanged(before, after, "edit.move"))
+            if selection is not None:
+                known = {obj.id for obj in self._state.objects}
+                self._state.selection = [str(item) for item in selection if str(item) in known]
             return self._snapshot()
 
     def delete_objects(self, ids: list[str] | None = None) -> dict[str, Any]:
@@ -757,11 +762,14 @@ class EditorApi:
         return data
 
     def _snapshot(self) -> dict[str, Any]:
+        # 版本号在生成快照的那一刻分配。前端只认更大的 rev，晚到的旧回包自动作废。
+        self._rev += 1
         doc = self._doc
         pages = [page.to_dict() for page in self._state.pages]
         objects = [self._payload(obj) for obj in self._state.objects]
         return {
             "ok": True,
+            "rev": self._rev,
             "message": "",
             "doc": {
                 "path": str(doc.path) if doc else "",

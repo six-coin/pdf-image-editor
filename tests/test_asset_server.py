@@ -28,8 +28,11 @@ def test_open_and_render(editor, pdf_factory, wait):
 
     page = instance.load_page(0, 96)
     assert page["ok"] is True
-    assert len(page["objects"]) == 1
-    assert page["objects"][0]["src"].startswith("http://127.0.0.1:")
+    assert "objects" not in page  # 对象只从 get_state 出，前端不再自己合并
+
+    snapshot = instance.get_state()
+    assert len(snapshot["objects"]) == 1
+    assert snapshot["objects"][0]["src"].startswith("http://127.0.0.1:")
 
     with urllib.request.urlopen(page["url"]) as response:
         body = response.read()

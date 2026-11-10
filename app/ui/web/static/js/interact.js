@@ -1,9 +1,13 @@
-/* 指针手势：选中、拖动、四角缩放、框选、平移。
-   拖动只改 transform 与 left/top，不重排布局；松手时一次性提交给后端。 */
+/* 指针手势：选中、拖动、四角缩放、平移。
+   拖动只改 left/top，不重排布局；松手时一次性提交给后端。
+
+   手势期间禁止任何快照落地（见 state.view.gesture）：重建 DOM 会把正在拖的
+   节点换掉，表现就是"元素突然被拉回原位"。 */
 
 import { call } from './bridge.js';
 import { apply, applySelection, objectEl, pageEl } from './render.js';
 import { pxPerPt, state } from './state.js';
+import { scheduleRefresh } from './sync.js';
 import { isSplitActive } from './split.js';
 
 const THRESHOLD = 3;
@@ -14,10 +18,6 @@ let spaceHeld = false;
 
 export function setSpaceHeld(value) {
   spaceHeld = Boolean(value);
-}
-
-export function isInteracting() {
-  return gesture !== null;
 }
 
 function viewport() {
@@ -66,6 +66,23 @@ function pageAt(sceneY) {
     }
   }
   return best;
+}
+
+/* ---------- 手势生命周期 ---------- */
+
+function beginGesture(detail) {
+  state.view.gesture = true;
+  gesture = detail;
+}
+
+function endGesture() {
+  state.view.gesture = false;
+  gesture = null;
+  // 手势期间被丢弃的快照不作数，这里重新拉一份最新的。
+  if (state.stale) {
+    state.stale = false;
+    scheduleRefresh(0);
+  }
 }
 
 /* ---------- 与 core/geometry.py 同构的四角缩放 ---------- */
@@ -138,23 +155,18 @@ function onDown(event) {
 
   const handle = event.target.closest('.handles i');
   const node = event.target.closest('.obj');
-  const pageNode = event.target.closest('.page');
 
   if (handle && node) {
     startResize(event, node, handle.dataset.corner);
-  } else if (node) {
-    startMove(event, node);
-  } else if (pageNode) {
-    startMarquee(event, Number(pageNode.dataset.page));
-  } else {
-    applySelection([]);
-    commitSelection([]);
+    return;
   }
-}
-
-/** 选中变化要立刻应用快照：属性面板靠它更新。 */
-function commitSelection(ids) {
-  call('select', ids).then((snapshot) => snapshot && apply(snapshot));
+  if (node) {
+    startMove(event, node);
+    return;
+  }
+  // 空白处：取消选中
+  applySelection([]);
+  commitSelection([]);
 }
 
 function capture(event) {
@@ -186,6 +198,7 @@ function startMove(event, node) {
     applySelection([]);
     return;
   }
+  // 点谁选谁：即使还没松手，视觉上也立刻切到这个元素。
   applySelection(ids);
 
   const k = pxPerPt();
@@ -215,14 +228,14 @@ function startMove(event, node) {
   }
   if (!items.length) return;
 
-  gesture = {
+  beginGesture({
     kind: 'move',
     pointerId: event.pointerId,
     start: scenePoint(event.clientX, event.clientY),
     items,
     moved: false,
     ids,
-  };
+  });
   capture(event);
   event.preventDefault();
 }
@@ -271,7 +284,7 @@ function startResize(event, node, corner) {
   if (!obj) return;
   applySelection([id]);
 
-  gesture = {
+  beginGesture({
     kind: 'resize',
     pointerId: event.pointerId,
     start: scenePoint(event.clientX, event.clientY),
@@ -283,7 +296,7 @@ function startResize(event, node, corner) {
       next: null,
     },
     moved: false,
-  };
+  });
   capture(event);
   event.preventDefault();
 }
@@ -301,100 +314,18 @@ function resizeItem(point, freeRatio) {
   item.el.style.height = `${rect.h * k}px`;
 }
 
-/* ---------- 框选 ---------- */
-
-function startMarquee(event, pageIndex) {
-  gesture = {
-    kind: 'marquee',
-    pointerId: event.pointerId,
-    pageIndex,
-    start: scenePoint(event.clientX, event.clientY),
-    band: null,
-  };
-  capture(event);
-  event.preventDefault();
-}
-
-function marqueeBand(point) {
-  const rect = pageRectRel(gesture.pageIndex);
-  const k = pxPerPt();
-  const x0 = Math.min(gesture.start.x, point.x);
-  const y0 = Math.min(gesture.start.y, point.y);
-  const x1 = Math.max(gesture.start.x, point.x);
-  const y1 = Math.max(gesture.start.y, point.y);
-  return {
-    x: (x0 - rect.left) / k,
-    y: (y0 - rect.top) / k,
-    w: (x1 - x0) / k,
-    h: (y1 - y0) / k,
-  };
-}
-
-function drawMarquee(band) {
-  const el = pageEl(gesture.pageIndex);
-  if (!el) return;
-  const canvas = el.querySelector('.overlay');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  const k = pxPerPt();
-  const dpr = state.view.dpr;
-
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.setTransform(dpr * k, 0, 0, dpr * k, 0, 0);
-
-  const styles = getComputedStyle(document.documentElement);
-  ctx.fillStyle = styles.getPropertyValue('--marquee-fill').trim();
-  ctx.strokeStyle = styles.getPropertyValue('--marquee-stroke').trim();
-  ctx.lineWidth = 1 / k;
-  ctx.fillRect(band.x, band.y, band.w, band.h);
-  ctx.strokeRect(band.x, band.y, band.w, band.h);
-}
-
-function clearOverlay(pageIndex) {
-  const el = pageEl(pageIndex);
-  if (!el) return;
-  const canvas = el.querySelector('.overlay');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-}
-
-function finishMarquee() {
-  const band = gesture.band;
-  clearOverlay(gesture.pageIndex);
-  if (!band || band.w < 1 || band.h < 1) {
-    applySelection([]);
-    commitSelection([]);
-    return;
-  }
-  const hits = state.data.objects
-    .filter((obj) => obj.page === gesture.pageIndex)
-    .filter(
-      (obj) =>
-        obj.x < band.x + band.w &&
-        obj.x + obj.w > band.x &&
-        obj.y < band.y + band.h &&
-        obj.y + obj.h > band.y
-    )
-    .map((obj) => obj.id);
-  applySelection(hits);
-  commitSelection(hits);
-}
-
 /* ---------- 平移 ---------- */
 
 function startPan(event) {
   const box = viewport();
-  gesture = {
+  beginGesture({
     kind: 'pan',
     pointerId: event.pointerId,
     startX: event.clientX,
     startY: event.clientY,
     scrollLeft: box.scrollLeft,
     scrollTop: box.scrollTop,
-  };
+  });
   box.style.cursor = 'grabbing';
   capture(event);
 }
@@ -425,26 +356,20 @@ function onMove(event) {
 
   if (gesture.kind === 'move') moveItems(point);
   else if (gesture.kind === 'resize') resizeItem(point, event.altKey);
-  else if (gesture.kind === 'marquee') {
-    gesture.band = marqueeBand(point);
-    drawMarquee(gesture.band);
-  }
 }
 
 function onUp(event) {
   if (!gesture || gesture.pointerId !== event.pointerId) return;
   const current = gesture;
-  gesture = null;
+  const wasPan = current.kind === 'pan';
   release(event);
+  endGesture();
 
-  if (current.kind === 'pan') {
+  if (wasPan) {
     viewport().style.cursor = '';
     return;
   }
-  if (current.kind === 'marquee') {
-    finishMarquee();
-    return;
-  }
+
   if (current.kind === 'move') {
     if (!current.moved) {
       applySelection(current.ids);
@@ -458,6 +383,10 @@ function onUp(event) {
     if (current.moved && current.item.next) commitResize(current.item);
     else commitSelection([current.item.id]);
   }
+}
+
+function commitSelection(ids) {
+  call('select', ids).then((snapshot) => snapshot && apply(snapshot));
 }
 
 function commitMove(current) {
@@ -477,20 +406,27 @@ function commitMove(current) {
     });
   }
   if (!payload.length) return;
-  call('commit_transform', payload).then((snapshot) => snapshot && apply(snapshot));
+  // 选中跟着一起提交：拖谁就选谁，不用再跑一次往返。
+  call('commit_transform', payload, current.ids).then(
+    (snapshot) => snapshot && apply(snapshot)
+  );
 }
 
 function commitResize(item) {
-  call('commit_transform', [
-    {
-      id: item.id,
-      page: item.before.page,
-      x: item.next.x,
-      y: item.next.y,
-      w: item.next.w,
-      h: item.next.h,
-    },
-  ]).then((snapshot) => snapshot && apply(snapshot));
+  call(
+    'commit_transform',
+    [
+      {
+        id: item.id,
+        page: item.before.page,
+        x: item.next.x,
+        y: item.next.y,
+        w: item.next.w,
+        h: item.next.h,
+      },
+    ],
+    [item.id]
+  ).then((snapshot) => snapshot && apply(snapshot));
 }
 
 /* ---------- 键盘微调 ---------- */

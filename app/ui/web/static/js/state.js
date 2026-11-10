@@ -14,7 +14,13 @@ export const state = {
     dpr: window.devicePixelRatio || 1,
     dpi: 96,
     theme: 'light',
+    // 手势进行中：任何快照都不能落地，否则正在拖的元素会被重建、位置被拉回。
+    gesture: false,
   },
+  // 最近一次落地快照的版本号；更小的 rev 一律丢弃。
+  rev: -1,
+  // 手势期间丢掉了快照，结束时需要补一次。
+  stale: false,
 };
 
 export function pxPerPt() {
@@ -31,20 +37,8 @@ export function clampZoom(zoom) {
   return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
 }
 
-export function pageInfo(index) {
-  if (!state.data) return null;
-  return state.data.pages.find((p) => p.index === index) || null;
-}
-
 export function objectsOf(index) {
   if (!state.data) return [];
   // 按 z 升序：DOM 顺序就是视觉层级，稳定排序保证同 z 的相对次序不变。
   return state.data.objects.filter((o) => o.page === index).sort((a, b) => a.z - b.z);
-}
-
-export function mergeObjects(list) {
-  if (!state.data) return;
-  const byId = new Map(state.data.objects.map((o) => [o.id, o]));
-  for (const obj of list || []) byId.set(obj.id, obj);
-  state.data.objects = [...byId.values()];
 }

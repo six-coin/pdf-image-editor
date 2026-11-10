@@ -3,14 +3,9 @@
    中间的连续缩放只改 CSS 尺寸，不重传图片。 */
 
 import { call } from './bridge.js';
-import {
-  BASE_PX_PER_PT,
-  clampZoom,
-  dpiForZoom,
-  mergeObjects,
-  state,
-} from './state.js';
-import { layoutPages, pageEl, renderObjects, renderPageIndicator, renderZoom } from './render.js';
+import { BASE_PX_PER_PT, clampZoom, dpiForZoom, state } from './state.js';
+import { layoutPages, pageEl, renderPageIndicator, renderZoom } from './render.js';
+import { scheduleRefresh } from './sync.js';
 
 const visible = new Set();
 const inflight = new Map();
@@ -66,10 +61,8 @@ async function loadPage(index) {
   if (img) img.src = data.url;
   el.classList.remove('loading');
 
-  if (data.objects && data.objects.length) {
-    mergeObjects(data.objects);
-    renderObjects(index);
-  }
+  // 页面装载可能带来新对象，交给统一通道去拉快照，前端不自己拼模型。
+  scheduleRefresh();
 }
 
 function reloadVisible() {

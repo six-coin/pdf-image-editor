@@ -396,3 +396,54 @@ def test_external_edit_cleans_temp_on_failure(editor, opened, monkeypatch, tmp_p
     assert instance.replace_image(obj["id"], str(bad))["ok"] is False
     # 失败也要把临时目录收掉，不能留在 temp/ 里
     assert not bad.parent.exists()
+
+
+def test_commit_transform_can_set_selection(editor, opened):
+    instance, _server = editor
+    opened(images=2)
+    first, second = _objects(instance)[:2]
+
+    snapshot = instance.commit_transform(
+        [{"id": second["id"], "page": 0, "x": 300, "y": 300, "w": 100, "h": 80}],
+        [second["id"]],
+    )
+
+    assert snapshot["selection"] == [second["id"]]
+    moved = [o for o in snapshot["objects"] if o["id"] == second["id"]][0]
+    assert moved["x"] == pytest.approx(300)
+
+
+def test_commit_transform_ignores_unknown_selection(editor, opened):
+    instance, _server = editor
+    opened()
+    obj = _objects(instance)[0]
+    snapshot = instance.commit_transform(
+        [{"id": obj["id"], "page": 0, "x": 100, "y": 100, "w": 80, "h": 60}], ["nope"]
+    )
+    assert snapshot["selection"] == []
+
+
+def test_reloading_page_does_not_resurrect_deleted_object(editor, opened):
+    """换 DPI 重新装载页面时，不能再从文档里抽一遍原图。"""
+    instance, _server = editor
+    opened()
+    obj = _objects(instance)[0]
+    instance.keep_cell(obj["id"], [], [0.5], 0, 0)
+
+    before = [o["id"] for o in _objects(instance)]
+    assert obj["id"] not in before
+
+    instance.load_page(0, 192)
+    after = [o["id"] for o in _objects(instance)]
+
+    assert obj["id"] not in after
+    assert after == before
+
+
+def test_snapshot_revision_increases(editor, opened):
+    instance, _server = editor
+    opened()
+    first = instance.get_state()["rev"]
+    obj = _objects(instance)[0]
+    second = instance.keep_cell(obj["id"], [], [0.5], 0, 0)["rev"]
+    assert second > first

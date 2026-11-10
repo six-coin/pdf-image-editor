@@ -579,7 +579,7 @@ page.replace_image(xref, pixmap=new_pix)
 | 左键点对象 | 选中；`Shift` 加选 |
 | 左键拖对象 | 移动；实时 `clamp_rect_to_page`；跨页按**中心点所在页**迁移，落点为空隙则回弹最近页 |
 | 四角手柄 | 等比缩放；`Alt` 自由缩放 |
-| 左键拖空白 | 框选 |
+| 左键点空白 | 取消选中 |
 | 中键拖 / `Space`+左键 | 平移画布 |
 | `Ctrl`+滚轮 | 以指针为锚缩放 |
 
@@ -615,7 +615,7 @@ page.replace_image(xref, pixmap=new_pix)
 | 文档 | `browse_pdf` | — | `str \| None` |
 | 文档 | `open_path` | `path, force=False` | `{ok, task} \| {ok:false, reason:"dirty"}` |
 | 文档 | `close_document` | — | 快照 |
-| 渲染 | `load_page` | `index, dpi` | `{ok, url, w, h, objects}` |
+| 渲染 | `load_page` | `index, dpi` | `{ok, url, w, h}` |
 | 编辑 | `add_white_rect` | `page, rect` | 快照 |
 | 编辑 | `paste_image` | `page, rect` | 快照 |
 | 编辑 | `delete_objects` | `ids` | 快照 |
@@ -684,6 +684,10 @@ def guarded(fn):
 ```
 
 不含像素、不含缩略图字节（走 URL）。30 页 100 个对象约 40KB JSON，全量重绘完全够用。
+
+**快照只有一个入口**：`get_state`。其它方法可以返回快照（省一次往返），但前端不自己拼模型、
+不自己合并对象。每个快照带一个递增的 `rev`，前端只接受 `rev` 不小于当前的，晚到的旧回包自动作废。
+页面装载（`load_page`）只负责背景图和首次抽图，抽完通知前端刷新一次。
 
 ### 9.3 线程与任务
 
@@ -941,7 +945,7 @@ doc.new_page() → page.insert_text((72, 72), "Hello 文字") → page.insert_im
 **出口**：打开 `pdfs/` 里的 12MB 扫描件首屏 < 1.5s；滚动 30 页不卡；缩放 25%–400% 不发虚；打开第二个文件时句柄不泄漏。
 
 ### 阶段 4：对象交互（约两天） ✅
-选中、拖动、四角缩放、框选、z 序、删除、夹取、跨页迁移、`commit_transform`。
+选中、拖动、四角缩放、z 序、删除、夹取、跨页迁移、`commit_transform`。
 
 **出口**：拖动 60fps（DevTools Performance 无长帧）；图拖不出页；跨页拖动归属正确；撤销一次回到拖动前。
 
@@ -992,7 +996,7 @@ Win11 与绝大多数 Win10 自带。启动时读注册表 `HKLM\SOFTWARE\WOW643
 
 **功能**
 - [ ] 打开 12MB 扫描件首屏 < 1.5s，滚动 30 页不掉帧
-- [ ] 拖动/缩放/框选/多选/删除/置顶置底可用且都能撤销
+- [ ] 拖动/缩放/多选/删除/置顶置底可用且都能撤销
 - [ ] 3×3 分割取任意格正确；打孔后原图留白
 - [ ] 截图 Ctrl+V 能贴入并自由缩放
 - [ ] 外部编辑器改完能替换，尺寸变化不变形

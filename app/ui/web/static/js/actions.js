@@ -3,6 +3,7 @@
 import { call, T, toast } from './bridge.js';
 import { openModal } from './modal.js';
 import { apply, selectedIds } from './render.js';
+import { refresh } from './sync.js';
 import { state } from './state.js';
 
 const $ = (id) => document.getElementById(id);
@@ -42,13 +43,6 @@ async function waitTask(taskId) {
     }
     await sleep(80);
   }
-}
-
-/** 拉一次快照并整体重绘。 */
-export async function refresh() {
-  const snapshot = await call('get_state');
-  if (snapshot) apply(snapshot);
-  return snapshot;
 }
 
 /* ---------- 文档 ---------- */

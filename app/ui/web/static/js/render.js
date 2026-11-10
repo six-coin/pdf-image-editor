@@ -3,7 +3,7 @@
 
 import { T } from './bridge.js';
 import { accelFor, setBindings } from './keymap.js';
-import { objectsOf, pageInfo, pxPerPt, state } from './state.js';
+import { objectsOf, pxPerPt, state } from './state.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -60,6 +60,16 @@ function signature(objects) {
 
 export function apply(data) {
   if (!data) return;
+  // 只认更新的版本：晚到的旧回包直接作废，不会把已经删掉的对象复活。
+  if (typeof data.rev === 'number') {
+    if (data.rev < state.rev) return;
+    state.rev = data.rev;
+  }
+  if (state.view.gesture) {
+    // 拖拽/缩放过程中不重建 DOM（会把正在拖的节点换掉），结束时统一补一次。
+    state.stale = true;
+    return;
+  }
   const previous = state.data;
   const rebuilt = !previous || previous.doc.generation !== data.doc.generation;
   const changed = !previous || signature(previous.objects) !== signature(data.objects);
@@ -384,30 +394,3 @@ export function applyShortcutHints() {
 }
 
 /* ---------- 供其它模块使用 ---------- */
-
-export function setPageLoaded(index) {
-  const el = pageEl(index);
-  if (el) el.classList.remove('loading');
-}
-
-export function setPageImage(index, url) {
-  const el = pageEl(index);
-  if (!el) return;
-  const img = el.querySelector('.page-bg');
-  if (img) img.src = url;
-}
-
-export function clearPageImage(index) {
-  const el = pageEl(index);
-  if (!el) return;
-  const img = el.querySelector('.page-bg');
-  if (img) {
-    img.removeAttribute('src');
-    el.classList.add('loading');
-  }
-}
-
-export function pageHeightInViewport(index) {
-  const info = pageInfo(index);
-  return info ? info.h * pxPerPt() : 0;
-}
