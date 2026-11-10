@@ -453,6 +453,15 @@
   font-size: 13px;
 }
 
+/* 设置面板末尾的「重置所有」：和上面的表单拉开距离，别误触 */
+.settings-danger {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
 /* ---------- 快捷键表 ---------- */
 .settings-section-title {
   margin: 6px 0 0;

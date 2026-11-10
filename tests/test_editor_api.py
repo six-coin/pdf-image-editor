@@ -447,3 +447,18 @@ def test_snapshot_revision_increases(editor, opened):
     obj = _objects(instance)[0]
     second = instance.keep_cell(obj["id"], [], [0.5], 0, 0)["rev"]
     assert second > first
+
+
+def test_reset_settings_restores_defaults(editor, opened):
+    instance, _server = editor
+    opened()
+    instance.update_settings({"theme": "dark", "undo_limit": 30, "keybindings": {"global": {}}})
+    instance.update_reference({"left_mm": 33})
+
+    snapshot = instance.reset_settings()
+
+    assert snapshot["ok"] is True
+    assert snapshot["theme"] == "light"
+    assert snapshot["undo_limit"] == 100
+    assert snapshot["reference"]["left_mm"] == pytest.approx(10.0)
+    assert snapshot["keybindings"] == {}

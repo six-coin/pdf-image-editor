@@ -4,7 +4,6 @@
 const EXIT_MS = 170;
 
 let openCount = 0;
-let lastFocus = null;
 
 export function isOpen() {
   return openCount > 0;
@@ -12,6 +11,12 @@ export function isOpen() {
 
 function root() {
   return document.getElementById('modalRoot');
+}
+
+/** 只在没有弹窗时解除背景的 inert：弹窗可以嵌套（设置里再确认一次）。 */
+function syncInert() {
+  const app = document.getElementById('app');
+  if (app) app.inert = openCount > 0;
 }
 
 /**
@@ -22,11 +27,11 @@ function root() {
  * @param {Node}   [options.body]     自定义内容
  * @param {Array}  options.actions    [{label, value, kind}]
  * @param {boolean}[options.narrow]   窄版
+ * @param {string} [options.name]     给卡片打个标记，便于外部更新标题
  * @returns {Promise<string>}         选中的 value；Esc 或点遮罩返回 'cancel'
  */
-export function openModal({ title, text, body, actions = [], narrow = false }) {
+export function openModal({ title, text, body, actions = [], narrow = false, name = '' }) {
   return new Promise((resolve) => {
-    const app = document.getElementById('app');
     const host = root();
 
     const layer = document.createElement('div');
@@ -37,6 +42,7 @@ export function openModal({ title, text, body, actions = [], narrow = false }) {
     card.tabIndex = -1;
     card.setAttribute('role', 'dialog');
     card.setAttribute('aria-modal', 'true');
+    if (name) card.dataset.modal = name;
 
     const head = document.createElement('div');
     head.className = 'modal-head';
@@ -64,10 +70,13 @@ export function openModal({ title, text, body, actions = [], narrow = false }) {
     footer.className = 'modal-actions';
 
     let settled = false;
+    const lastFocus = document.activeElement;
     const finish = (value) => {
       if (settled) return;
       settled = true;
-      close(layer, app, card);
+      openCount = Math.max(0, openCount - 1);
+      syncInert();
+      close(layer, card);
       resolve(value);
     };
 
@@ -85,10 +94,9 @@ export function openModal({ title, text, body, actions = [], narrow = false }) {
       if (event.target === layer) finish('cancel');
     });
 
-    lastFocus = document.activeElement;
-    app.inert = true;
     host.appendChild(layer);
     openCount += 1;
+    syncInert();
     card.focus();
 
     const onKey = (event) => {
@@ -102,16 +110,13 @@ export function openModal({ title, text, body, actions = [], narrow = false }) {
     layer.addEventListener('keydown', onKey);
     layer._cleanup = () => {
       layer.removeEventListener('keydown', onKey);
-      openCount = Math.max(0, openCount - 1);
-      app.inert = false;
       if (lastFocus && lastFocus.isConnected) lastFocus.focus();
     };
   });
 }
 
-function close(layer, app, card) {
+function close(layer, card) {
   layer.classList.add('leaving');
-  app.inert = false;
   window.setTimeout(() => {
     if (typeof layer._cleanup === 'function') layer._cleanup();
     layer.remove();

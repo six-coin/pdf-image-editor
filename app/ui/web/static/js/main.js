@@ -21,8 +21,10 @@ const ACTIONS = {
   settings: openSettings,
   'toggle-theme': async () => {
     const next = state.view.theme === 'dark' ? 'light' : 'dark';
+    // 先切界面再落盘：换主题不该等一次桥接往返。
     applyTheme(next);
-    await call('update_settings', { theme: next });
+    const snapshot = await call('update_settings', { theme: next });
+    if (snapshot) apply(snapshot);
   },
   'toggle-inspector': actions.toggleInspector,
   undo: actions.undo,

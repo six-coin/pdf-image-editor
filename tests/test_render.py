@@ -34,6 +34,34 @@ def test_without_editable_images_the_picture_stays(pdf_factory, store):
     doc.close()
 
 
+def test_whiteout_leaves_no_fringe(pdf_factory, store, tmp_path):
+    """涂白必须盖住抗锯齿的边缘像素。
+
+    只按四舍五入取整会漏掉最外一圈，图片被挪走之后原位会留下一条边。
+    """
+    doc = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, 40, 30, b"\xff\x00\x00" * 1200, False)
+    # 故意用非整数坐标，让取整误差暴露出来
+    page.insert_image(pymupdf.Rect(100.37, 150.61, 253.82, 271.44), pixmap=pix)
+    source = tmp_path / "fringe.pdf"
+    doc.save(source)
+    doc.close()
+
+    handle = PdfDocument.open(source, store)
+    data = page_png(handle.page(0), handle.editable_images(0), 150)
+    handle.close()
+
+    rendered = pymupdf.Pixmap(data)
+    leftovers = [
+        (x, y)
+        for y in range(rendered.height)
+        for x in range(rendered.width)
+        if rendered.pixel(x, y) != (255, 255, 255)
+    ]
+    assert leftovers == []
+
+
 def test_cache_reuses_and_invalidates(pdf_factory, store):
     doc = PdfDocument.open(pdf_factory(), store)
     cache = RenderCache(doc)

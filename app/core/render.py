@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import math
 from collections import OrderedDict
 
 import pymupdf
@@ -26,10 +27,12 @@ def _whiteout(pix: pymupdf.Pixmap, rects: list[Rect], scale: float) -> pymupdf.P
     buffer = bytearray(pix.samples)
     touched = False
     for rect in rects:
-        x0 = max(0, int(round(rect.x * scale)))
-        y0 = max(0, int(round(rect.y * scale)))
-        x1 = min(pix.width, int(round(rect.right * scale)))
-        y1 = min(pix.height, int(round(rect.bottom * scale)))
+        # 向外扩一个设备像素。光栅化时图片边缘是抗锯齿的半覆盖像素，只按
+        # 四舍五入取整会漏掉最外一圈——图被挪走之后，原位就留下一条边。
+        x0 = max(0, math.floor(rect.x * scale) - 1)
+        y0 = max(0, math.floor(rect.y * scale) - 1)
+        x1 = min(pix.width, math.ceil(rect.right * scale) + 1)
+        y1 = min(pix.height, math.ceil(rect.bottom * scale) + 1)
         if x1 <= x0 or y1 <= y0:
             continue
         run = b"\xff" * ((x1 - x0) * components)

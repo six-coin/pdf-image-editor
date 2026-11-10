@@ -713,6 +713,23 @@ class EditorApi:
     def set_language(self, code: str) -> dict[str, Any]:
         return self.update_settings({"language": code})
 
+    def reset_settings(self) -> dict[str, Any]:
+        """把应用设置、参考线、快捷键全部恢复默认。
+
+        界面语言可能跟着变，所以调用方拿回快照后还要重新取一次语言表。
+        """
+        with self._lock:
+            try:
+                settings.save_app(dict(settings.DEFAULT_APP))
+                settings.save_reference(dict(settings.DEFAULT_REFERENCE))
+                self._settings = settings.load_app()
+                self._reference = settings.load_reference()
+            except AppError as exc:
+                logger.warning("重置设置失败: {}", exc)
+                return {**self._snapshot(), "ok": False, "message": str(exc)}
+            i18n.set_language(self._settings["language"])
+            return self._snapshot()
+
     # ---- 关闭 ----
 
     @property
