@@ -5,7 +5,8 @@
 import { call, setStrings, T, toast } from './bridge.js';
 import { COMMANDS, accelOf, bindings, findConflicts } from './keymap.js';
 import { openModal } from './modal.js';
-import { apply, applyStrings } from './render.js';
+import { apply, applyStrings, refreshTexts } from './render.js';
+import { refreshSplitBar } from './split.js';
 import { state } from './state.js';
 
 function field(labelKey, control) {
@@ -163,9 +164,6 @@ export async function openSettings() {
   const body = document.createElement('div');
   body.className = 'settings';
 
-  // 页脚左侧的「重置所有」，建好之后 reloadLanguage 也要刷它的文案
-  let resetButton = null;
-
   /** 写设置并落地快照。失败时弹提示，界面回到真实状态。 */
   async function writeSettings(patch) {
     const snapshot = await call('update_settings', patch);
@@ -183,16 +181,19 @@ export async function openSettings() {
     return snapshot;
   }
 
-  /** 语言变了：静态文案、弹窗标题和表单都要重建。 */
+  /**
+   * 语言变了：静态文案、弹窗标题与按钮、属性栏、表单都要重建。
+   *
+   * 快照是在切语言之前就落地渲染过的，那时字符串表还是旧的；所以这里必须
+   * 先用新表覆盖，再把所有现算文案重建一遍，否则属性栏会慢一拍——切两次就
+   * 变成「和当前语言相反」。
+   */
   async function reloadLanguage() {
     const strings = await call('get_strings');
     if (strings) setStrings(strings);
     applyStrings();
-    const heading = document.querySelector(
-      '#modalRoot .modal-card[data-modal="settings"] .modal-head h2'
-    );
-    if (heading) heading.textContent = T('settings.title');
-    if (resetButton) resetButton.textContent = T('settings.reset_all');
+    refreshTexts();
+    refreshSplitBar();
     renderBody();
   }
 
@@ -319,17 +320,20 @@ export async function openSettings() {
   renderBody();
 
   // 「重置所有」和「关闭」同一行，靠左：红字白底，悬停淡红
-  resetButton = document.createElement('button');
+  const resetButton = document.createElement('button');
   resetButton.type = 'button';
   resetButton.className = 'btn soft-danger modal-leading';
   resetButton.textContent = T('settings.reset_all');
+  // 带上键名，切语言时由 applyStrings() 一起刷新
+  resetButton.dataset.i18n = 'settings.reset_all';
   resetButton.addEventListener('click', resetAll);
 
   await openModal({
     title: T('settings.title'),
+    titleKey: 'settings.title',
     body,
     name: 'settings',
     leading: resetButton,
-    actions: [{ label: T('dialog.close'), value: 'ok', kind: 'primary' }],
+    actions: [{ label: T('dialog.close'), value: 'ok', kind: 'primary', i18n: 'dialog.close' }],
   });
 }

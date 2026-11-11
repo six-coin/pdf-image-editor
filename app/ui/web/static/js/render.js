@@ -170,6 +170,33 @@ export function renderZoom() {
   input.value = `${Math.round(state.view.zoom * 100)}%`;
 }
 
+/* ---------- 语言切换后的动态文案 ---------- */
+
+/** 页面角标上的「本页有 N 张旋转图片」。 */
+function applyPageTitles() {
+  if (!state.data) return;
+  for (const info of state.data.pages) {
+    if (!info.locked) continue;
+    const label = document.querySelector(`.page[data-page="${info.index}"] .page-no`);
+    if (label) label.title = T('page.locked', { count: info.locked });
+  }
+}
+
+/**
+ * 把用 T() 现算的文案全部重建一遍。
+ *
+ * 带 data-i18n 的静态节点由 applyStrings() 处理；属性栏按钮、页码浮标、分割条
+ * 键位提示、页面角标都是渲染时现查表的，字符串表换了不会自己更新——不重建的话
+ * 它们会一直停在上一种语言，切两次就成了「和当前语言相反」。
+ */
+export function refreshTexts() {
+  if (!state.data) return;
+  renderInspector();
+  applyShortcutHints();
+  renderPageIndicator(lastPageIndex);
+  applyPageTitles();
+}
+
 /* ---------- 页面 ---------- */
 
 function buildPages() {

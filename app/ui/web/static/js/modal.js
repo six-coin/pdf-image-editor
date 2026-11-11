@@ -23,15 +23,18 @@ function syncInert() {
  * 打开一个弹窗。
  * @param {object} options
  * @param {string} options.title      标题（已本地化）
+ * @param {string} [options.titleKey] 标题的文案键；给了就能跟着语言切换刷新
  * @param {string} [options.text]     正文（纯文本）
  * @param {Node}   [options.body]     自定义内容
- * @param {Array}  options.actions    [{label, value, kind}]
+ * @param {Array}  options.actions    [{label, value, kind, i18n}]；i18n 是按钮的文案键
  * @param {boolean}[options.narrow]   窄版
  * @param {string} [options.name]     给卡片打个标记，便于外部更新标题
+ * @param {Node}   [options.leading]  页脚左侧的次要动作
  * @returns {Promise<string>}         选中的 value；Esc 或点遮罩返回 'cancel'
  */
 export function openModal({
   title,
+  titleKey = '',
   text,
   body,
   actions = [],
@@ -56,6 +59,7 @@ export function openModal({
     head.className = 'modal-head';
     const heading = document.createElement('h2');
     heading.textContent = title;
+    if (titleKey) heading.dataset.i18n = titleKey;
     head.appendChild(heading);
 
     card.appendChild(head);
@@ -95,6 +99,8 @@ export function openModal({
       const button = document.createElement('button');
       button.className = `btn ${action.kind || ''}`.trim();
       button.textContent = action.label;
+      // 带上键名，语言切换时 applyStrings() 才能一起刷新；否则按钮会停在旧语言。
+      if (action.i18n) button.dataset.i18n = action.i18n;
       button.addEventListener('click', () => finish(action.value));
       footer.appendChild(button);
     }

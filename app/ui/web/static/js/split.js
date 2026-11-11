@@ -230,6 +230,12 @@ function updateBar() {
   $('splitAll').disabled = total === 0;
 }
 
+/** 语言变了：分割条上的提示文字是现算的，要重来一遍。 */
+export function refreshSplitBar() {
+  if (!split.active) return;
+  updateBar();
+}
+
 /* ---------- 事件 ---------- */
 
 function onPointerMove(event) {
