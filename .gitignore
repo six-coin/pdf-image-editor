@@ -1,14 +1,23 @@
+# Python 生成的文件
 __pycache__/
 *.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# 虚拟环境与编辑器
 .venv/
 .idea/
-.vscode/
+.workbuddy-ai/
+
+# 测试与类型检查缓存
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-logs/
-config/
+
+# 用户数据
 temp/
 pdfs/
-*.bak.pdf
-.workbuddy-ai/
+logs/
+config/
