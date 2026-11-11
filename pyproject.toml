@@ -1,6 +1,6 @@
 [project]
 name = "pdf-image-editor"
-version = "1.0.0"
+version = "1.0.0-snapshot-1"
 description = "在 PDF 里切分、移动、替换图片，保留原有文字层。"
 readme = "README.md"
 requires-python = ">=3.11"
