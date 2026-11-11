@@ -92,6 +92,16 @@ function onKeyDown(event) {
     event.preventDefault();
     const step = event.shiftKey ? 10 : 1;
     nudge(arrow[0] * step, arrow[1] * step);
+    return;
+  }
+
+  // Ctrl+方向键：单步的 1/5，用来对齐细部
+  if (accel.startsWith('Ctrl+')) {
+    const fine = ARROWS[accel.slice(5)];
+    if (fine) {
+      event.preventDefault();
+      nudge(fine[0] * 0.2, fine[1] * 0.2);
+    }
   }
 }
 

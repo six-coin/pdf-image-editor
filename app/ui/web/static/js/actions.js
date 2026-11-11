@@ -168,6 +168,36 @@ export async function saveAs() {
   await commitSave(chosen.mode, path);
 }
 
+/** 从磁盘重新加载当前文件。有未保存修改时先确认。 */
+export async function reloadDoc() {
+  const data = state.data;
+  if (!data || !data.doc.page_count) return;
+
+  let result = await call('reload_document');
+  if (!result) return;
+
+  if (!result.ok && result.needs_confirm) {
+    const choice = await openModal({
+      title: T('toolbar.reload'),
+      text: T('dialog.reload_text'),
+      narrow: true,
+      actions: [
+        { label: T('dialog.cancel'), value: 'cancel', kind: 'ghost' },
+        { label: T('toolbar.reload'), value: 'ok', kind: 'danger' },
+      ],
+    });
+    if (choice !== 'ok') return;
+    result = await call('reload_document', true);
+    if (!result) return;
+  }
+
+  if (!result.ok) {
+    toast(result.message || T('error.unexpected'), false);
+    return;
+  }
+  apply(result);
+}
+
 /* ---------- 编辑 ---------- */
 
 export async function selectIds(ids) {

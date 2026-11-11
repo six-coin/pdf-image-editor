@@ -85,6 +85,7 @@ def _piece(
         image_id=store.put(sub.tobytes("png")),
         src_xref=obj.src_xref,
         src_rect=obj.src_rect,
+        src_page=obj.src_page,
         z=z,
     )
 

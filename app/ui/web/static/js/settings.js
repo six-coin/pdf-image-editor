@@ -129,6 +129,8 @@ function keyRow(scope, command, keys, onBind) {
       if (!accel) return;
       document.removeEventListener('keydown', onKey, true);
       button.classList.remove('capturing');
+      // 先显示按下的键，再写盘：写盘失败或冲突时 onBind 会把它改回去。
+      button.textContent = accel;
       onBind(scope, command.id, accel, button);
     };
 
@@ -161,6 +163,9 @@ export async function openSettings() {
   const body = document.createElement('div');
   body.className = 'settings';
 
+  // 页脚左侧的「重置所有」，建好之后 reloadLanguage 也要刷它的文案
+  let resetButton = null;
+
   /** 写设置并落地快照。失败时弹提示，界面回到真实状态。 */
   async function writeSettings(patch) {
     const snapshot = await call('update_settings', patch);
@@ -187,6 +192,7 @@ export async function openSettings() {
       '#modalRoot .modal-card[data-modal="settings"] .modal-head h2'
     );
     if (heading) heading.textContent = T('settings.title');
+    if (resetButton) resetButton.textContent = T('settings.reset_all');
     renderBody();
   }
 
@@ -329,24 +335,22 @@ export async function openSettings() {
     body.appendChild(resetKeys);
 
     body.append(keySection('global', keys, bindKey), keySection('split', keys, bindKey));
-
-    const danger = document.createElement('div');
-    danger.className = 'settings-danger';
-    const resetButton = document.createElement('button');
-    resetButton.type = 'button';
-    resetButton.className = 'btn danger';
-    resetButton.textContent = T('settings.reset_all');
-    resetButton.addEventListener('click', resetAll);
-    danger.appendChild(resetButton);
-    body.appendChild(danger);
   }
 
   renderBody();
+
+  // 「重置所有」和「关闭」同一行，靠左：红字白底，悬停淡红
+  resetButton = document.createElement('button');
+  resetButton.type = 'button';
+  resetButton.className = 'btn soft-danger modal-leading';
+  resetButton.textContent = T('settings.reset_all');
+  resetButton.addEventListener('click', resetAll);
 
   await openModal({
     title: T('settings.title'),
     body,
     name: 'settings',
+    leading: resetButton,
     actions: [{ label: T('dialog.close'), value: 'ok', kind: 'primary' }],
   });
 }

@@ -26,11 +26,12 @@
 </head>
 
 <body>
-<div class="app" id="app">
+<!-- 属性栏默认收起：等第一份快照到了再按 show_inspector 决定，避免开屏闪一下 -->
+<div class="app inspector-hidden" id="app">
 
   <header class="topbar" role="toolbar" data-i18n-aria="app.title">
     <button class="btn" data-act="open" data-i18n="toolbar.open">打开</button>
-    <button class="btn primary" data-act="save" data-i18n="toolbar.save" disabled>保存</button>
+    <button class="btn ghost" data-act="save" data-i18n="toolbar.save" disabled>保存</button>
     <button class="btn ghost" data-act="save-as" data-i18n="toolbar.save_as" disabled>另存为</button>
 
     <div class="doc-name" id="docName" hidden>
@@ -40,19 +41,32 @@
 
     <span class="topbar-sep" aria-hidden="true"></span>
 
-    <button class="btn ghost" data-act="undo" data-i18n="toolbar.undo" disabled>撤销</button>
-    <button class="btn ghost" data-act="redo" data-i18n="toolbar.redo" disabled>重做</button>
+    <button class="icon-btn" data-act="undo" title="撤销" data-i18n-title="toolbar.undo"
+            data-i18n-aria="toolbar.undo" disabled>
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M4.6 8.4h7.2a4.2 4.2 0 0 1 0 8.4H8.2"></path>
+        <path d="M7.7 4.5 3.8 8.4l3.9 3.9"></path>
+      </svg>
+    </button>
+    <button class="icon-btn" data-act="redo" title="重做" data-i18n-title="toolbar.redo"
+            data-i18n-aria="toolbar.redo" disabled>
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M15.4 8.4H8.2a4.2 4.2 0 0 0 0 8.4h3.6"></path>
+        <path d="M12.3 4.5l3.9 3.9-3.9 3.9"></path>
+      </svg>
+    </button>
 
     <span class="topbar-sep" aria-hidden="true"></span>
 
     <div class="zoom-box" role="group" data-i18n-aria="toolbar.fit_width">
       <button class="btn ghost" data-act="zoom-out" data-i18n-aria="toolbar.zoom_out"
               aria-label="zoom out">−</button>
-      <button class="zoom-value" id="zoomValue" data-act="zoom-reset"
-              data-i18n-aria="toolbar.zoom_reset">100%</button>
+      <input class="zoom-input" id="zoomValue" type="text" inputmode="numeric" value="100%"
+             data-i18n-aria="toolbar.zoom_input" aria-label="zoom level">
       <button class="btn ghost" data-act="zoom-in" data-i18n-aria="toolbar.zoom_in"
               aria-label="zoom in">+</button>
       <button class="btn sm" data-act="fit-width" data-i18n="toolbar.fit_width">适合宽度</button>
+      <button class="btn sm" data-act="zoom-reset" data-i18n="toolbar.zoom_reset">100%</button>
     </div>
 
     <span class="spacer"></span>
@@ -63,13 +77,11 @@
     </div>
 
     <button class="btn ghost" data-act="export" data-i18n="toolbar.export" disabled>导出页</button>
-
-    <button class="icon-btn" id="btnInspector" data-act="toggle-inspector" title="显示或隐藏属性栏"
-            data-i18n-title="inspector.toggle" data-i18n-aria="inspector.toggle"
-            aria-pressed="true">
-      <svg viewBox="0 0 16 16" aria-hidden="true">
-        <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="1.6"></rect>
-        <path d="M10.1 2.6v10.8"></path>
+    <button class="icon-btn" id="btnReload" data-act="reload" title="重新加载"
+            data-i18n-title="toolbar.reload" data-i18n-aria="toolbar.reload" disabled>
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M16.4 10a6.4 6.4 0 1 1-1.9-4.5"></path>
+        <path d="M16.5 3.5v4h-4"></path>
       </svg>
     </button>
 
@@ -91,6 +103,15 @@
         <circle cx="12" cy="12" r="3"></circle>
       </svg>
     </button>
+
+    <button class="icon-btn" id="btnInspector" data-act="toggle-inspector" title="显示或隐藏属性栏"
+            data-i18n-title="inspector.toggle" data-i18n-aria="inspector.toggle"
+            aria-pressed="true">
+      <svg viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="1.6" y="2.6" width="12.8" height="10.8" rx="1.6"></rect>
+        <path d="M10.1 2.6v10.8"></path>
+      </svg>
+    </button>
   </header>
 
   <main class="viewport" id="viewport" role="region" data-i18n-aria="app.title">
@@ -105,7 +126,16 @@
 
   <aside class="inspector" id="inspector" role="complementary" data-i18n-aria="inspector.title">
     <h2 data-i18n="inspector.title">属性</h2>
-    <div id="inspectorBody"></div>
+    <div class="inspector-body" id="inspectorBody"></div>
+    <div class="inspector-footer">
+      <span class="inspector-page" id="inspectorPage"></span>
+      <div class="page-jump">
+        <input class="page-input" id="pageJump" type="number" min="1" step="1"
+               data-i18n-aria="page.jump" data-i18n-placeholder="page.jump_hint"
+               aria-label="page number">
+        <button class="btn sm" data-act="page-jump" data-i18n="page.jump_go">跳转</button>
+      </div>
+    </div>
   </aside>
 
 </div>

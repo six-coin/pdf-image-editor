@@ -158,6 +158,7 @@ class PdfDocument:
                     image_id=self._store.put(raw),
                     src_xref=xref,
                     src_rect=rect,
+                    src_page=index,
                     z=z,
                 )
             )

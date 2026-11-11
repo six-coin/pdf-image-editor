@@ -121,6 +121,18 @@ body {
   border-color: transparent;
 }
 
+/* 红字白底、悬停淡红：危险操作里的"轻"一档，比整块红安静 */
+.btn.soft-danger {
+  border-color: transparent;
+  background: transparent;
+  color: var(--danger-text);
+}
+
+.btn.soft-danger:hover:not(:disabled) {
+  background: var(--danger-soft);
+  border-color: transparent;
+}
+
 .btn:disabled {
   background: var(--surface-muted);
   border-color: var(--border);
@@ -230,7 +242,7 @@ kbd {
 .seg-item:focus-visible,
 .select:focus-visible,
 .select-option:focus-visible,
-.zoom-value:focus-visible,
+.zoom-input:focus-visible,
 .switch input:focus-visible + .switch-track {
   outline: 2px solid var(--blue);
   outline-offset: 2px;
@@ -435,6 +447,11 @@ kbd {
   gap: 8px;
   /* 下方必须留白，否则按钮贴着卡片底边 */
   padding: 14px 22px 18px;
+}
+
+/* 放在左侧的次要动作（比如设置里的「重置所有」） */
+.modal-actions > .modal-leading {
+  margin-right: auto;
 }
 
 /* ---------- 轻提示 ---------- */
@@ -694,6 +711,11 @@ input[type="number"]:focus {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* 横竖滚动条交汇的那个小方块，默认是白的，跟画布背景对不上 */
+::-webkit-scrollbar-corner {
+  background: var(--canvas-bg);
 }
 
 @media (prefers-reduced-motion: reduce) {

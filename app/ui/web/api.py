@@ -233,6 +233,10 @@ class EditorApi:
             if doc is None or stack is None:
                 return self._snapshot()
 
+            # 目标页可能还没装载过。先把它的原图抽进模型，否则模型里只有刚拖过去
+            # 的那张、文件里却有两张：保存后重定基线对不上，页面装载时还会重复抽图。
+            self._ensure_pages(items, doc)
+
             before: list[ImageObject] = []
             after: list[ImageObject] = []
             for raw in items or []:
@@ -267,6 +271,9 @@ class EditorApi:
                 updated = obj.clone()
                 updated.page = page
                 updated.rect = rect
+                if updated.page == obj.page and updated.rect == obj.rect:
+                    # 没有实际变化（比如宽图竖着拖，长边没动）：别塞一条空撤销记录。
+                    continue
                 before.append(obj.clone())
                 after.append(updated)
 
@@ -276,6 +283,28 @@ class EditorApi:
                 known = {obj.id for obj in self._state.objects}
                 self._state.selection = [str(item) for item in selection if str(item) in known]
             return self._snapshot()
+
+    def _ensure_pages(self, items: list[dict[str, Any]] | None, doc: PdfDocument) -> None:
+        """把这次操作涉及、但还没装载过的页的原图先抽进模型。
+
+        不抽的话，拖过去的那张会成为该页唯一被模型知晓的图；保存时文件里
+        却还有这一页原有的图，模型和文件对不上，只能整页重建。
+        """
+        wanted: set[int] = set()
+        for raw in items or []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                page = int(raw.get("page", -1))
+            except (TypeError, ValueError):
+                continue
+            if 0 <= page < doc.page_count:
+                wanted.add(page)
+
+        for index in sorted(wanted - self._loaded_pages):
+            for obj in doc.editable_images(index):
+                self._state.objects.append(obj)
+            self._loaded_pages.add(index)
 
     def delete_objects(self, ids: list[str] | None = None) -> dict[str, Any]:
         with self._lock:
@@ -290,7 +319,8 @@ class EditorApi:
             before = self._state.clone_objects()
             for obj in targets:
                 # 对象没了，但它在原文件里还占着位置，保存时仍要 redaction。
-                self._state.mark_removed(obj.page, obj.src_rect)
+                origin = obj.src_page if obj.src_page is not None else obj.page
+                self._state.mark_removed(origin, obj.src_rect)
             self._state.drop([obj.id for obj in targets])
             stack.push(StructureChanged(before, self._state.clone_objects(), "edit.delete"))
             return self._snapshot()
@@ -445,8 +475,15 @@ class EditorApi:
             return {"ok": False, "message": str(exc)}
 
         with self._lock:
-            self._generation += 1
-            self._reset_to_file(target)
+            # 保留模式下把新文件当作基线，但对象、撤销栈、页面 DOM 都不重建——
+            # 保存完界面不该闪一下。对不上（张数不一致、raster 模式）就退回完整重建。
+            if use_mode == "preserve" and self._rebase_after_save(target):
+                # 栈留着，只是把"已保存"的位置挪到当前：还能继续撤销。
+                if self._stack is not None:
+                    self._stack.mark_saved()
+            else:
+                self._generation += 1
+                self._reset_to_file(target)
         logger.info("已保存 {}，替换 {} 张图", target, report.replaced)
         return {"ok": True, **report.to_dict(), "generation": self._generation}
 
@@ -474,6 +511,82 @@ class EditorApi:
         self._state = state
         self._stack = UndoStack(state, limit=int(self._settings["undo_limit"]))
         self._loaded_pages.clear()
+
+    def _rebase_after_save(self, path: Path) -> bool:
+        """保存后把新文件当作基线，但不重建对象——界面不重新加载。
+
+        新文件里每张图的位置就是对象当前的 ``rect``，插入时按 z 升序，所以两边
+        都按 z 排序后可以一一对应。对不上就返回 ``False``，调用方退回完整重建。
+        """
+        try:
+            doc = PdfDocument.open(path, self._store)
+        except AppError:
+            logger.exception("保存后无法重新打开 {}", path)
+            return False
+
+        try:
+            by_page: dict[int, list[ImageObject]] = {}
+            for obj in self._state.objects:
+                by_page.setdefault(obj.page, []).append(obj)
+
+            # 只处理已经装载过的页：没装载过的页没有对象，这里也不该替它抽图。
+            pages = sorted(set(self._loaded_pages) | set(by_page))
+            fresh: dict[int, list[ImageObject]] = {}
+            for index in pages:
+                if index >= doc.page_count:
+                    doc.close()
+                    return False
+                extracted = doc.editable_images(index)
+                if len(extracted) != len(by_page.get(index, [])):
+                    doc.close()
+                    return False
+                fresh[index] = extracted
+        except Exception:
+            logger.exception("保存后重建基线失败 {}", path)
+            doc.close()
+            return False
+
+        for index, extracted in fresh.items():
+            mine = sorted(by_page.get(index, []), key=lambda o: o.z)
+            for obj, src in zip(mine, extracted, strict=False):
+                obj.src_xref = src.src_xref
+                obj.src_rect = src.src_rect
+                obj.src_page = obj.page
+                obj.image_id = src.image_id
+
+        self._doc = doc
+        self._cache = RenderCache(doc)
+        self._loaded_pages.update(pages)
+        # 被删掉的图已经在文件里彻底消失，墓碑表必须清空：
+        # 留着的话下次保存会照着旧坐标去擦，可能擦掉刚放进去的新图。
+        self._state.removed.clear()
+        return True
+
+    def reload_document(self, force: bool = False) -> dict[str, Any]:
+        """从磁盘重新加载当前文件。会丢弃内存里的编辑。"""
+        with self._lock:
+            doc = self._doc
+            if doc is None:
+                return {"ok": False, "message": i18n.t("error.no_document")}
+            if self._stack is not None and self._stack.dirty and not force:
+                return {
+                    "ok": False,
+                    "needs_confirm": True,
+                    "message": i18n.t("dialog.reload_text"),
+                }
+            path = doc.path
+            doc.close()
+            self._doc = None
+
+        with self._lock:
+            try:
+                self._generation += 1
+                self._reset_to_file(path)
+            except AppError as exc:
+                logger.warning("重新加载失败 {}: {}", path, exc)
+                self._restore_handle(path)
+                return {"ok": False, "message": str(exc)}
+            return self._snapshot()
 
     # ---- 另存与导出 ----
 

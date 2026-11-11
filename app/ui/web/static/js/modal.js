@@ -30,7 +30,15 @@ function syncInert() {
  * @param {string} [options.name]     给卡片打个标记，便于外部更新标题
  * @returns {Promise<string>}         选中的 value；Esc 或点遮罩返回 'cancel'
  */
-export function openModal({ title, text, body, actions = [], narrow = false, name = '' }) {
+export function openModal({
+  title,
+  text,
+  body,
+  actions = [],
+  narrow = false,
+  name = '',
+  leading = null,
+}) {
   return new Promise((resolve) => {
     const host = root();
 
@@ -79,6 +87,9 @@ export function openModal({ title, text, body, actions = [], narrow = false, nam
       close(layer, card);
       resolve(value);
     };
+
+    // 放在左侧的次要动作，例如设置里的「重置所有」
+    if (leading) footer.appendChild(leading);
 
     for (const action of actions) {
       const button = document.createElement('button');

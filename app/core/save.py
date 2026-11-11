@@ -165,7 +165,11 @@ def _apply_preserve(
     for index in range(doc.page_count):
         page = doc[index]
         objects = [o for o in state.objects if o.page == index]
-        targets = _redact_targets(objects, state.removed.get(index))
+        # 原图未必还在这一页（跨页拖动过），按 src_page 找它的原位。
+        sources = [
+            o for o in state.objects if (o.src_page if o.src_page is not None else o.page) == index
+        ]
+        targets = _redact_targets(sources, state.removed.get(index))
         if targets:
             saved_annots = _detach_annotations(doc, page)
             try:
@@ -196,8 +200,14 @@ def _apply_raster(
         rect = source.rect
         page = out.new_page(width=rect.width, height=rect.height)
         objects = [o for o in state.objects if o.page == index]
-        editable = [o for o in objects if o.src_rect is not None]
-        page.insert_image(rect, stream=page_png(source, editable, _RASTER_DPI))
+        # 底图要按"原图本来在哪一页"涂白：跨页拖走的图，原页也得擦掉。
+        sources = [
+            o
+            for o in state.objects
+            if o.src_rect is not None
+            and (o.src_page if o.src_page is not None else o.page) == index
+        ]
+        page.insert_image(rect, stream=page_png(source, sources, _RASTER_DPI))
         _insert_objects(page, objects, store, report, index)
     return out
 

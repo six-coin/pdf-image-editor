@@ -30,7 +30,7 @@ const GLOBAL_DEFS = [
 const SPLIT_DEFS = [
   ['split_keep', '1', 'split.keep'],
   ['split_punch', '2', 'split.extract'],
-  ['split_all', 'Enter', 'split.all'],
+  ['split_all', 'R', 'split.all'],
   ['split_undo', 'Ctrl+Z', 'cmd.undo_cut'],
   ['split_cancel', 'Esc', 'dialog.cancel'],
 ];

@@ -1,6 +1,6 @@
 /* 设计令牌。
    浅色与深色两套值逐字取自根目录 styles.css，改值请两边一起改。
-   画布专用令牌（--canvas-* / --obj-* / --guide* / --split-* / --marquee-*）
+   画布专用令牌（--canvas-* / --obj-* / --guide* / --split-*）
    是原文件没有的，为本应用新增。 */
 
 :root {

@@ -107,7 +107,8 @@ export function fitWidth() {
   if (!pages || !pages.length) return;
   const box = viewport();
   const widest = Math.max(...pages.map((p) => p.w));
-  const available = Math.max(80, box.clientWidth - 48);
+  // 左右各留 48px 的留白（.pages 的 padding），两边必须一样宽。
+  const available = Math.max(80, box.clientWidth - 96);
   const zoom = clampZoom(available / (widest * BASE_PX_PER_PT));
   state.view.fitWidth = true;
   setZoom(zoom, null, true);
@@ -117,6 +118,43 @@ export function fitWidth() {
 export function resetZoom() {
   state.view.fitWidth = false;
   setZoom(1, null, true);
+}
+
+/** 把某一页滚到视口顶部。 */
+export function scrollToPage(index) {
+  const box = viewport();
+  const el = pageEl(index);
+  if (!box || !el) return;
+  box.scrollTo({ top: Math.max(0, el.offsetTop - 24), behavior: 'smooth' });
+}
+
+/** 属性栏底部那个"跳转到第 N 页"。 */
+export function pageJump() {
+  const input = document.getElementById('pageJump');
+  if (!input || !state.data) return;
+  const total = state.data.pages.length;
+  if (!total) return;
+  const raw = Number.parseInt(input.value, 10);
+  if (!Number.isFinite(raw)) {
+    input.value = '';
+    return;
+  }
+  scrollToPage(Math.min(total, Math.max(1, raw)) - 1);
+  input.value = '';
+  input.blur();
+}
+
+/** 缩放百分比输入框：接受 "150"、"150%" 两种写法。 */
+function commitZoomInput() {
+  const input = document.getElementById('zoomValue');
+  if (!input) return;
+  const percent = Number.parseFloat(String(input.value).replace(/[^\d.]/g, ''));
+  if (!Number.isFinite(percent) || percent <= 0) {
+    renderZoom();
+    return;
+  }
+  setZoom(percent / 100, null, true);
+  renderZoom();
 }
 
 /** 视口中心落在哪一页。粘贴图片时用它决定落到哪页。 */
@@ -167,6 +205,34 @@ export function bindCanvas() {
     },
     { passive: false }
   );
+
+  // 缩放百分比可以直接输入
+  const zoomInput = document.getElementById('zoomValue');
+  if (zoomInput) {
+    zoomInput.addEventListener('focus', () => zoomInput.select());
+    zoomInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        commitZoomInput();
+        zoomInput.blur();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        zoomInput.value = `${Math.round(state.view.zoom * 100)}%`;
+        zoomInput.blur();
+      }
+    });
+    zoomInput.addEventListener('blur', commitZoomInput);
+  }
+
+  const jumpInput = document.getElementById('pageJump');
+  if (jumpInput) {
+    jumpInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        pageJump();
+      }
+    });
+  }
 
   window.addEventListener('resize', () => {
     const dpr = window.devicePixelRatio || 1;

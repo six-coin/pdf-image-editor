@@ -7,6 +7,9 @@ import { objectsOf, pxPerPt, state } from './state.js';
 
 const $ = (id) => document.getElementById(id);
 
+// 最近一次滚动到的页。快照落地时不能把页码重置成第 1 页。
+let lastPageIndex = 0;
+
 export function pageEl(index) {
   return document.querySelector(`.page[data-page="${index}"]`);
 }
@@ -106,9 +109,11 @@ function applyChrome() {
   document.querySelectorAll('[data-act="save"]').forEach((b) => {
     b.disabled = !hasDoc || !doc.can_save;
   });
-  document.querySelectorAll('[data-act="save-as"], [data-act="export"]').forEach((b) => {
-    b.disabled = !hasDoc;
-  });
+  document.querySelectorAll('[data-act="save-as"], [data-act="export"], [data-act="reload"]').forEach(
+    (b) => {
+      b.disabled = !hasDoc;
+    }
+  );
   document.querySelectorAll('[data-act="undo"]').forEach((b) => {
     b.disabled = !state.data.history.can_undo;
   });
@@ -131,23 +136,36 @@ function applyChrome() {
   }
 
   renderZoom();
-  renderPageIndicator(0);
+  renderPageIndicator(lastPageIndex);
 }
 
-/** 底部页码浮标。视口滚动时由 canvas.js 调用。 */
+/** 底部页码浮标 + 属性栏底部的页码。视口滚动时由 canvas.js 调用。 */
 export function renderPageIndicator(index) {
-  const chip = $('pageChip');
-  if (!chip) return;
+  lastPageIndex = index;
   const total = state.data ? state.data.pages.length : 0;
-  chip.hidden = total === 0;
-  if (total) {
-    const current = Math.min(total, Math.max(1, index + 1));
-    chip.textContent = T('page.indicator', { current, total });
+  const text = total
+    ? T('page.indicator', { current: Math.min(total, Math.max(1, index + 1)), total })
+    : '';
+
+  const chip = $('pageChip');
+  if (chip) {
+    chip.hidden = total === 0;
+    if (total) chip.textContent = text;
   }
+
+  const footer = $('inspectorPage');
+  if (footer) footer.textContent = text;
+
+  const jump = $('pageJump');
+  if (jump) jump.max = String(Math.max(1, total));
 }
 
 export function renderZoom() {
-  $('zoomValue').textContent = `${Math.round(state.view.zoom * 100)}%`;
+  const input = $('zoomValue');
+  if (!input) return;
+  // 正在输入时不要覆盖用户敲的内容
+  if (document.activeElement === input) return;
+  input.value = `${Math.round(state.view.zoom * 100)}%`;
 }
 
 /* ---------- 页面 ---------- */

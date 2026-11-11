@@ -232,3 +232,43 @@ def test_split_then_save_roundtrip(pdf_factory, store, tmp_path):
     assert len(out[0].get_image_info(xrefs=True)) == 4
     out.close()
     doc.close()
+
+
+def test_cross_page_move_erases_the_source(pdf_factory, store, tmp_path):
+    """把图拖到第 2 页后保存：原页的那张必须被擦掉，否则一张变两张。"""
+    src = pdf_factory("in.pdf", pages=2, images=1)
+    doc = PdfDocument.open(src, store)
+    state = _state(doc)
+    obj = state.objects[0]
+    obj.page = 1
+    obj.rect = Rect(60, 60, 120, 90)
+
+    dst = tmp_path / "out.pdf"
+    save(src, dst, state, store)
+
+    out = pymupdf.open(dst)
+    assert out[0].get_image_info(xrefs=True) == []
+    assert len(out[1].get_image_info(xrefs=True)) == 2
+    out.close()
+    doc.close()
+
+
+def test_raster_mode_erases_the_source_too(pdf_factory, store, tmp_path):
+    src = pdf_factory("in.pdf", pages=2, images=1)
+    doc = PdfDocument.open(src, store)
+    state = _state(doc)
+    obj = state.objects[0]
+    obj.page = 1
+    obj.rect = Rect(60, 60, 120, 90)
+
+    dst = tmp_path / "out.pdf"
+    save(src, dst, state, store, mode="raster")
+
+    out = pymupdf.open(dst)
+    # 第 1 页：整页位图 + 本来就在这页的那张 + 拖过来的那张
+    assert len(out[0].get_image_info(xrefs=True)) == 1
+    assert len(out[1].get_image_info(xrefs=True)) == 3
+    pix = out[0].get_pixmap(dpi=72)
+    assert pix.pixel(150, 150) == (255, 255, 255)
+    out.close()
+    doc.close()

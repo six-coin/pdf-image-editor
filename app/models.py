@@ -61,7 +61,8 @@ class ImageObject:
 
     ``rect`` 是当前显示位置，``src_rect`` 是它在原文档里的原始放置位置。
     保存时按 ``src_rect`` 做 redaction、按 ``rect`` 重新插入——两者必须分开存，
-    否则"移动一张图"没法表达成"在原位删除 + 在新位插入"。
+    否则"移动一张图"没法表达成"在原位删除 + 在新位插入"。``src_page`` 记的是
+    ``src_rect`` 属于哪一页：跨页拖动后它不会跟着 ``page`` 变。
     """
 
     id: str
@@ -70,6 +71,8 @@ class ImageObject:
     image_id: str
     src_xref: int | None = None
     src_rect: Rect | None = None
+    # 原图在哪一页。跨页拖动后 page 变了、src_page 不变，保存时才知道去哪儿擦。
+    src_page: int | None = None
     z: int = 10
     rotation: int = 0
     opacity: float = 1.0

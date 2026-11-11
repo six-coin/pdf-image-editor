@@ -79,23 +79,28 @@
   gap: 4px;
 }
 
-.zoom-value {
-  min-width: 58px;
+.zoom-input {
+  width: 64px;
   height: 32px;
-  padding: 0 8px;
+  padding: 0 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--panel);
   color: var(--text);
   font-family: inherit;
   font-size: 13px;
-  cursor: pointer;
+  text-align: center;
   transition: border-color 0.14s ease, background 0.14s ease;
 }
 
-.zoom-value:hover {
+.zoom-input:hover {
   border-color: var(--border-strong);
   background: var(--surface-sunken);
+}
+
+.zoom-input:focus {
+  border-color: var(--blue);
+  outline: none;
 }
 
 /* ---------- 画布 ---------- */
@@ -308,7 +313,61 @@
   padding: 18px 16px;
   background: var(--panel);
   border-left: 1px solid var(--border);
+  /* 内容自己滚，底部的页码栏要固定住 */
+  overflow: hidden;
+}
+
+.inspector-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  /* 让滚动条贴到面板边缘，而不是被内边距挤进来 */
+  margin: 0 -16px;
+  padding: 0 16px;
+}
+
+.inspector-footer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.inspector-page {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.page-jump {
+  display: flex;
+  gap: 6px;
+}
+
+.page-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.page-input:focus {
+  border-color: var(--blue);
+  outline: none;
+}
+
+.page-input::-webkit-outer-spin-button,
+.page-input::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
 }
 
 .app.inspector-hidden .inspector {
@@ -451,15 +510,6 @@
 .margin-cell input {
   height: 34px;
   font-size: 13px;
-}
-
-/* 设置面板末尾的「重置所有」：和上面的表单拉开距离，别误触 */
-.settings-danger {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 6px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
 }
 
 /* ---------- 快捷键表 ---------- */

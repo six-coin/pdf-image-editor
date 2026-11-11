@@ -118,10 +118,13 @@ export function scaleFromCorner(rect, corner, dx, dy, keepRatio, minSize = MIN_S
 
   if (keepRatio && rect.h > 0 && rect.w > 0) {
     const ratio = rect.w / rect.h;
-    const widthRatio = Math.abs(nw - rect.w) / rect.w;
-    const heightRatio = Math.abs(nh - rect.h) / rect.h;
-    if (widthRatio >= heightRatio) nh = nw / ratio;
-    else nw = nh * ratio;
+    // 只用长边驱动（与 core/geometry.py 同名函数同构）：宽图竖着拖、
+    // 竖图横着拖都不改变尺寸，避免短边一动就让另一条边成倍跳。
+    if (rect.w >= rect.h) {
+      nh = nw / ratio;
+    } else {
+      nw = nh * ratio;
+    }
     const anchorX = corner === 'tl' || corner === 'bl' ? right : rect.x;
     const anchorY = corner === 'tl' || corner === 'tr' ? bottom : rect.y;
     nx = corner === 'tl' || corner === 'bl' ? anchorX - nw : anchorX;
@@ -235,6 +238,9 @@ function startMove(event, node) {
     items,
     moved: false,
     ids,
+    // 记下按在谁身上、有没有按 Shift：松手没拖动时要用它收拢选中。
+    clicked: id,
+    toggled: event.shiftKey,
   });
   capture(event);
   event.preventDefault();
@@ -251,7 +257,8 @@ function moveItems(point) {
       width: item.scene.width,
       height: item.scene.height,
     };
-    const target = pageAt(next.top + next.height / 2);
+    // 指针进了哪一页就落到哪一页：不用等松手，也不用猜中心点。
+    const target = pageAt(point.y);
     const pageIndex = target === null ? item.obj.page : target;
     const rect = pageRectRel(pageIndex);
     if (!rect) continue;
@@ -372,8 +379,12 @@ function onUp(event) {
 
   if (current.kind === 'move') {
     if (!current.moved) {
-      applySelection(current.ids);
-      commitSelection(current.ids);
+      // 多选时点中其中一张、又没拖动：只留这一张。
+      // 收起选中不能放在 pointerdown——那样就没法整组拖动了。
+      const ids =
+        !current.toggled && current.ids.length > 1 ? [current.clicked] : current.ids;
+      applySelection(ids);
+      commitSelection(ids);
       return;
     }
     commitMove(current);

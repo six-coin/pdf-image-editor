@@ -152,7 +152,7 @@ def test_undo_redo_after_split(editor, opened):
     assert len(instance.redo()["objects"]) == 4
 
 
-def test_save_writes_file_and_resets_history(editor, opened):
+def test_save_keeps_history_and_marks_saved(editor, opened):
     instance, _server = editor
     path = opened()
     obj = _objects(instance)[0]
@@ -164,7 +164,8 @@ def test_save_writes_file_and_resets_history(editor, opened):
 
     snapshot = instance.get_state()
     assert snapshot["doc"]["dirty"] is False
-    assert snapshot["history"]["can_undo"] is False
+    # 保存不再重新加载，撤销历史要留着
+    assert snapshot["history"]["can_undo"] is True
     assert snapshot["doc"]["page_count"] == 1
 
     out = pymupdf.open(path)
@@ -173,6 +174,56 @@ def test_save_writes_file_and_resets_history(editor, opened):
     assert bbox[0] == pytest.approx(400, abs=1)
     assert bbox[1] == pytest.approx(500, abs=1)
     out.close()
+
+
+def test_save_does_not_reload_pages(editor, opened):
+    """保存后页面 DOM 不重建：generation 不变，对象原样留着。"""
+    instance, _server = editor
+    opened()
+    obj = _objects(instance)[0]
+    instance.commit_transform([{"id": obj["id"], "page": 0, "x": 300, "y": 200, "w": 100, "h": 80}])
+    before = instance.get_state()
+
+    assert instance.save_document()["ok"] is True
+    after = instance.get_state()
+
+    assert after["doc"]["generation"] == before["doc"]["generation"]
+    assert [o["id"] for o in after["objects"]] == [o["id"] for o in before["objects"]]
+
+
+def test_saving_twice_does_not_duplicate_images(editor, opened):
+    """重定基线后 src_rect 必须跟着刷新，否则第二次保存会叠图。"""
+    instance, _server = editor
+    path = opened()
+    obj = _objects(instance)[0]
+    instance.commit_transform([{"id": obj["id"], "page": 0, "x": 300, "y": 200, "w": 100, "h": 80}])
+    assert instance.save_document()["ok"] is True
+
+    moved = _objects(instance)[0]
+    instance.commit_transform(
+        [{"id": moved["id"], "page": 0, "x": 120, "y": 140, "w": 100, "h": 80}]
+    )
+    assert instance.save_document()["ok"] is True
+
+    out = pymupdf.open(path)
+    assert len(out[0].get_image_info(xrefs=True)) == 1
+    out.close()
+
+
+def test_reload_document_needs_confirm_when_dirty(editor, opened):
+    instance, _server = editor
+    opened()
+    obj = _objects(instance)[0]
+    instance.commit_transform([{"id": obj["id"], "page": 0, "x": 200, "y": 200, "w": 100, "h": 80}])
+
+    blocked = instance.reload_document()
+    assert blocked["ok"] is False
+    assert blocked["needs_confirm"] is True
+
+    snapshot = instance.reload_document(True)
+    assert snapshot["ok"] is True
+    assert snapshot["doc"]["dirty"] is False
+    assert len(snapshot["objects"]) == 0  # 重新加载后要等页面装载才会重新抽图
 
 
 def test_save_refuses_read_only_file(editor, opened):
@@ -462,3 +513,35 @@ def test_reset_settings_restores_defaults(editor, opened):
     assert snapshot["undo_limit"] == 100
     assert snapshot["reference"]["left_mm"] == pytest.approx(10.0)
     assert snapshot["keybindings"] == {}
+
+
+def test_move_to_unloaded_page_pulls_in_its_images(editor, pdf_factory, wait):
+    """拖到还没装载过的页：那页原有的图要先抽进模型。
+
+    否则模型里只有拖过去的那张、文件里却有两张，保存时只能整页重建（界面闪一下），
+    页面之后装载时还会把同一张图再抽一遍。
+    """
+    instance, _server = editor
+    path = pdf_factory("two.pdf", pages=2, images=1)
+    started = instance.open_path(str(path), force=True)
+    assert wait(instance, started["task"])["state"] == "ready"
+    assert instance.load_page(0, 96)["ok"] is True
+
+    obj = _objects(instance)[0]
+    snapshot = instance.commit_transform(
+        [{"id": obj["id"], "page": 1, "x": 100, "y": 100, "w": 100, "h": 80}]
+    )
+    assert len(snapshot["objects"]) == 2
+    assert len([o for o in snapshot["objects"] if o["page"] == 1]) == 2
+
+    result = instance.save_document()
+    assert result["ok"] is True
+    # 重定基线成功：没有整页重建
+    assert instance.get_state()["doc"]["generation"] == snapshot["doc"]["generation"]
+    assert len(instance.get_state()["objects"]) == 2
+
+    # 原页的那张要被擦掉，否则保存后一张图会变成两张
+    out = pymupdf.open(path)
+    assert len(out[0].get_image_info(xrefs=True)) == 0
+    assert len(out[1].get_image_info(xrefs=True)) == 2
+    out.close()

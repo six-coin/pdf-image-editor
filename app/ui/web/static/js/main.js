@@ -2,7 +2,7 @@
 
 import * as actions from './actions.js';
 import { bridgeReady, call, setStrings, T, toast } from './bridge.js';
-import { bindCanvas, fitWidth, observePages, resetZoom, zoomBy } from './canvas.js';
+import { bindCanvas, fitWidth, observePages, pageJump, resetZoom, zoomBy } from './canvas.js';
 import { openExport } from './export.js';
 import { bindGuides } from './guides.js';
 import { bindInteract } from './interact.js';
@@ -18,6 +18,8 @@ const ACTIONS = {
   save: actions.saveDoc,
   'save-as': actions.saveAs,
   export: openExport,
+  reload: actions.reloadDoc,
+  'page-jump': pageJump,
   settings: openSettings,
   'toggle-theme': async () => {
     const next = state.view.theme === 'dark' ? 'light' : 'dark';

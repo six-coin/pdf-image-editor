@@ -59,6 +59,25 @@ def test_scale_from_tl_moves_origin():
     assert scaled.h == pytest.approx(125)
 
 
+def test_scale_is_driven_by_the_long_side():
+    """宽图只看横向位移，竖图只看纵向位移。"""
+    wide = Rect(0, 0, 500, 50)
+    scaled = scale_from_corner(wide, "br", 10, 10)
+    assert scaled.w == pytest.approx(510)
+    assert scaled.h == pytest.approx(51)
+
+    # 宽图竖着拖：没有横向位移，尺寸不变
+    assert scale_from_corner(wide, "br", 0, 10) == wide
+
+    tall = Rect(0, 0, 50, 500)
+    scaled = scale_from_corner(tall, "br", 10, 10)
+    assert scaled.h == pytest.approx(510)
+    assert scaled.w == pytest.approx(51)
+
+    # 竖图横着拖：同样不变
+    assert scale_from_corner(tall, "br", 10, 0) == tall
+
+
 def test_scale_refuses_to_flip():
     rect = Rect(100, 100, 200, 100)
     assert scale_from_corner(rect, "br", -500, -500) == rect

@@ -54,8 +54,9 @@ def scale_from_corner(
 ) -> Rect:
     """按指针位移缩放。
 
-    ``keep_ratio=True`` 时保持原宽高比，由变化幅度更大的那个轴决定比例。
-    结果小于 ``min_size`` 时原样返回，避免矩形翻面。
+    ``keep_ratio=True`` 时保持原宽高比，**只用长边驱动**：宽图只看横向位移，
+    竖图只看纵向位移，另一条边按比例算。结果小于 ``min_size`` 时原样返回，
+    避免矩形翻面。
     """
     if corner not in _CORNERS:
         return rect
@@ -76,14 +77,14 @@ def scale_from_corner(
 
     if keep_ratio:
         ratio = rect.w / rect.h
-        width_ratio = abs(new.w - rect.w) / rect.w
-        height_ratio = abs(new.h - rect.h) / rect.h
-        if width_ratio >= height_ratio:
+        # 只用长边驱动。短边一动就让另一条边按比例放大，宽而扁的图竖着拖 1px
+        # 宽度就跳 10px，手感是"精度很低"。所以宽图竖着拖、竖图横着拖都是空操作。
+        if rect.w >= rect.h:
             width = new.w
-            height = new.w / ratio
+            height = width / ratio
         else:
-            width = new.h * ratio
             height = new.h
+            width = height * ratio
         anchor_x, anchor_y = _anchor(rect, corner)
         x = anchor_x - width if corner in ("tl", "bl") else anchor_x
         y = anchor_y - height if corner in ("tl", "tr") else anchor_y
