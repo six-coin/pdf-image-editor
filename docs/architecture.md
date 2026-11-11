@@ -287,6 +287,8 @@ api.save_document(path?)
 
 `apply_redactions` 的参数是刻意的：`images=REMOVE` 只摘图，`graphics=LINE_ART_NONE`、`text=TEXT_NONE` 保证文字与矢量不动。
 
+`insert_image` 也必须显式写 `keep_proportion=False`。默认值 `True` 对 JPEG（DCTDecode 直通）会生效：它按原始比例把图居中塞进目标矩形，中心与短边不变，看起来就是「用户调过的长宽比被还原了」；PNG 因为要重新编码，反而看不出问题。所以这个坑只在照片类扫描件上出现。
+
 单页失败不拖累其他页，只记一条警告，最后汇总成一份报告（见使用手册第 9 节）。
 
 ### 6.9 保存后的基线重建

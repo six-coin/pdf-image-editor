@@ -230,3 +230,35 @@ def test_cross_page_move_erases_the_source(pdf_factory, store, tmp_path):
     assert len(out[1].get_image_info(xrefs=True)) == 2
     out.close()
     doc.close()
+
+
+def test_aspect_ratio_survives_save(tmp_path, store):
+    """改过长宽比的图，保存后重新打开必须还是那个矩形。
+
+    PyMuPDF 对 JPEG 走 DCTDecode 直通，此时默认的 ``keep_proportion=True`` 会把
+    图按原始比例居中塞进目标矩形：中心不变、短边不变，看起来就是「比例被还原」。
+    PNG 因为要重新编码反而不受影响，所以这里必须用 JPEG 才能复现。
+    """
+    src = tmp_path / "ratio.pdf"
+    pix = pymupdf.Pixmap(pymupdf.csRGB, 40, 20, b"\xff\x00\x00" * 800, False)
+    doc = pymupdf.open()
+    page = doc.new_page(width=595, height=842)
+    page.insert_image(pymupdf.Rect(100, 100, 300, 200), stream=pix.tobytes("jpg"))
+    doc.save(src)
+    doc.close()
+
+    handle = PdfDocument.open(src, store)
+    obj = handle.editable_images(0)[0]
+    assert (obj.rect.w, obj.rect.h) == (pytest.approx(200), pytest.approx(100))
+
+    obj.rect = Rect(100, 100, 300, 100)  # 3:1，像素是 2:1
+    state = DocumentState(path=src, objects=[obj])
+    out = tmp_path / "ratio-out.pdf"
+    save(src, out, state, store)
+    handle.close()
+
+    again = PdfDocument.open(out, store)
+    rect = again.editable_images(0)[0].rect
+    again.close()
+    assert (rect.x, rect.y) == (pytest.approx(100), pytest.approx(100))
+    assert (rect.w, rect.h) == (pytest.approx(300), pytest.approx(100))

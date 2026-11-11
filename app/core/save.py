@@ -108,6 +108,10 @@ def _insert_objects(
                 stream=store.get(obj.image_id),
                 rotate=_rotation(obj.rotation),
                 overlay=True,
+                # 必须显式关掉：PyMuPDF 对 JPEG 走 DCTDecode 直通，此时默认的
+                # keep_proportion=True 会把图按原始比例居中塞进矩形，用户调过的
+                # 长宽比在重新打开时就被抹掉了。PNG 因为要重新编码，反而不受影响。
+                keep_proportion=False,
             )
             report.replaced += 1
         except Exception as exc:
