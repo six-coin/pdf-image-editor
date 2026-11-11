@@ -443,6 +443,7 @@ kbd {
 
 .modal-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   /* 下方必须留白，否则按钮贴着卡片底边 */

@@ -453,6 +453,51 @@ def test_preprocess_worker_finishes_task(editor, pdf_factory, tmp_path):
     assert target.is_file()
 
 
+class _StubWindow:
+    """只回答文件对话框，其余窗口能力一概不用。"""
+
+    def __init__(self, picked: str) -> None:
+        self._picked = picked
+
+    def create_file_dialog(self, *args, **kwargs):
+        return self._picked
+
+
+def test_preprocess_current_uses_the_open_document(editor, opened, tmp_path, wait):
+    instance, _server = editor
+    source = opened()
+    target = tmp_path / "bw.pdf"
+    instance._window = _StubWindow(str(target))  # noqa: SLF001
+
+    started = instance.preprocess_pdf("current")
+    assert started["ok"] is True
+    status = wait(instance, started["task"])
+    assert status["state"] == "ready"
+    assert Path(status["result"]["path"]) == target
+    assert target.is_file()
+    assert source.is_file()
+
+
+def test_preprocess_current_refuses_unsaved_changes(editor, opened):
+    instance, _server = editor
+    opened()
+    obj = _objects(instance)[0]
+    instance.commit_transform([{"id": obj["id"], "page": 0, "x": 120, "y": 120, "w": 80, "h": 60}])
+    instance._window = _StubWindow("unused.pdf")  # noqa: SLF001
+
+    result = instance.preprocess_pdf("current")
+    assert result["ok"] is False
+    assert result["reason"] == "dirty"
+
+
+def test_preprocess_current_needs_a_document(editor):
+    instance, _server = editor
+    instance._window = _StubWindow("unused.pdf")  # noqa: SLF001
+    result = instance.preprocess_pdf("current")
+    assert result["ok"] is False
+    assert "文档" in result["message"]
+
+
 def test_external_edit_cleans_temp_on_failure(editor, opened, monkeypatch, tmp_path):
     from app import paths
 

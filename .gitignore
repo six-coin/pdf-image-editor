@@ -18,7 +18,6 @@ wheels/
 .mypy_cache/
 
 # 用户数据
-temp/
 pdfs/
 logs/
 config/

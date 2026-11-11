@@ -51,18 +51,16 @@ async function waitTask(taskId) {
 
 /* ---------- 文档 ---------- */
 
-export async function openPdf() {
-  const path = await call('browse_pdf');
-  if (!path) return;
-
+/** 打开一个已知路径的 PDF：处理未保存修改、等任务、刷新、适合宽度。 */
+async function openFile(path) {
   let started = await call('open_path', path);
-  if (!started) return;
+  if (!started) return false;
   if (!started.ok) {
     // 有未保存修改时后端会拒绝。这里必须给出「保存 / 不保存 / 取消」三条路，
     // 只弹一条提示的话用户选完文件就卡住了，还得自己回去保存再重来一遍。
     if (started.reason !== 'dirty') {
       toast(started.message || T('error.unexpected'), false);
-      return;
+      return false;
     }
     const choice = await askUnsaved({
       title: T('dialog.unsaved_title'),
@@ -71,30 +69,37 @@ export async function openPdf() {
       discard: T('dialog.discard'),
       cancel: T('dialog.cancel'),
     });
-    if (choice === 'cancel') return;
+    if (choice === 'cancel') return false;
     if (choice === 'save') {
       const saved = await call('save_document');
       if (!saved || !saved.ok) {
         toast((saved && saved.message) || T('error.unexpected'), false);
-        return;
+        return false;
       }
       await refresh();
     }
     started = await call('open_path', path, true);
     if (!started || !started.ok) {
       toast((started && started.message) || T('error.unexpected'), false);
-      return;
+      return false;
     }
   }
 
   const done = await waitTask(started.task);
   if (!done || done.state !== 'ready') {
     if (done && done.message) toast(done.message, false);
-    return;
+    return false;
   }
   const { fitWidth } = await import('./canvas.js');
   const snapshot = await refresh();
   if (snapshot && snapshot.doc.page_count) fitWidth();
+  return true;
+}
+
+export async function openPdf() {
+  const path = await call('browse_pdf');
+  if (!path) return;
+  await openFile(path);
 }
 
 const WARNING_KEYS = {
@@ -292,33 +297,60 @@ export async function externalEdit() {
 
 /* ---------- 预处理 ---------- */
 
-/** 黑白化预处理：先解释清楚再让用户选文件，避免点一下就开始跑。 */
+/**
+ * 黑白化预处理：先解释清楚，再让用户选处理哪个文档。
+ *
+ * 已经打开文档时多给一个「处理当前打开的文档」——省掉重新选一遍文件；
+ * 没有打开文档时只剩「处理其他文档」。
+ */
 export async function preprocessPdf() {
+  const hasDoc = Boolean(state.data && state.data.doc.page_count);
+  const actions = [{ label: T('dialog.cancel'), value: 'cancel', kind: 'ghost' }];
+  if (hasDoc) {
+    actions.push({ label: T('preprocess.other'), value: 'other', kind: 'ghost' });
+  }
+  actions.push({
+    label: T(hasDoc ? 'preprocess.current' : 'preprocess.other'),
+    value: hasDoc ? 'current' : 'other',
+    kind: 'primary',
+  });
+
   const choice = await openModal({
     title: T('preprocess.title'),
     text: T('preprocess.text'),
     narrow: true,
-    actions: [
-      { label: T('dialog.cancel'), value: 'cancel', kind: 'ghost' },
-      { label: T('preprocess.start'), value: 'ok', kind: 'primary' },
-    ],
+    actions,
   });
-  if (choice !== 'ok') return;
+  if (choice !== 'current' && choice !== 'other') return;
 
-  const started = await call('preprocess_pdf');
+  const started = await call('preprocess_pdf', choice);
   if (!started) return;
   if (!started.ok) {
     // 在选择框里点了取消不是错误，不弹提示。
     if (started.reason !== 'cancel') toast(started.message || T('error.unexpected'), false);
     return;
   }
+
   const done = await waitTask(started.task);
   if (!done || done.state !== 'ready') {
     if (done && done.message) toast(done.message, false);
     return;
   }
+
   const result = done.result || {};
   toast(T('status.preprocess_done', { count: result.count ?? 0, path: result.path ?? '' }));
+  if (!result.path) return;
+
+  const open = await openModal({
+    title: T('preprocess.open_title'),
+    text: T('preprocess.open_ask', { count: result.count ?? 0, path: result.path }),
+    narrow: true,
+    actions: [
+      { label: T('dialog.cancel'), value: 'cancel', kind: 'ghost' },
+      { label: T('toolbar.open'), value: 'open', kind: 'primary' },
+    ],
+  });
+  if (open === 'open') await openFile(result.path);
 }
 
 /* ---------- 界面 ---------- */

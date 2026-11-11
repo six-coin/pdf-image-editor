@@ -95,7 +95,7 @@ It launches through `pythonw.exe`, so no console window appears. You can call it
 
 **Canvas**
 
-Pages are stacked vertically and rendered as they scroll into view. A floating "current page / total" chip sits in the bottom-left corner of the canvas and the same line appears at the bottom of the inspector; the busy bar on the right of the top bar shows progress for long tasks such as opening and preprocessing.
+Pages are stacked vertically, and only four of them are rendered: the current page, the one after it, the one before it, and the page after that. Pages rendered earlier stay in place when you move away — nothing is unloaded — but distant pages are never rendered ahead of time. A floating "current page / total" chip sits in the bottom-left corner of the canvas and the same line appears at the bottom of the inspector; the busy bar on the right of the top bar shows progress for long tasks such as opening and preprocessing.
 
 **Inspector**
 
@@ -134,6 +134,8 @@ Hold `Space` and drag, or drag with the middle mouse button. Release `Space` to 
 ### Page navigation
 
 The inspector footer has a page field: type a number and press Enter or click "Go". Only integers between 1 and the page count are accepted.
+
+Jumping is instant rather than a smooth scroll: in a 50-page document, going from page 1 to page 30 loads only pages 30, 31, 29 and 32 — the 28 pages in between are never rendered.
 
 ## 7. Editing images
 
@@ -265,6 +267,7 @@ When saving finishes you are told which path was written and how many images wer
 | An image on page N failed to insert | Encoding or write error; the original is still in the background |
 | Page N failed to erase | The redaction did not apply; the original may remain |
 | Annotations on page N could not be restored | In rare cases writing `/Annots` back fails |
+| Saved, but the editor could not reopen the file | The file on disk is fine; click Reload in the top bar to continue |
 
 ### Export pages
 
@@ -281,7 +284,12 @@ The ↻ button in the top bar re-reads the current file from disk and discards i
 
 Scans usually carry a layer of grey background that looks bad in print or archive. "Preprocess" in the top bar converts every image in the document to grayscale, pushes pixels brighter than a threshold to pure white, and **saves the result as a new file**.
 
-The button opens an explanation first; only after you confirm does it ask for a source and a target file. This does not touch the document you have open, and it works without opening a PDF at all.
+The button opens an explanation first, and it offers two routes:
+
+- **Process the open document**: use the file you are editing, no need to pick a source. It requires a clean document — preprocessing works on the on-disk version, so opening the result afterwards would drop your unsaved edits;
+- **Process another file**: pick any PDF; it does not have to be open.
+
+Then pick the target file; choosing the source file itself is refused.
 
 | Item | Detail |
 |---|---|
@@ -291,7 +299,7 @@ The button opens an explanation first; only after you confirm does it ask for a 
 | Output | The target file you choose; choosing the source file itself is refused |
 | Progress | The busy bar on the right of the top bar shows processed / total |
 
-When it finishes you are told where the file went and how many images were processed. Run it again to redo the work — the source file is never modified.
+When it finishes you are told where the file went and how many images were processed, then asked whether to open the result right away. Run it again to redo the work — the source file is never modified.
 
 > The higher the threshold, the more light grey becomes white; 235 suits most scans. Below 200 you start erasing pale lines and light colour along with the background.
 
@@ -379,7 +387,7 @@ It does not. Each page's images are read into the model only the first time that
 That image has an alpha channel (logo, watermark); thresholding would turn its transparent areas into black blocks, so it is skipped. Such images are meant to stay as they are.
 
 **A shortcut does nothing**
-First check whether you are in split mode (global shortcuts are suspended), then whether an input has focus (keys go to the input). If you rebound keys, Settings marks the conflicts.
+First check whether you are in split mode (global shortcuts are suspended), then whether a save is running (the canvas and shortcuts are locked while saving), then whether an input has focus (keys go to the input). If you rebound keys, Settings marks the conflicts.
 
 **The window is blank**
 The WebView2 runtime is missing or too old. Install [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) once and start again.
@@ -392,3 +400,4 @@ The WebView2 runtime is missing or too old. Install [WebView2 Runtime](https://d
 - **Splitting works on one image at a time**: entering split mode with several selected asks you to pick one.
 - **Export requires saving first**: export reads the file on disk, not the in-memory edits.
 - **Preprocessing only handles raster images**: vectors and text are not thresholded, so a grey background painted as vector art stays where it is.
+- **Only four pages are preloaded**: distant pages render when you get near them, so dragging the scrollbar quickly shows grey placeholders for a moment.

@@ -1,5 +1,5 @@
 /* 画布：页面可见性、背景图加载、缩放与滚动。
-   背景位图按目标 DPI 由后端渲染，只在"进入视野"或"DPI 档位变化"时重新拉取；
+   背景位图按目标 DPI 由后端渲染，只在"进入加载窗口"或"DPI 档位变化"时重新拉取；
    中间的连续缩放只改 CSS 尺寸，不重传图片。 */
 
 import { call } from './bridge.js';
@@ -7,10 +7,18 @@ import { BASE_PX_PER_PT, clampZoom, dpiForZoom, state } from './state.js';
 import { layoutPages, pageEl, renderPageIndicator, renderZoom } from './render.js';
 import { scheduleRefresh } from './sync.js';
 
+// 加载窗口：本页 → 后一页 → 前一页 → 后两页。50 页的文档跳到第 30 页只拉这四页，
+// 不会因为滚动经过而把前 29 页全渲染一遍。
+const WINDOW = [0, 1, -1, 2];
+
 const visible = new Set();
-const inflight = new Map();
+const inflight = new Set();
+// 加载失败的页：同一个 (页, dpi) 不要在 pump 里原地重试，否则会变成死循环。
+// 快照落地（layout:done）时清空——那时文档状态可能已经变了，值得再试一次。
+const failed = new Set();
 let observer = null;
 let zoomTimer = 0;
+let pumping = false;
 
 function viewport() {
   return document.getElementById('viewport');
@@ -21,39 +29,98 @@ function viewport() {
 export function observePages() {
   if (observer) observer.disconnect();
   visible.clear();
-  observer = new IntersectionObserver(onIntersect, {
-    root: viewport(),
-    rootMargin: '120% 0px',
-  });
+  failed.clear();
+  // 只观察视口本身：留 margin 等于提前加载屏幕外的页，窗口已经由 WINDOW 管了。
+  observer = new IntersectionObserver(onIntersect, { root: viewport() });
   document.querySelectorAll('.page').forEach((el) => observer.observe(el));
+  pump();
 }
 
 function onIntersect(entries) {
   for (const entry of entries) {
     const index = Number(entry.target.dataset.page);
-    if (entry.isIntersecting) {
-      visible.add(index);
-      loadPage(index);
-    } else {
-      visible.delete(index);
-    }
+    if (entry.isIntersecting) visible.add(index);
+    else visible.delete(index);
   }
+  pump();
 }
 
-async function loadPage(index) {
-  if (!state.data) return;
+/** 当前该加载哪些页：加载窗口 + 真正压在视口里的页（低倍缩放时可能超出窗口）。 */
+function wantedPages() {
+  const pages = state.data ? state.data.pages : [];
+  if (!pages.length) return [];
+  const current = currentPage();
+  const wanted = new Set();
+  for (const offset of WINDOW) {
+    const index = current + offset;
+    if (index >= 0 && index < pages.length) wanted.add(index);
+  }
+  for (const index of visible) wanted.add(index);
+  return [...wanted];
+}
+
+/** 越小越先加载。窗口内按 WINDOW 的顺序，窗口外的可见页排在最后。 */
+function priorityOf(index, current) {
+  const rank = WINDOW.indexOf(index - current);
+  return rank >= 0 ? rank : WINDOW.length + Math.abs(index - current);
+}
+
+/**
+ * 逐个加载：同一时刻只发一个请求。
+ *
+ * 后端的 load_page 要拿同一把锁，并发发出去也只会在锁上排队；串行还能保证
+ * 「当前页」一定第一个回来，不会出现先请求的远页堵住近页。
+ */
+function pump() {
+  if (pumping || !state.data) return;
+  pumping = true;
+
+  const step = () => {
+    const dpi = state.view.dpi;
+    const current = currentPage();
+    let best = null;
+    let bestScore = Infinity;
+
+    for (const index of wantedPages()) {
+      if (inflight.has(index)) continue;
+      if (failed.has(`${index}:${dpi}`)) continue;
+      const el = pageEl(index);
+      if (!el) continue;
+      if (el.dataset.dpi === String(dpi) && el.dataset.loaded === '1') continue;
+      const score = priorityOf(index, current);
+      if (score < bestScore) {
+        bestScore = score;
+        best = index;
+      }
+    }
+
+    if (best === null) {
+      pumping = false;
+      return;
+    }
+
+    inflight.add(best);
+    loadPage(best, dpi).finally(() => {
+      inflight.delete(best);
+      step();
+    });
+  };
+
+  step();
+}
+
+async function loadPage(index, dpi) {
   const el = pageEl(index);
   if (!el) return;
-  const dpi = state.view.dpi;
-  if (el.dataset.dpi === String(dpi) && el.dataset.loaded === '1') return;
-  if (inflight.get(index) === dpi) return;
 
-  inflight.set(index, dpi);
   const data = await call('load_page', index, dpi);
-  inflight.delete(index);
-  if (!data || !data.ok) return;
+  if (!data || !data.ok) {
+    failed.add(`${index}:${dpi}`);
+    return;
+  }
   if (state.view.dpi !== dpi) return; // 缩放档位已变，丢弃过期回包
 
+  failed.delete(`${index}:${dpi}`);
   el.dataset.dpi = String(dpi);
   el.dataset.loaded = '1';
 
@@ -66,7 +133,7 @@ async function loadPage(index) {
 }
 
 function reloadVisible() {
-  for (const index of visible) loadPage(index);
+  pump();
 }
 
 /* ---------- 缩放 ---------- */
@@ -120,12 +187,16 @@ export function resetZoom() {
   setZoom(1, null, true);
 }
 
-/** 把某一页滚到视口顶部。 */
+/** 把某一页滚到视口顶部。远距离直接跳：平滑滚动会一路经过中间页，每页都触发加载。 */
 export function scrollToPage(index) {
   const box = viewport();
   const el = pageEl(index);
   if (!box || !el) return;
-  box.scrollTo({ top: Math.max(0, el.offsetTop - 24), behavior: 'smooth' });
+  const top = Math.max(0, el.offsetTop - 24);
+  const far = Math.abs(top - box.scrollTop) > box.clientHeight * 1.5;
+  box.scrollTo({ top, behavior: far ? 'auto' : 'smooth' });
+  // 不等 IntersectionObserver 的下一帧，立刻按新位置排一次加载
+  pump();
 }
 
 /** 属性栏底部那个"跳转到第 N 页"。 */
@@ -185,12 +256,20 @@ export function currentPage() {
 export function bindCanvas() {
   const box = viewport();
 
+  // 快照落地会重新布局：文档状态可能变了（比如保存完成），失败过的页值得再试一次
+  document.addEventListener('layout:done', () => {
+    failed.clear();
+    pump();
+  });
+
   let scrollFrame = 0;
   box.addEventListener('scroll', () => {
     if (scrollFrame) return;
     scrollFrame = window.requestAnimationFrame(() => {
       scrollFrame = 0;
       renderPageIndicator(currentPage());
+      // 当前页变了，加载窗口跟着挪；不停留在上一次的窗口上
+      pump();
     });
   });
 

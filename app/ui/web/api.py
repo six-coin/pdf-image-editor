@@ -782,26 +782,43 @@ class EditorApi:
 
     # ---- 预处理 ----
 
-    def preprocess_pdf(self) -> dict[str, Any]:
-        """选源文件、选目标文件，然后把黑白化丢进线程池。"""
+    def preprocess_pdf(self, source_mode: str = "other") -> dict[str, Any]:
+        """选源文件、选目标文件，然后把黑白化丢进线程池。
+
+        ``source_mode="current"`` 直接用当前打开的文档当源文件，省掉一次选文件。
+        有未保存修改时拒绝：处理的是磁盘上的版本，不是内存里的编辑，跑完再打开
+        结果就会「吃掉」那些改动。
+        """
         if self._window is None:
             return {"ok": False, "reason": "unavailable", "message": i18n.t("error.unexpected")}
+
         with self._lock:
-            directory = str(self._doc.path.parent) if self._doc is not None else ""
-        source = _first_path(
-            self._window.create_file_dialog(
-                webview.FileDialog.OPEN,
-                directory=directory,
-                file_types=(i18n.t("dialog.filter_pdf"), i18n.t("dialog.filter_all")),
+            current = self._doc.path if self._doc is not None else None
+            dirty = bool(self._stack and self._stack.dirty)
+
+        if str(source_mode) == "current":
+            if current is None:
+                return {"ok": False, "message": i18n.t("error.no_document")}
+            if dirty:
+                return {"ok": False, "reason": "dirty", "message": i18n.t("error.save_first")}
+            source = current
+        else:
+            picked = _first_path(
+                self._window.create_file_dialog(
+                    webview.FileDialog.OPEN,
+                    directory=str(current.parent) if current is not None else "",
+                    file_types=(i18n.t("dialog.filter_pdf"), i18n.t("dialog.filter_all")),
+                )
             )
-        )
-        if not source:
-            return {"ok": False, "reason": "cancel"}
+            if not picked:
+                return {"ok": False, "reason": "cancel"}
+            source = Path(picked)
+
         target = _first_path(
             self._window.create_file_dialog(
                 webview.FileDialog.SAVE,
-                directory=str(Path(source).parent),
-                save_filename=f"{Path(source).stem}-bw.pdf",
+                directory=str(source.parent),
+                save_filename=f"{source.stem}-bw.pdf",
                 file_types=(i18n.t("dialog.filter_pdf"),),
             )
         )
@@ -809,7 +826,7 @@ class EditorApi:
             return {"ok": False, "reason": "cancel"}
 
         task_id = self._new_task("preprocess")
-        self._executor.submit(self._preprocess_worker, Path(source), Path(target), task_id)
+        self._executor.submit(self._preprocess_worker, source, Path(target), task_id)
         return {"ok": True, "task": task_id}
 
     def _preprocess_worker(self, source: Path, target: Path, task_id: str) -> None:
