@@ -1,6 +1,6 @@
 /* 基础层：重置、字体、通用组件。
-   按钮、输入框、开关、弹窗的尺寸与状态取自 reference.md 3.7，只保留本应用
-   实际用到的部分；列表型骨架（.sidebar / .group / .item / .search）不搬。 */
+   按钮、输入框、开关、弹窗的尺寸与状态都收在这一层；列表型骨架
+   （.sidebar / .group / .item / .search）本应用用不到，不放进来。 */
 
 * {
   box-sizing: border-box;

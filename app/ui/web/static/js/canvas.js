@@ -169,7 +169,14 @@ export function zoomBy(factor, anchor = null) {
   setZoom(state.view.zoom * factor, anchor);
 }
 
-export function fitWidth() {
+/**
+ * 适合宽度。
+ *
+ * `resetScroll` 只在打开新文件时传 true：那时视口还停在上一份文件的滚动位置，
+ * 得回到顶部。点按钮、拖窗口大小都必须留在当前页——以前这里无条件
+ * `scrollTop = 0`，在第 30 页点一下适合宽度就跳回第 1 页了。
+ */
+export function fitWidth(resetScroll = false) {
   const pages = state.data && state.data.pages;
   if (!pages || !pages.length) return;
   const box = viewport();
@@ -177,9 +184,10 @@ export function fitWidth() {
   // 左右各留 48px 的留白（.pages 的 padding），两边必须一样宽。
   const available = Math.max(80, box.clientWidth - 96);
   const zoom = clampZoom(available / (widest * BASE_PX_PER_PT));
-  state.view.fitWidth = true;
+  // setZoom 会把 fitWidth 清掉（它代表「用户手动缩放过」），所以缩完再置位。
   setZoom(zoom, null, true);
-  box.scrollTop = 0;
+  state.view.fitWidth = true;
+  if (resetScroll === true) box.scrollTop = 0;
 }
 
 export function resetZoom() {

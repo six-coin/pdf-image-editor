@@ -92,7 +92,8 @@ async function openFile(path) {
   }
   const { fitWidth } = await import('./canvas.js');
   const snapshot = await refresh();
-  if (snapshot && snapshot.doc.page_count) fitWidth();
+  // 新文件要回到顶部，否则会继承上一份文件的滚动位置
+  if (snapshot && snapshot.doc.page_count) fitWidth(true);
   return true;
 }
 
