@@ -11,4 +11,4 @@ if not exist ".venv\Scripts\pythonw.exe" (
     exit /b 1
 )
 
-start "" ".venv\Scripts\pythonw.exe" "pdf_image_editor.pyw"
+start "" ".venv\Scripts\pythonw.exe" "main.pyw"
