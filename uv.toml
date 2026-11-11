@@ -1,5 +1,5 @@
-# 包索引：官方 PyPI。锁文件是分发物，必须指向所有人都能访问的源。
-# 国内加速请只改本机的全局配置，不要把镜像地址提交进仓库。
+# 国内镜像源：https://mirrors.aliyun.com/pypi/simple
+# 官方源：https://pypi.org/simple
 [[index]]
 url = "https://pypi.org/simple"
 default = true
