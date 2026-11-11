@@ -9,6 +9,7 @@ wheels/
 # 虚拟环境与编辑器
 .venv/
 .idea/
+.vscode/
 .workbuddy-ai/
 
 # 测试与类型检查缓存

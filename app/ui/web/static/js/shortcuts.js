@@ -61,6 +61,8 @@ function onKeyDown(event) {
   if (modalOpen() || inEditable(event.target)) return;
 
   if (event.code === 'Space') {
+    // 焦点在按钮上时，空格属于「按下这个按钮」，不能拿来当平移的起手式。
+    if (event.target && event.target.tagName === 'BUTTON') return;
     setSpaceHeld(true);
     event.preventDefault();
     return;

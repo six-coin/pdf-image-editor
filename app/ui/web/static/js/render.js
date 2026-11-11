@@ -55,9 +55,10 @@ export function applyTheme(theme) {
 
 /* ---------- 主入口 ---------- */
 
+// 图片 id 必须参与签名：外部编辑回填只换内容、不动几何，漏了它就重绘不出来。
 function signature(objects) {
   return objects
-    .map((o) => `${o.id}:${o.x},${o.y},${o.w},${o.h},${o.z},${o.page}`)
+    .map((o) => `${o.id}:${o.image}:${o.x},${o.y},${o.w},${o.h},${o.z},${o.page}`)
     .join('|');
 }
 
@@ -82,6 +83,7 @@ export function apply(data) {
   state.data = data;
   setBindings(data.keybindings);
   applyTheme(data.theme);
+  if (data.language) document.documentElement.lang = data.language;
   applyChrome();
 
   if (rebuilt) {

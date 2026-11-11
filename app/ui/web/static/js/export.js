@@ -6,7 +6,11 @@ import { state } from './state.js';
 
 function parsePages(text, max) {
   const pages = new Set();
-  for (const raw of String(text || '').replace(/\s/g, '').split(',')) {
+  // 中文逗号与全角空格都要认，否则预览说「没有可用的页码」而导出却成功。
+  const normalized = String(text || '')
+    .replace(/，/g, ',')
+    .replace(/[\s\u3000]/g, '');
+  for (const raw of normalized.split(',')) {
     if (!raw) continue;
     const range = raw.match(/^(\d+)-(\d+)$/);
     if (range) {
@@ -23,6 +27,41 @@ function parsePages(text, max) {
     }
   }
   return [...pages].sort((a, b) => a - b);
+}
+
+const PROBLEM_KEYS = {
+  reversed: 'error.page_range_reversed',
+  out_of_range: 'error.page_range_out_of_bounds',
+  bad_token: 'error.page_range_bad',
+};
+
+/** 被跳过的片段必须列出来：少导了页却不吭声，用户要等打开文件才发现。 */
+async function showProblems(problems, total) {
+  if (!problems.length) return;
+
+  const body = document.createElement('div');
+  body.className = 'warning-list';
+  for (const problem of problems) {
+    const row = document.createElement('div');
+    row.className = 'warning-row';
+    const token = document.createElement('span');
+    token.className = 'chip warn';
+    token.textContent = problem.token;
+    const text = document.createElement('span');
+    text.textContent = T(PROBLEM_KEYS[problem.code] || 'error.unexpected', {
+      token: problem.token,
+      total,
+    });
+    row.append(token, text);
+    body.appendChild(row);
+  }
+
+  await openModal({
+    title: T('export.skipped', { count: problems.length }),
+    body,
+    narrow: true,
+    actions: [{ label: T('dialog.close'), value: 'ok', kind: 'primary' }],
+  });
 }
 
 export async function openExport() {
@@ -88,4 +127,5 @@ export async function openExport() {
     return;
   }
   toast(T('export.done', { count: result.pages, path: result.path }));
+  await showProblems(result.errors || [], data.doc.page_count);
 }

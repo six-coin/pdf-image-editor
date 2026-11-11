@@ -55,9 +55,16 @@ def page_png(page: pymupdf.Page, editable: list[ImageObject], dpi: int = DEFAULT
 
 
 class RenderCache:
-    def __init__(self, document: PdfDocument, max_bytes: int = DEFAULT_CACHE_BYTES) -> None:
+    def __init__(
+        self,
+        document: PdfDocument,
+        max_bytes: int = DEFAULT_CACHE_BYTES,
+        max_dpi: int = MAX_DPI,
+    ) -> None:
         self._document = document
         self._max_bytes = max_bytes
+        # 渲染上限来自配置：调低它能明显省内存，代价是放大后发虚。
+        self._max_dpi = max(36, min(int(max_dpi), MAX_DPI))
         self._entries: OrderedDict[tuple[int, int], bytes] = OrderedDict()
         self._bytes = 0
 
@@ -66,7 +73,7 @@ class RenderCache:
         return self._bytes
 
     def page_png(self, index: int, dpi: int = DEFAULT_DPI) -> bytes:
-        dpi = max(36, min(int(dpi), MAX_DPI))
+        dpi = max(36, min(int(dpi), self._max_dpi))
         key = (index, dpi)
         cached = self._entries.get(key)
         if cached is not None:

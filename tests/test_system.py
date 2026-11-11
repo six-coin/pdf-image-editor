@@ -78,3 +78,33 @@ def test_preprocess_missing_file_raises(tmp_path):
 
     with pytest.raises(PdfError):
         preprocess.process(tmp_path / "nope.pdf", tmp_path / "out.pdf")
+
+
+def test_preprocess_refuses_to_overwrite_source(tmp_path):
+    from app.errors import PdfError
+
+    src = tmp_path / "same.pdf"
+    doc = pymupdf.open()
+    doc.new_page(width=200, height=200)
+    doc.save(str(src))
+    doc.close()
+
+    with pytest.raises(PdfError):
+        preprocess.process(src, src)
+    # 源文件必须原样还在，没有被写成半个文件
+    check = pymupdf.open(src)
+    assert check.page_count == 1
+    check.close()
+
+
+def test_preprocess_leaves_no_temp_file(tmp_path):
+    src = tmp_path / "in.pdf"
+    dst = tmp_path / "out.pdf"
+    doc = pymupdf.open()
+    doc.new_page(width=200, height=200)
+    doc.save(str(src))
+    doc.close()
+
+    preprocess.process(src, dst)
+    assert dst.is_file()
+    assert not list(tmp_path.glob("*.tmp-*"))

@@ -81,3 +81,12 @@ def test_dpi_is_capped(pdf_factory, store):
     pix = pymupdf.Pixmap(cache.page_png(0, 1000))
     assert pix.width <= 595 * 300 / 72 + 1
     doc.close()
+
+
+def test_configured_dpi_cap_is_honoured(pdf_factory, store):
+    """配置里的渲染上限必须真的生效，否则它只是个写进文件的摆设。"""
+    doc = PdfDocument.open(pdf_factory(), store)
+    cache = RenderCache(doc, max_dpi=120)
+    pix = pymupdf.Pixmap(cache.page_png(0, 600))
+    assert pix.width <= 595 * 120 / 72 + 1
+    doc.close()

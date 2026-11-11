@@ -108,9 +108,9 @@ class EditorApi:
         except OSError:
             directory = ""
         result = self._window.create_file_dialog(
-            webview.OPEN_DIALOG,
+            webview.FileDialog.OPEN,
             directory=directory,
-            file_types=("PDF 文件 (*.pdf)", "所有文件 (*.*)"),
+            file_types=(i18n.t("dialog.filter_pdf"), i18n.t("dialog.filter_all")),
         )
         return _first_path(result)
 
@@ -154,7 +154,7 @@ class EditorApi:
             if self._doc is not None:
                 self._doc.close()
             self._doc = doc
-            self._cache = RenderCache(doc)
+            self._cache = self._new_cache(doc)
             self._state = DocumentState(path=doc.path, pages=pages)
             self._stack = UndoStack(self._state, limit=int(self._settings["undo_limit"]))
             self._loaded_pages.clear()
@@ -183,8 +183,8 @@ class EditorApi:
             if 0 <= page_index < len(self._state.pages):
                 self._state.pages[page_index] = info
 
-            # 只在第一次装载某页时从文档里抽图。之后再抽会把用户已经删掉/切掉的
-            # 原图重新塞回模型——"保留一格之后大图又回来"就是这么来的。
+            # 每页的图片只抽一次：重复抽会把用户已经删掉、切掉的原图重新塞回模型，
+            # 表现就是"保留一格之后大图又回来了"。已装载的页记在 _loaded_pages 里。
             if page_index not in self._loaded_pages:
                 for obj in doc.editable_images(page_index):
                     self._state.objects.append(obj)
@@ -471,19 +471,36 @@ class EditorApi:
                 # 文件没动过，编辑也还在：只把句柄接回去，不重建状态。
                 self._restore_handle(source)
             return {"ok": False, "message": str(exc)}
+        except Exception:
+            logger.exception("保存失败 {}", target)
+            with self._lock:
+                self._restore_handle(source)
+            return {"ok": False, "message": i18n.t("error.unexpected")}
 
         with self._lock:
             # 把新文件当作基线，但对象、撤销栈、页面 DOM 都不重建——保存完界面不该闪一下。
             # 对不上（张数不一致）就退回完整重建。
             if self._rebase_after_save(target):
+                self._state.path = target
                 # 栈留着，只是把"已保存"的位置挪到当前：还能继续撤销。
                 if self._stack is not None:
                     self._stack.mark_saved()
             else:
                 self._generation += 1
-                self._reset_to_file(target)
+                try:
+                    self._reset_to_file(target)
+                except Exception:
+                    # 文件已经写好了，只是界面没能跟上；这不能报成「保存失败」。
+                    logger.exception("保存后重新打开失败 {}", target)
+                    report.warnings.append(
+                        {"page": None, "code": "reopen_failed", "detail": str(target)}
+                    )
         logger.info("已保存 {}，替换 {} 张图", target, report.replaced)
         return {"ok": True, **report.to_dict(), "generation": self._generation}
+
+    def _new_cache(self, doc: PdfDocument) -> RenderCache:
+        """按配置里的渲染上限建缓存。改小上限只影响之后新渲染的页。"""
+        return RenderCache(doc, max_dpi=int(self._settings.get("render_dpi_cap", 300)))
 
     def _restore_handle(self, path: Path) -> None:
         """保存失败后把文档句柄接回来，内存里的编辑原样保留。"""
@@ -495,13 +512,13 @@ class EditorApi:
             self._cache = None
             return
         self._doc = doc
-        self._cache = RenderCache(doc)
+        self._cache = self._new_cache(doc)
 
     def _reset_to_file(self, path: Path) -> None:
         """保存成功后以文件为新基线：对象与撤销栈全部重建，src_rect 刷新到新位置。"""
         doc = PdfDocument.open(path, self._store)
         self._doc = doc
-        self._cache = RenderCache(doc)
+        self._cache = self._new_cache(doc)
         state = DocumentState(path=doc.path)
         for index in range(doc.page_count):
             width, height = doc.page_pt_size(index)
@@ -553,7 +570,7 @@ class EditorApi:
                 obj.image_id = src.image_id
 
         self._doc = doc
-        self._cache = RenderCache(doc)
+        self._cache = self._new_cache(doc)
         self._loaded_pages.update(pages)
         # 被删掉的图已经在文件里彻底消失，墓碑表必须清空：
         # 留着的话下次保存会照着旧坐标去擦，可能擦掉刚放进去的新图。
@@ -601,15 +618,15 @@ class EditorApi:
                 except OSError:
                     directory = ""
         result = self._window.create_file_dialog(
-            webview.SAVE_DIALOG,
+            webview.FileDialog.SAVE,
             directory=directory,
             save_filename=str(suggested or ""),
-            file_types=("PDF 文件 (*.pdf)",),
+            file_types=(i18n.t("dialog.filter_pdf"),),
         )
         return _first_path(result)
 
     def export_pages(self, text: str, path: str) -> dict[str, Any]:
-        """把指定页导出成一个新 PDF。页码解析放在后端，前端不再写一份。"""
+        """把指定页导出成一个新 PDF。页码解析放在后端，前端只做输入时的预览。"""
         with self._lock:
             doc = self._doc
             if doc is None:
@@ -622,17 +639,23 @@ class EditorApi:
                 return {"ok": False, "message": i18n.t("error.page_range_empty")}
 
             target = Path(path)
+            temp_path = target.with_name(f"{target.name}.tmp-{os.getpid()}")
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 out = pymupdf.open()
                 try:
                     for index in pages:
                         out.insert_pdf(doc.doc, from_page=index, to_page=index)
-                    out.save(target, garbage=4, deflate=True)
+                    out.save(temp_path, garbage=4, deflate=True)
                 finally:
                     out.close()
+                os.replace(temp_path, target)
             except Exception as exc:
                 logger.exception("导出失败")
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
                 return {"ok": False, "message": i18n.t("error.save_failed", reason=str(exc))}
 
             logger.info("已导出 {} 页到 {}", len(pages), target)
@@ -741,20 +764,26 @@ class EditorApi:
     # ---- 预处理 ----
 
     def preprocess_pdf(self) -> dict[str, Any]:
+        """选源文件、选目标文件，然后把黑白化丢进线程池。"""
         if self._window is None:
-            return {"ok": False, "reason": "cancel"}
+            return {"ok": False, "reason": "unavailable", "message": i18n.t("error.unexpected")}
+        with self._lock:
+            directory = str(self._doc.path.parent) if self._doc is not None else ""
         source = _first_path(
             self._window.create_file_dialog(
-                webview.OPEN_DIALOG, file_types=("PDF 文件 (*.pdf)", "所有文件 (*.*)")
+                webview.FileDialog.OPEN,
+                directory=directory,
+                file_types=(i18n.t("dialog.filter_pdf"), i18n.t("dialog.filter_all")),
             )
         )
         if not source:
             return {"ok": False, "reason": "cancel"}
         target = _first_path(
             self._window.create_file_dialog(
-                webview.SAVE_DIALOG,
+                webview.FileDialog.SAVE,
+                directory=str(Path(source).parent),
                 save_filename=f"{Path(source).stem}-bw.pdf",
-                file_types=("PDF 文件 (*.pdf)",),
+                file_types=(i18n.t("dialog.filter_pdf"),),
             )
         )
         if not target:
@@ -926,12 +955,18 @@ class EditorApi:
         }
 
     def _new_task(self, label: str) -> str:
-        self._task_seq += 1
-        task_id = f"{label}-{self._task_seq}"
-        self._tasks[task_id] = {"state": "running", "progress": {}, "message": ""}
-        while len(self._tasks) > _TASK_HISTORY:
-            self._tasks.pop(next(iter(self._tasks)))
-        return task_id
+        with self._lock:
+            self._task_seq += 1
+            task_id = f"{label}-{self._task_seq}"
+            self._tasks[task_id] = {
+                "state": "running",
+                "progress": {},
+                "message": "",
+                "label": label,
+            }
+            while len(self._tasks) > _TASK_HISTORY:
+                self._tasks.pop(next(iter(self._tasks)))
+            return task_id
 
     def _finish_task(
         self,

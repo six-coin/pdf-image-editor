@@ -19,21 +19,22 @@ def test_first_load_creates_defaults(temp_config):
 
 def test_non_numeric_falls_back_to_default(temp_config):
     (temp_config / "app.json").write_text(
-        json.dumps({"undo_limit": "many", "zoom": None}), encoding="utf-8"
+        json.dumps({"undo_limit": "many", "preprocess_threshold": None}), encoding="utf-8"
     )
     config = settings.load_app()
     assert config["undo_limit"] == settings.DEFAULT_APP["undo_limit"]
-    assert config["zoom"] == settings.DEFAULT_APP["zoom"]
+    assert config["preprocess_threshold"] == settings.DEFAULT_APP["preprocess_threshold"]
 
 
 def test_out_of_range_is_clamped(temp_config):
     (temp_config / "app.json").write_text(
-        json.dumps({"undo_limit": 99999, "render_dpi_cap": 5, "zoom": -3}), encoding="utf-8"
+        json.dumps({"undo_limit": 99999, "render_dpi_cap": 5, "preprocess_threshold": -3}),
+        encoding="utf-8",
     )
     config = settings.load_app()
     assert config["undo_limit"] == 500
     assert config["render_dpi_cap"] == 96
-    assert config["zoom"] == 0.1
+    assert config["preprocess_threshold"] == 0
 
 
 def test_unknown_keys_are_preserved(temp_config):

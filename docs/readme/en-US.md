@@ -1,0 +1,366 @@
+# PDF Image Editor User Manual
+
+Split, move and replace images inside a PDF, **keeping the original text layer**.
+
+[简体中文](zh-CN.md)
+
+[Back to project home](../../README.md) · [Architecture](../architecture.md) · [Configuration & data formats](../configuration.md)
+
+---
+
+## 1. What it solves
+
+Scanned documents and mixed text/image PDFs often need a large image cut apart, a middle piece punched out, or a watermark covered. General-purpose PDF editors make you either rasterise the whole page — losing the text layer — or fiddle around in Illustrator.
+
+This tool splits every page into a **background** plus **independent image objects**:
+
+- the **background** keeps the document's text, vectors and annotations and is rendered on demand at the target DPI;
+- **image objects** can be dragged, scaled, split, deleted and replaced individually.
+
+Saving only swaps the images; everything else is left untouched.
+
+## 2. Feature overview
+
+**View**
+
+- Pages are rendered at a DPI chosen from the current zoom, so zooming in stays sharp
+- Wheel to scroll, `Ctrl`+wheel to zoom around the pointer, `Space`+drag or middle-drag to pan
+- Light and dark themes, following the system or set by hand
+- Page-margin guides with independently adjustable edges
+
+**Edit**
+
+- Drag, scale from any corner with the ratio locked (`Alt` for free ratio), multi-select (`Shift` to add)
+- Drag across pages: drop an image on another page and it belongs to that page
+- Split: drop a few cut lines on an image, then "Keep this cell / Extract this cell / Split into cells"
+- Bring to front / send to back, delete, arrow-key nudging
+- Paste an image from the clipboard (`Ctrl+V`)
+- Edit an image in the system default program and send it back
+
+**Save**
+
+- Only the images are replaced; text, vectors, annotations, bookmarks and links all survive
+- Writes a temporary file first, then swaps it in; the first in-place save leaves a `.bak.pdf`
+- Export selected pages as a new PDF
+- Black & white preprocessing: save a de-grayed copy, leaving the original alone
+
+## 3. Installation
+
+Requirements:
+
+- Windows 10 1803 or newer (or Windows 11)
+- **WebView2 Runtime** on the system (bundled with Windows 11 and most Windows 10 installs; otherwise install it once from Microsoft)
+- [uv](https://docs.astral.sh/uv/)
+
+```bat
+setup.bat
+```
+
+It checks for `uv`, then creates `.venv` and installs the dependencies. Re-run it to upgrade dependencies or to move to another machine; versions are pinned by `uv.lock`.
+
+The package index is fixed in `uv.toml` at the project root (official PyPI). On a slow connection in mainland China, point `url` at a mirror and run `uv lock` again — the lock file will then record the mirror addresses. Keep that change local; do not commit it.
+
+## 4. Starting
+
+```bat
+run.bat
+```
+
+It launches through `pythonw.exe`, so no console window appears. You can call it from any directory: every internal path is derived from the program directory, not from the current working directory.
+
+## 5. Interface
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ Open  Save  Save As │ name ● │ ↶ ↷ │ − 100% + Fit 100% │ …    │
+├───────────────────────────────────────────────┬──────────────┤
+│                                               │  Properties  │
+│              Canvas (pages stacked)           │  Thumbnail   │
+│                                               │  Page/Pos/Size│
+│                                               │  Actions     │
+├───────────────────────────────────────────────┴──────────────┤
+│ Split bar (only in split mode)                                │
+└──────────────────────────────────────────────────────────────┘
+```
+
+**Top bar**
+
+| Area | Contents |
+|---|---|
+| Left | Open, Save, Save As; file name and the unsaved dot |
+| Middle | Undo / redo, zoom (`−` / percentage field / `+` / Fit Width / 100%) |
+| Right | Preprocess, Export Pages, Reload, theme toggle, Settings, show/hide inspector |
+
+**Canvas**
+
+Pages are stacked vertically and rendered as they scroll into view. A floating "current page / total" chip sits in the bottom-left corner of the canvas and the same line appears at the bottom of the inspector; the busy bar on the right of the top bar shows progress for long tasks such as opening and preprocessing.
+
+**Inspector**
+
+- Nothing selected: a hint plus a "Paste image" button
+- One image selected: thumbnail, page, position (pt), size (pt), and "Split / Bring to front / Send to back / Edit externally / Delete"
+- Several selected: a hint plus "Delete"
+
+**Split bar**
+
+Appears at the bottom of the canvas once split mode starts. It shows how many horizontal and vertical cuts are placed and holds the three action buttons. The `kbd` hints on those buttons follow your custom key bindings.
+
+## 6. Opening and viewing
+
+### Open
+
+Click "Open" or press `Ctrl+O`. The file dialog starts in `pdfs/` under the program directory and creates that folder if it is missing — keeping frequently used PDFs there saves a few clicks.
+
+If opening fails you get a reason (corrupt file, encrypted, bad page count); the full stack trace goes to the log.
+
+### Zoom
+
+| Action | Effect |
+|---|---|
+| `Ctrl` + wheel | Zoom around the pointer |
+| `Ctrl+=` / `Ctrl+-` | Zoom in / out (20% per step) |
+| `Ctrl+0` | Fit width |
+| `Ctrl+1` | Back to 100% |
+| Percentage field in the top bar | Type a number and press Enter to jump to that ratio |
+
+The zoom range is 10%–800%. Zooming only changes the on-screen page size; bitmaps are fetched in **steps**, so a new image is requested only when the ratio crosses a step boundary — continuous zooming in between does not re-transfer anything.
+
+### Pan
+
+Hold `Space` and drag, or drag with the middle mouse button. Release `Space` to return to selection mode.
+
+### Page navigation
+
+The inspector footer has a page field: type a number and press Enter or click "Go". Only integers between 1 and the page count are accepted.
+
+## 7. Editing images
+
+### Selecting
+
+- Click an image to select it; `Shift`+click adds or removes it
+- Click empty space to clear the selection
+- `Ctrl+A` selects every image in the document
+
+### Moving
+
+Drag the selection. A move only counts after 3px of travel, so a plain click never nudges anything.
+
+### Scaling
+
+Drag any of the four corners. The ratio is **locked** by default; hold `Alt` for a free ratio. The minimum size is 4pt — anything smaller is refused, because the rectangle would flip inside out.
+
+Ratio-locked scaling is **driven by the long edge**: for a wide image only horizontal movement counts, for a tall image only vertical movement. That keeps the drag glued to the pointer instead of "drag down 1px, width jumps 10px".
+
+### Nudging
+
+| Key | Distance |
+|---|---|
+| Arrow keys | 1pt |
+| `Shift` + arrow keys | 10pt |
+| `Ctrl` + arrow keys | 0.2pt |
+
+Arrow-key nudging is not part of the configurable key map, so it never collides with global shortcuts.
+
+### Across pages
+
+Drop an image on another page and it moves there; the page number updates with it. If the target page has never been opened, the backend first pulls that page's existing images into the model — otherwise the model and the file would disagree when saving.
+
+### Stacking
+
+`Ctrl+U` brings to front, `Ctrl+L` sends to back. Both only affect the stacking order within one page.
+
+### Deleting
+
+Select and press `Delete`. The image disappears from the canvas, but the place it occupied in the original PDF is recorded in a tombstone table and erased on save — otherwise it would come back after saving.
+
+### Pasting
+
+`Ctrl+V` pastes the clipboard image onto the current page, centred and 40% of the page width. PNG / JPEG copied from a browser is passed through as-is; DIB data from a screenshot tool is parsed by hand.
+
+### External editing
+
+Select one image and press `Ctrl+Shift+E`: the program writes it to a temporary folder and opens it in the system default program. Edit and save it there, close that program, then click Done here and the image comes back.
+
+Only the pixel content is replaced; position and size stay as they were.
+
+### Undo / redo
+
+`Ctrl+Z` / `Ctrl+Y`. The undo stack stores geometry and image ids only — no pixel copies — so it can go deep (100 by default, adjustable from 10 to 500 in Settings).
+
+One continuous drag is one entry; structural changes such as splitting and pasting are also one entry, reverted as a whole.
+
+## 8. Splitting
+
+Select **one** image, press `E` or click "Split" in the inspector.
+
+1. **Place cuts**: click inside the image for a horizontal cut; hold `Shift` and click for a vertical one. Any number of cuts is allowed, positioned where you click.
+2. **Read the cells**: the cell under the pointer is highlighted, which enables "Keep this cell / Extract this cell" on the split bar.
+3. **Apply**:
+   - `1` keep this cell — discard everything else
+   - `2` extract this cell — punch it out of the original (leaving a white hole) and turn the piece into its own image
+   - `R` split into cells — every cell becomes its own image
+4. **Take it back**: `Ctrl+Z` undoes **the last cut** (in the order you placed them, horizontal or vertical), not the whole split session.
+5. **Leave**: `Esc` or "Cancel" on the split bar. Applying any action exits automatically.
+
+Global shortcuts are suspended in split mode, so the two key maps can bind the same key without fighting.
+
+> "Extract" versus "Keep": extract **punches a hole** — the original stays, minus one piece. Keep **replaces** — the original is gone and only that cell remains.
+
+## 9. Saving and exporting
+
+### In-place save
+
+`Ctrl+S`. The first in-place save leaves a `<name>.bak.pdf` next to the file; later saves do not add more backups.
+
+### Save As
+
+`Ctrl+Shift+S`, default name `<name>-edited.pdf`. After saving, the new file becomes the baseline and further edits apply to it.
+
+### What saving does
+
+1. Redact every image at its **original position** (`src_rect`) to remove it from the page content;
+2. Re-insert every image at its **current position** (`rect`), stacked in z order;
+3. Write a temporary file → reopen it to verify the page count → replace the target.
+
+Text, vectors, annotations, bookmarks and links therefore survive; there is no "drop the text layer" option to choose.
+
+Two details:
+
+- **Annotations**: `apply_redactions` also deletes annotations that fall inside the rectangle, so saving detaches the page's `/Annots` first and reattaches it afterwards — not a byte of the annotation objects changes.
+- **Rotated images**: `insert_image` can only place images in 90° steps, so non-axis-aligned images are not editable and stay in the background untouched.
+
+When saving finishes you are told which path was written and how many images were replaced. A problem with one image does not abort the save; it is listed instead:
+
+| Message | Meaning |
+|---|---|
+| An image on page N was clamped | The image extended past the page edge and was clipped on save |
+| An image on page N was skipped | Zero size, nothing inserted |
+| An image on page N failed to insert | Encoding or write error; the original is still in the background |
+| Page N failed to erase | The redaction did not apply; the original may remain |
+| Annotations on page N could not be restored | In rare cases writing `/Annots` back fails |
+
+### Export pages
+
+`Ctrl+E`, enter page numbers (for example `1-3,5,7-9`; a full-width comma also works) and export them to a new PDF.
+
+- Export reads the **file on disk**, so unsaved edits stop it — save first, then export;
+- Out-of-range pages, backwards ranges and malformed tokens are skipped and listed afterwards, so pages never go missing silently.
+
+### Reload
+
+The ↻ button in the top bar re-reads the current file from disk and discards in-memory edits. Unsaved changes trigger a confirmation first.
+
+## 10. Black & white preprocessing
+
+Scans usually carry a layer of grey background that looks bad in print or archive. "Preprocess" in the top bar converts every image in the document to grayscale, pushes pixels brighter than a threshold to pure white, and **saves the result as a new file**.
+
+The button opens an explanation first; only after you confirm does it ask for a source and a target file. This does not touch the document you have open, and it works without opening a PDF at all.
+
+| Item | Detail |
+|---|---|
+| What it processes | Raster images on the pages; text, vectors and annotations are left as they are |
+| What it skips | Images with an alpha channel (logos, watermarks) — thresholding would turn transparent areas into black blocks |
+| Threshold | 235 by default; change `preprocess_threshold` in `config/app.json` (0–255) |
+| Output | The target file you choose; choosing the source file itself is refused |
+| Progress | The busy bar on the right of the top bar shows processed / total |
+
+When it finishes you are told where the file went and how many images were processed. Run it again to redo the work — the source file is never modified.
+
+> The higher the threshold, the more light grey becomes white; 235 suits most scans. Below 200 you start erasing pale lines and light colour along with the background.
+
+## 11. Keyboard shortcuts
+
+**Everything here can be rebound in Settings → Shortcuts**, effective immediately. Duplicate combinations inside one scope are rejected on the spot.
+
+| Key | Action |
+|---|---|
+| `Ctrl+O` | Open |
+| `Ctrl+S` / `Ctrl+Shift+S` | Save / Save As |
+| `Ctrl+E` | Export pages |
+| `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
+| `Ctrl+A` | Select all |
+| `Ctrl+V` | Paste image |
+| `Ctrl+0` / `Ctrl+=` / `Ctrl+-` / `Ctrl+1` | Fit width / zoom in / zoom out / 100% |
+| `Delete` | Delete selection |
+| `Ctrl+U` / `Ctrl+L` | Bring to front / send to back |
+| `Ctrl+Shift+E` | Edit the current image externally |
+| `Ctrl+I` | Show / hide the inspector |
+| `Ctrl+,` | Settings |
+| `E` | Enter split mode |
+| Arrow keys (`Shift` faster, `Ctrl` finer) | Nudge position |
+| `Space` + drag / middle-drag | Pan the canvas |
+
+**Split mode has its own key map**; global shortcuts are suspended:
+
+| Key | Action |
+|---|---|
+| `1` / `2` | Keep the cell under the pointer / extract it |
+| `R` | Split into cells |
+| `Ctrl+Z` | Undo the last cut |
+| `Esc` | Leave split mode |
+
+## 12. Settings
+
+`Ctrl+,` or the gear in the top bar.
+
+**There is no Save and no Cancel**: every change is written to `config/app.json` immediately, and closing the dialog undoes nothing. The red "Reset all" at the bottom-left restores settings, shortcuts and guides together.
+
+| Item | Range | Notes |
+|---|---|---|
+| Language | 中文 / English | Applied immediately, window title and hints included |
+| Theme | Light / Dark | The moon/sun button in the top bar does the same |
+| Undo limit | 10–500 | Lowering it only affects entries pushed afterwards |
+| Guides | On / Off | The page-margin lines on the canvas |
+| Margins | 0–300 mm | Left / top / right / bottom |
+| Shortcuts | Two scopes | Click a field then press the combination; "Reset shortcuts" restores keys only |
+
+Shortcuts are normalised through `event.code`, so `Ctrl+Shift+S` and `Ctrl+S` never get confused by Shift changing the character, and the same bindings work on any keyboard layout.
+
+## 13. Files and folders
+
+```
+program directory/
+├─ config/app.json     settings (language, theme, guide margins, key bindings)
+├─ logs/               one log file per launch
+├─ temp/               scratch files for external editing; anything older than a day is cleaned on start
+└─ pdfs/               default folder for the open dialog
+```
+
+- `config/`, `logs/`, `temp/` and `pdfs/` are not versioned; delete them and they are recreated.
+- Configuration is written atomically (temporary file + replace), so a crash mid-write never leaves half a file. A hand-edited file that breaks is reported with its file name — it is never silently reset.
+- Unknown keys in the configuration are preserved, which keeps old and new versions compatible.
+
+## 14. Troubleshooting
+
+**Opening a PDF fails**
+The file may be corrupt, have no usable pages, or not be a PDF at all. The log has the full stack trace; first check that another reader can open it.
+
+**Saving fails, the file is in use**
+The target PDF is open in another program (Acrobat and Edge tabs both hold a lock). Close it and save again. Read-only files are caught earlier with their own message.
+
+**An image cannot be selected or dragged**
+Two cases: the page is rotated, or the image is placed at an angle. `insert_image` can only insert in 90° steps, and forcing an edit would just produce a misaligned, oversized copy — so those images stay in the background and are preserved as they are. The inspector reports how many such images a page has.
+
+**The original image is still there after saving**
+Either it was never recognised as an editable object (same cases as above) or erasing failed. Check the list shown when saving finishes; it names the page and the reason.
+
+**The big image came back after splitting**
+It does not. Each page's images are read into the model only the first time that page is opened, so deleted or split-away images never reappear.
+
+**Preprocessing skipped an image**
+That image has an alpha channel (logo, watermark); thresholding would turn its transparent areas into black blocks, so it is skipped. Such images are meant to stay as they are.
+
+**A shortcut does nothing**
+First check whether you are in split mode (global shortcuts are suspended), then whether an input has focus (keys go to the input). If you rebound keys, Settings marks the conflicts.
+
+**The window is blank**
+The WebView2 runtime is missing or too old. Install [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) once and start again.
+
+## 15. Known limitations
+
+- **Rotated pages are not editable**: on a page that has been rotated as a whole, none of its images can be edited.
+- **Non-axis-aligned images are not editable**: rotated or flipped images stay in the background.
+- **Rotation is limited to multiples of 90°**: a constraint of the insertion API, not a setting.
+- **Splitting works on one image at a time**: entering split mode with several selected asks you to pick one.
+- **Export requires saving first**: export reads the file on disk, not the in-memory edits.
+- **Preprocessing only handles raster images**: vectors and text are not thresholded, so a grey background painted as vector art stays where it is.

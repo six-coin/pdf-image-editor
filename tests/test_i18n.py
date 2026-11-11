@@ -57,5 +57,13 @@ def test_available_lists_both():
     assert {"zh-CN", "en-US"} <= set(i18n.available())
 
 
+def test_strings_falls_back_to_the_default_language(monkeypatch):
+    """前端只有一张表、没有回退逻辑，缺键必须由后端补齐。"""
+    monkeypatch.setitem(i18n._catalog, "xx-XX", {"app.title": "X"})
+    table = i18n.strings("xx-XX")
+    assert table["app.title"] == "X"
+    assert table["toolbar.open"] == "打开"
+
+
 def test_app_title_is_the_current_name():
     assert i18n.t("app.title") == "PDF 图像编辑器"

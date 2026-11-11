@@ -8,6 +8,9 @@ import { pxPerPt, state } from './state.js';
 
 const $ = (id) => document.getElementById(id);
 
+// 两条切线靠得比这个还近就算同一条：它切出来的格子不足 0.01% 宽，点不中也看不见。
+const CUT_GAP = 1e-4;
+
 const split = {
   active: false,
   objectId: null,
@@ -90,7 +93,12 @@ function inside(point) {
 }
 
 function bounds(values) {
-  return [0, ...values.slice().sort((a, b) => a - b), 1];
+  // 与后端 core/geometry._bounds 同构：按 9 位小数去重后再排序。
+  // 不去重的话，两条切线重合时前端会多算出一列零宽格，行列号整体右移一格，
+  // 「仅保留此格」就会指到后端不存在的格子，点了没有任何反应。
+  const unique = new Map();
+  for (const value of values) unique.set(value.toFixed(9), value);
+  return [0, ...[...unique.values()].sort((a, b) => a - b), 1];
 }
 
 function cellAt(point) {
@@ -244,7 +252,10 @@ function onPointerDown(event) {
   const r = split.rect;
   const axis = event.shiftKey ? 'v' : 'h';
   const raw = axis === 'v' ? (point.x - r.x) / r.w : (point.y - r.y) / r.h;
-  split.marks.push({ axis, value: Math.min(0.999, Math.max(0.001, raw)) });
+  const value = Math.min(0.999, Math.max(0.001, raw));
+  // 同一位置重复落刀只会多出一条零宽格，直接忽略。
+  if (cutsOf(axis).some((existing) => Math.abs(existing - value) < CUT_GAP)) return;
+  split.marks.push({ axis, value });
   split.hover = cellAt(point);
   redraw();
   updateBar();

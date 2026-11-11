@@ -21,10 +21,10 @@ LOCALES_DIR = PACKAGE_DIR / "locales"
 WEB_DIR = PACKAGE_DIR / "ui" / "web" / "static"
 
 APP_CONFIG_PATH = CONFIG_DIR / "app.json"
-# 旧版本把参考线边距单独放在这里，现已并进 app.json，仅用于一次性迁移。
+# 迁移用：早期版本把参考线边距放在这两个文件里，现在并入 app.json，读到就删。
 REFERENCE_CONFIG_PATH = CONFIG_DIR / "reference.json"
 
-# 旧版本把参考线边距写在 reference_line.json 里，键名是 *_cm。
+# 更早的版本把边距写在 reference_line.json 里，键名是 *_cm。
 LEGACY_REFERENCE_PATH = CONFIG_DIR / "reference_line.json"
 
 

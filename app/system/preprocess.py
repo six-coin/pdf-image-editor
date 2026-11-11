@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -22,6 +23,13 @@ Progress = Callable[[int, int], None]
 def _table(threshold: int) -> bytes:
     value = min(255, max(0, int(threshold)))
     return bytes(255 if level >= value else level for level in range(256))
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    try:
+        return os.path.normcase(str(a.resolve())) == os.path.normcase(str(b.resolve()))
+    except OSError:
+        return False
 
 
 def _to_gray(pix: pymupdf.Pixmap) -> pymupdf.Pixmap | None:
@@ -42,14 +50,21 @@ def process(
     progress: Progress | None = None,
 ) -> int:
     """逐页处理图片并另存。返回处理的图片张数。"""
+    src = Path(src)
+    dst = Path(dst)
+    if _same_file(src, dst):
+        # 源文件正被自己打开着，写回去只会得到半个坏文件。
+        raise PdfError(key="error.preprocess_same_file", name=dst.name)
+
     lookup = _table(threshold)
     done = 0
     handled = 0
+    temp_path = dst.with_name(f"{dst.name}.tmp-{os.getpid()}")
 
     try:
         doc = pymupdf.open(src)
     except Exception as exc:
-        raise PdfError(key="error.pdf_open", name=Path(src).name) from exc
+        raise PdfError(key="error.pdf_open", name=src.name) from exc
 
     try:
         total = sum(len(doc[i].get_images(full=True)) for i in range(doc.page_count))
@@ -84,12 +99,21 @@ def process(
                 except Exception:
                     logger.warning("替换 xref={} 失败", xref)
 
-        doc.save(dst, garbage=4, deflate=True)
+        doc.save(temp_path, garbage=4, deflate=True)
     except PdfError:
         raise
     except Exception as exc:
         raise PdfError(key="error.save_failed", reason=str(exc)) from exc
     finally:
         doc.close()
+
+    try:
+        os.replace(temp_path, dst)
+    except OSError as exc:
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
+        raise PdfError(key="error.save_failed", reason=str(exc)) from exc
 
     return handled

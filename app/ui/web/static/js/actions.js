@@ -1,7 +1,7 @@
 /* 动作：所有会改后端状态的操作集中在这里，点击与快捷键共用同一份实现。 */
 
 import { call, T, toast } from './bridge.js';
-import { openModal } from './modal.js';
+import { askUnsaved, openModal } from './modal.js';
 import { apply, selectedIds } from './render.js';
 import { refresh } from './sync.js';
 import { state } from './state.js';
@@ -22,9 +22,8 @@ function showBusy(status) {
   const progress = status.progress || {};
   const total = progress.total || 0;
   const done = progress.done || 0;
-  $('busyText').textContent = total
-    ? `${T('status.loading')} ${done}/${total}`
-    : T('status.loading');
+  const label = status.label === 'open' ? T('status.loading') : T('status.working');
+  $('busyText').textContent = total ? `${label} ${done}/${total}` : label;
   $('busyBar').style.width = total ? `${Math.round((100 * done) / total)}%` : '35%';
 }
 
@@ -35,6 +34,11 @@ async function waitTask(taskId) {
     if (!status) {
       showBusy(null);
       return null;
+    }
+    if (status.state === 'unknown') {
+      // 任务表只留最近若干条，轮询到已被挤掉的 id 时必须收手，否则会一直转。
+      showBusy(null);
+      return { state: 'error', message: T('error.task_lost') };
     }
     showBusy(status);
     if (status.state === 'ready' || status.state === 'error') {
@@ -50,12 +54,39 @@ async function waitTask(taskId) {
 export async function openPdf() {
   const path = await call('browse_pdf');
   if (!path) return;
-  const started = await call('open_path', path);
+
+  let started = await call('open_path', path);
   if (!started) return;
   if (!started.ok) {
-    toast(started.message || T('error.unexpected'), false);
-    return;
+    // 有未保存修改时后端会拒绝。这里必须给出「保存 / 不保存 / 取消」三条路，
+    // 只弹一条提示的话用户选完文件就卡住了，还得自己回去保存再重来一遍。
+    if (started.reason !== 'dirty') {
+      toast(started.message || T('error.unexpected'), false);
+      return;
+    }
+    const choice = await askUnsaved({
+      title: T('dialog.unsaved_title'),
+      text: T('dialog.unsaved_text'),
+      save: T('dialog.save'),
+      discard: T('dialog.discard'),
+      cancel: T('dialog.cancel'),
+    });
+    if (choice === 'cancel') return;
+    if (choice === 'save') {
+      const saved = await call('save_document');
+      if (!saved || !saved.ok) {
+        toast((saved && saved.message) || T('error.unexpected'), false);
+        return;
+      }
+      await refresh();
+    }
+    started = await call('open_path', path, true);
+    if (!started || !started.ok) {
+      toast((started && started.message) || T('error.unexpected'), false);
+      return;
+    }
   }
+
   const done = await waitTask(started.task);
   if (!done || done.state !== 'ready') {
     if (done && done.message) toast(done.message, false);
@@ -72,6 +103,7 @@ const WARNING_KEYS = {
   insert_failed: 'save.warning_insert_failed',
   image_skipped: 'save.warning_image_skipped',
   annots_lost: 'save.warning_annots_lost',
+  reopen_failed: 'save.warning_reopen_failed',
 };
 
 async function showWarnings(report) {
@@ -83,14 +115,18 @@ async function showWarnings(report) {
   for (const warning of warnings) {
     const row = document.createElement('div');
     row.className = 'warning-row';
-    const page = document.createElement('span');
-    page.className = 'chip warn';
-    page.textContent = T('save.warning_page', { page: (warning.page ?? 0) + 1 });
+    // 整份文档级别的警告（保存成功但界面没能刷新）没有页号，就不显示页码徽标。
+    if (typeof warning.page === 'number') {
+      const page = document.createElement('span');
+      page.className = 'chip warn';
+      page.textContent = T('save.warning_page', { page: warning.page + 1 });
+      row.appendChild(page);
+    }
     const text = document.createElement('span');
     text.textContent = T(WARNING_KEYS[warning.code] || 'error.unexpected', {
       detail: warning.detail || '',
     });
-    row.append(page, text);
+    row.appendChild(text);
     body.appendChild(row);
   }
 

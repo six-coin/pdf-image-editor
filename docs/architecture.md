@@ -2,7 +2,9 @@
 
 本文给维护者看：程序怎么分层、依赖朝哪个方向走、关键流程如何串起来，以及哪些约定由测试强制保证。
 
-[返回项目首页](../README.md) · [使用手册](readme/zh-CN.md)
+[返回项目首页](../README.md) · [使用手册](readme/zh-CN.md) · [配置与数据格式](configuration.md) · [扩展指南](extending.md)
+
+> 本项目遵循 `reference.md`（本地维护规范，不入版本库）。偏离标准的地方写在最后一节。
 
 ---
 
@@ -23,7 +25,7 @@
 | 入口文件 < 30 行 | 装配集中在一处 | `test_entry_is_thin` |
 | 每个模块都要有 docstring | 说明它负责什么、不负责什么 | `test_every_module_has_a_docstring` |
 
-这些不是风格偏好，是**踩过的坑**。比如 `chdir` 那条：旧实现会在启动子进程时切工作目录，多线程下别的线程写相对路径就落到别处，日志和配置会随机出现在目标文件夹里。
+这些不是风格偏好，是硬性的：工作目录是进程级全局状态，被所有线程共享；一旦切换，别的线程写相对路径就会落到别处，日志和配置会随机出现在目标文件夹里。
 
 ## 2. 目录结构
 
@@ -317,11 +319,13 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 
 ### 6.12 预处理
 
-把页内每张图转灰度、把亮于阈值的像素压成纯白（扫描件去底灰）。
+把页内每张图转灰度、把亮于阈值的像素压成纯白（扫描件去底灰），结果另存为新文件。
+
+入口在顶栏的「预处理」：先弹说明框，确认后再选源文件和目标文件。它不要求先打开文档，也不碰当前打开的那一份。
 
 不用 numpy / Pillow：`bytes.translate` 是 C 实现，逐字节查表比逐像素循环快两个数量级；灰度转换交给 `pymupdf.Pixmap(csGRAY, pix)`。带 alpha 的图跳过——压成二值会把透明区域变成黑块。
 
-任务在线程池里跑，通过 `progress` 回调更新任务进度。
+落盘同样是「临时文件 + `os.replace`」，目标与源相同时直接拒绝：源文件正被自己打开着，写回去只会得到半个坏文件。任务在线程池里跑，通过 `progress` 回调更新任务进度。
 
 ## 7. 前后端契约
 
@@ -508,11 +512,14 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 |---|---|
 | `language` | `locales/` 下已有的代码 |
 | `theme` | `light` / `dark` |
-| `zoom` | 0.1 – 8.0 |
 | `undo_limit` | 10 – 500 |
-| `render_dpi_cap` | 96 – 400 |
+| `render_dpi_cap` | 96 – 400（`RenderCache` 的渲染上限） |
 | `preprocess_threshold` | 0 – 255 |
+| `show_guides` / `show_inspector` | 布尔 |
+| `keybindings` | `{作用域: {命令: 组合键}}` |
 | `reference.*_mm` | 0 – 300 |
+
+字段的完整含义与越界行为见 [configuration.md](configuration.md)。
 
 ### 本地化
 
@@ -533,13 +540,13 @@ tests/
 ├─ test_units.py            pt/mm、页码范围
 ├─ test_geometry.py         夹取、等比缩放、切分矩阵
 ├─ test_document.py         打开、页信息、可编辑图片筛选
-├─ test_render.py           涂白、缓存淘汰
+├─ test_render.py           涂白、渲染上限、缓存淘汰
 ├─ test_split.py            切分 / 保留 / 打孔
 ├─ test_undo.py             栈行为、宏、dirty
 ├─ test_save.py             文字保留、批注保留、备份、失败回滚
 ├─ test_editor_api.py       接口层：快照、越界、任务、保存后重定基线
 ├─ test_asset_server.py     路由、token、缓存头、路径穿越
-├─ test_system.py           剪贴板、外部打开
+├─ test_system.py           剪贴板、外部打开、预处理
 └─ test_source_hygiene.py   静态守卫
 ```
 
@@ -569,3 +576,8 @@ uv run pytest
 8. **`closing` 回调里不碰网页。** 要弹框就从工作线程 `evaluate_js`。
 9. **保存先写临时文件再替换。** 并且就地保存前必须先关句柄。
 10. **新增颜色先加 token。** `static/css/tokens.css` 是唯一的颜色来源，深色模式只覆盖变量，不改布局。
+11. **配置里的键必须有人读。** 写进 `DEFAULT_APP` 却没有任何模块消费，就是一条会误导人的假设置。
+
+## 14. 偏离标准
+
+`reference.md` 规定规范文件放在仓库根目录。本项目把它放在 `temp/`（该目录不进版本库），因为它记录的是本机维护约定，不随代码分发。除这一条外没有其他偏离。

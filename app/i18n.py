@@ -76,8 +76,14 @@ def current() -> str:
 
 
 def strings(code: str | None = None) -> dict[str, str]:
-    """给前端一次性下发的整张键表。"""
-    return dict(_load(code or _language))
+    """给前端一次性下发的整张键表。
+
+    以默认语言打底再覆盖当前语言：前端只有一张表、没有回退逻辑，缺键时会
+    直接把键名画到界面上，所以这里就得补齐。
+    """
+    table = dict(_load(DEFAULT_LANGUAGE))
+    table.update(_load(code or _language))
+    return table
 
 
 def t(key: str, **params: Any) -> str:

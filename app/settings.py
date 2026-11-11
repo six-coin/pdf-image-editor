@@ -26,7 +26,6 @@ DEFAULT_REFERENCE: dict[str, Any] = {
 DEFAULT_APP: dict[str, Any] = {
     "language": "zh-CN",
     "theme": "light",
-    "zoom": 1.0,
     "undo_limit": 100,
     "render_dpi_cap": 300,
     "preprocess_threshold": 235,
@@ -34,13 +33,13 @@ DEFAULT_APP: dict[str, Any] = {
     "show_inspector": True,
     # 空表示用前端的默认键位表；用户改过才会写进来。
     "keybindings": {},
-    # 参考线边距。旧版本单独放在 reference.json 里，现在合并到这里。
+    # 参考线边距。放在这里而不是单独一个文件：一处配置一条读写路径，少一处能不同步。
     "reference": dict(DEFAULT_REFERENCE),
 }
 
 _THEMES = ("light", "dark")
 
-# 旧版本用厘米作单位，键名也不同。
+# 迁移用：早期版本以厘米为单位，键名带 _cm 后缀。
 _LEGACY_MARGIN_KEYS = {
     "left_cm": "left_mm",
     "top_cm": "top_mm",
@@ -133,7 +132,6 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
         raw.get("language"), DEFAULT_APP["language"], tuple(i18n.available())
     )
     merged["theme"] = _choice(raw.get("theme"), DEFAULT_APP["theme"], _THEMES)
-    merged["zoom"] = _number(raw.get("zoom"), DEFAULT_APP["zoom"], 0.1, 8.0)
     merged["undo_limit"] = _integer(raw.get("undo_limit"), DEFAULT_APP["undo_limit"], 10, 500)
     merged["render_dpi_cap"] = _integer(
         raw.get("render_dpi_cap"), DEFAULT_APP["render_dpi_cap"], 96, 400
@@ -146,7 +144,7 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     merged["keybindings"] = _bindings(raw.get("keybindings"))
     reference = raw.get("reference")
     merged["reference"] = _normalize_reference(reference if isinstance(reference, dict) else {})
-    # 旧版本的单选保存方式，已经删掉了，别留在文件里。
+    # save_mode 是早期版本的单选保存方式，读到就丢掉，不再写回文件。
     merged.pop("save_mode", None)
     return merged
 
