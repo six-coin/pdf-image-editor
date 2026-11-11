@@ -9,6 +9,7 @@ import { nudge, setSpaceHeld } from './interact.js';
 import { accelOf, lookup } from './keymap.js';
 import { isOpen as modalOpen } from './modal.js';
 import { openSettings } from './settings.js';
+import { state } from './state.js';
 import {
   cancelSplit,
   isSplitActive,
@@ -58,7 +59,7 @@ function inEditable(target) {
 }
 
 function onKeyDown(event) {
-  if (modalOpen() || inEditable(event.target)) return;
+  if (modalOpen() || state.view.busy || inEditable(event.target)) return;
 
   if (event.code === 'Space') {
     // 焦点在按钮上时，空格属于「按下这个按钮」，不能拿来当平移的起手式。

@@ -137,8 +137,23 @@ async function showWarnings(report) {
   });
 }
 
+/** 保存期间：底部横幅 + 锁住画布与快捷键，避免改动落到正在重建的文档上。 */
+function setSaving(on) {
+  state.view.busy = Boolean(on);
+  document.body.classList.toggle('saving', Boolean(on));
+  const banner = $('saveBanner');
+  if (banner) banner.classList.toggle('hidden', !on);
+}
+
 async function commitSave(path) {
-  const result = await call('save_document', path || null);
+  if (state.view.busy) return;
+  setSaving(true);
+  let result = null;
+  try {
+    result = await call('save_document', path || null);
+  } finally {
+    setSaving(false);
+  }
   if (!result) return;
   if (!result.ok) {
     toast(result.message || T('error.unexpected'), false);
@@ -150,13 +165,13 @@ async function commitSave(path) {
 }
 
 export async function saveDoc() {
-  if (!state.data || !state.data.doc.page_count) return;
+  if (!state.data || !state.data.doc.page_count || state.view.busy) return;
   await commitSave(null);
 }
 
 export async function saveAs() {
   const data = state.data;
-  if (!data || !data.doc.page_count) return;
+  if (!data || !data.doc.page_count || state.view.busy) return;
 
   const stem = (data.doc.name || 'output.pdf').replace(/\.pdf$/i, '');
   const path = await call('browse_save', `${stem}-edited.pdf`);
@@ -226,8 +241,11 @@ export async function redo() {
 }
 
 export async function selectAll() {
-  if (!state.data) return;
-  await selectIds(state.data.objects.map((o) => o.id));
+  if (!state.data || state.view.busy) return;
+  // 多选只能同页：全选取当前视口所在的这一页，不跨页。
+  const { currentPage } = await import('./canvas.js');
+  const page = currentPage();
+  await selectIds(state.data.objects.filter((o) => o.page === page).map((o) => o.id));
 }
 
 export async function clearSelection() {

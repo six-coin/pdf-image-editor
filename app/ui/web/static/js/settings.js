@@ -286,6 +286,17 @@ export async function openSettings() {
     );
     body.appendChild(guidesRow);
 
+    const handlesRow = document.createElement('div');
+    handlesRow.className = 'field-row';
+    const handlesLabel = document.createElement('span');
+    handlesLabel.className = 'field-label';
+    handlesLabel.textContent = T('settings.eight_handles');
+    handlesRow.append(
+      handlesLabel,
+      toggle(data.eight_handles !== false, (value) => writeSettings({ eight_handles: value }))
+    );
+    body.appendChild(handlesRow);
+
     const margins = data.reference || {};
     const marginGrid = document.createElement('div');
     marginGrid.className = 'margin-grid';

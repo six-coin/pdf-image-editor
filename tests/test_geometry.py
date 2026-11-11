@@ -94,6 +94,35 @@ def test_scale_ignores_unknown_corner():
     assert scale_from_corner(rect, "middle", 10, 10) == rect
 
 
+def test_edge_handles_stretch_one_axis():
+    """边手柄只动一个方向，所以一定能改变长宽比。"""
+    rect = Rect(100, 100, 200, 100)
+
+    east = scale_from_corner(rect, "e", 50, 0)
+    assert (east.x, east.y, east.w, east.h) == (100, 100, 250, 100)
+
+    west = scale_from_corner(rect, "w", 40, 0)
+    assert (west.x, west.w) == (140, 160)
+
+    south = scale_from_corner(rect, "s", 0, 30)
+    assert (south.y, south.h) == (100, 130)
+
+    north = scale_from_corner(rect, "n", 0, 25)
+    assert (north.y, north.h) == (125, 75)
+
+
+def test_edge_handles_ignore_keep_ratio():
+    """边手柄的用途就是改比例，keep_ratio 不该把它们变回等比。"""
+    rect = Rect(0, 0, 200, 100)
+    assert scale_from_corner(rect, "e", 50, 0, keep_ratio=True) == Rect(0, 0, 250, 100)
+
+
+def test_edge_handles_refuse_to_flip():
+    rect = Rect(100, 100, 200, 100)
+    assert scale_from_corner(rect, "e", -300, 0) == rect
+    assert scale_from_corner(rect, "n", 0, 300) == rect
+
+
 def test_hit_test_returns_topmost():
     entries = [("a", Rect(0, 0, 100, 100)), ("b", Rect(50, 50, 100, 100))]
     assert hit_test(entries, 60, 60) == "b"

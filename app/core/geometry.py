@@ -1,6 +1,6 @@
 """几何计算。
 
-矩形、夹取、四角缩放、命中、切分矩阵。全部是纯函数，输入输出都是 pt。
+矩形、夹取、手柄缩放、命中、切分矩阵。全部是纯函数，输入输出都是 pt。
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ from app.models import Rect
 MIN_SIZE = 4.0
 
 _CORNERS = ("tl", "tr", "bl", "br")
+_EDGES = ("n", "s", "w", "e")
 
 
 def clamp_rect_to_page(rect: Rect, page_w: float, page_h: float) -> Rect:
@@ -33,6 +34,10 @@ def fit_rect_into(rect: Rect, page_w: float, page_h: float) -> Rect:
     return Rect((page_w - width) / 2.0, (page_h - height) / 2.0, width, height)
 
 
+def is_corner_handle(corner: str) -> bool:
+    return corner in _CORNERS
+
+
 def _anchor(rect: Rect, corner: str) -> tuple[float, float]:
     """拖动某个角时，对面那个角保持不动。"""
     if corner == "tl":
@@ -54,13 +59,28 @@ def scale_from_corner(
 ) -> Rect:
     """按指针位移缩放。
 
-    ``keep_ratio=True`` 时保持原宽高比，**只用长边驱动**：宽图只看横向位移，
-    竖图只看纵向位移，另一条边按比例算。结果小于 ``min_size`` 时原样返回，
-    避免矩形翻面。
+    角手柄（``tl`` / ``tr`` / ``bl`` / ``br``）在 ``keep_ratio=True`` 时保持原宽高比，
+    **只用长边驱动**：宽图只看横向位移，竖图只看纵向位移，另一条边按比例算。
+    边手柄（``n`` / ``s`` / ``w`` / ``e``）只动一个方向，本来就是为了改长宽比，
+    所以 ``keep_ratio`` 对它们无效。结果小于 ``min_size`` 时原样返回，避免矩形翻面。
     """
-    if corner not in _CORNERS:
-        return rect
     if not rect.is_valid():
+        return rect
+
+    if corner in _EDGES:
+        if corner in ("n", "s"):
+            top = rect.y + dy if corner == "n" else rect.y
+            height = rect.bottom - top if corner == "n" else rect.h + dy
+            if height < min_size:
+                return rect
+            return Rect(rect.x, top, rect.w, height)
+        left = rect.x + dx if corner == "w" else rect.x
+        width = rect.right - left if corner == "w" else rect.w + dx
+        if width < min_size:
+            return rect
+        return Rect(left, rect.y, width, rect.h)
+
+    if corner not in _CORNERS:
         return rect
 
     px = rect.x + dx if corner in ("tl", "bl") else rect.right + dx

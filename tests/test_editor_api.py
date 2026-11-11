@@ -22,6 +22,28 @@ def test_select_filters_unknown(editor, opened):
     assert snapshot["selection"] == [obj["id"]]
 
 
+def test_select_keeps_only_one_page(editor, opened):
+    """多选要画一个组框，跨页的对象没有共同坐标系，后端必须兜底截断。"""
+    instance, _server = editor
+    opened(images=1, pages=2)
+    first = [o for o in _objects(instance) if o["page"] == 0][0]
+    second = [o for o in _objects(instance) if o["page"] == 1][0]
+
+    snapshot = instance.select([first["id"], second["id"]])
+    assert snapshot["selection"] == [first["id"]]
+
+    # 反过来的顺序以第二个页的 id 为准，规则一致
+    snapshot = instance.select([second["id"], first["id"]])
+    assert snapshot["selection"] == [second["id"]]
+
+
+def test_snapshot_exposes_eight_handles(editor):
+    instance, _server = editor
+    assert instance.get_state()["eight_handles"] is True
+    instance.update_settings({"eight_handles": False})
+    assert instance.get_state()["eight_handles"] is False
+
+
 def test_commit_transform_moves(editor, opened):
     instance, _server = editor
     opened()

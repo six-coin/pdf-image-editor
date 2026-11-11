@@ -15,6 +15,7 @@
     "preprocess_threshold": 235,
     "show_guides": true,
     "show_inspector": true,
+    "eight_handles": true,
     "keybindings": {
         "global": { "save": "Ctrl+S" },
         "split": { "split_keep": "1" }
@@ -37,6 +38,7 @@
 | `preprocess_threshold` | 整数 | `235` | 0–255，越界夹取；黑白化时亮于该值的像素压成纯白 |
 | `show_guides` | 布尔 | `true` | 画布上的页边距参考线 |
 | `show_inspector` | 布尔 | `true` | 右侧属性栏是否展开 |
+| `eight_handles` | 布尔 | `true` | 选中图片时显示八个手柄（四角 + 四边中点）；关掉只留四角 |
 | `keybindings` | 对象 | `{}` | 见 1.1 |
 | `reference.left_mm` 等 | 数字 | `10 / 10 / 50 / 10` | 0–300，越界夹取；参考线四边边距（毫米） |
 

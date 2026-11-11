@@ -30,7 +30,9 @@ Saving only swaps the images; everything else is left untouched.
 
 **Edit**
 
-- Drag, scale from any corner with the ratio locked (`Alt` for free ratio), multi-select (`Shift` to add)
+- Drag, scale from any corner with the ratio locked (`Alt` for free ratio), stretch a single edge
+- Multi-select (`Shift` to add, same page only): a group frame wraps the small boxes, drag it to scale them together
+- Drag a selection box over empty space to select everything it touches
 - Drag across pages: drop an image on another page and it belongs to that page
 - Split: drop a few cut lines on an image, then "Keep this cell / Extract this cell / Split into cells"
 - Bring to front / send to back, delete, arrow-key nudging
@@ -99,7 +101,7 @@ Pages are stacked vertically and rendered as they scroll into view. A floating "
 
 - Nothing selected: a hint plus a "Paste image" button
 - One image selected: thumbnail, page, position (pt), size (pt), and "Split / Bring to front / Send to back / Edit externally / Delete"
-- Several selected: a hint plus "Delete"
+- Several selected: a hint plus "Delete"; a group frame appears on the canvas for scaling them together
 
 **Split bar**
 
@@ -138,18 +140,41 @@ The inspector footer has a page field: type a number and press Enter or click "G
 ### Selecting
 
 - Click an image to select it; `Shift`+click adds or removes it
-- Click empty space to clear the selection
-- `Ctrl+A` selects every image in the document
+- **Multiple selection works within one page**: shift-clicking an image on another page replaces the selection with that image and says so
+- Drag a box over empty space to select every image it touches — any overlap counts
+- Click empty space without dragging to clear the selection
+- `Ctrl+A` selects every image on the **current page**
 
 ### Moving
 
-Drag the selection. A move only counts after 3px of travel, so a plain click never nudges anything.
+Drag the selection. A move only counts after 3px of travel, so a plain click never nudges anything. With several selected, dragging any one of them moves the whole group.
 
 ### Scaling
 
-Drag any of the four corners. The ratio is **locked** by default; hold `Alt` for a free ratio. The minimum size is 4pt — anything smaller is refused, because the rectangle would flip inside out.
+With one image selected there are eight handles: four corners plus the midpoint of each edge.
+
+| Handle | Behaviour |
+|---|---|
+| Corners | **Ratio locked** by default; hold `Alt` for a free ratio |
+| Edges | Stretch one axis only, so the aspect ratio changes |
+
+The edge handles exist for images whose displayed ratio differs from their pixel ratio: a square icon stretched flat can be squeezed back by dragging the top or bottom edge, no re-cropping needed. The pixels are untouched; only the rectangle on the page changes.
+
+The eight handles can be switched off in Settings, leaving the four corners.
+
+The minimum size is 4pt — anything smaller is refused, because the rectangle would flip inside out.
 
 Ratio-locked scaling is **driven by the long edge**: for a wide image only horizontal movement counts, for a tall image only vertical movement. That keeps the drag glued to the pointer instead of "drag down 1px, width jumps 10px".
+
+### Multiple selection and the group frame
+
+With two or more images selected, each keeps its own small outline and a group frame appears around them all:
+
+- the small outlines have **no handles**; scaling is done from the group frame;
+- the group frame has eight handles too: corners scale the group proportionally, edges stretch one axis;
+- every image scales by the same factor, so relative positions and gaps scale with them;
+- the smallest image never drops below 4pt, and the group cannot be dragged outside the page;
+- dragging any image in the group moves the whole group.
 
 ### Nudging
 
@@ -211,6 +236,8 @@ Global shortcuts are suspended in split mode, so the two key maps can bind the s
 ### In-place save
 
 `Ctrl+S`. The first in-place save leaves a `<name>.bak.pdf` next to the file; later saves do not add more backups.
+
+While saving, a banner at the bottom of the window says "Saving — don't edit the document right now" and the canvas plus shortcuts are locked; it disappears when the write finishes. Large files take a few seconds, and clicks during that window are not treated as edits.
 
 ### Save As
 
@@ -278,7 +305,7 @@ When it finishes you are told where the file went and how many images were proce
 | `Ctrl+S` / `Ctrl+Shift+S` | Save / Save As |
 | `Ctrl+E` | Export pages |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
-| `Ctrl+A` | Select all |
+| `Ctrl+A` | Select all on the current page |
 | `Ctrl+V` | Paste image |
 | `Ctrl+0` / `Ctrl+=` / `Ctrl+-` / `Ctrl+1` | Fit width / zoom in / zoom out / 100% |
 | `Delete` | Delete selection |
@@ -311,6 +338,7 @@ When it finishes you are told where the file went and how many images were proce
 | Theme | Light / Dark | The moon/sun button in the top bar does the same |
 | Undo limit | 10–500 | Lowering it only affects entries pushed afterwards |
 | Guides | On / Off | The page-margin lines on the canvas |
+| Eight handles | On / Off | Off leaves only the four corner handles |
 | Margins | 0–300 mm | Left / top / right / bottom |
 | Shortcuts | Two scopes | Click a field then press the combination; "Reset shortcuts" restores keys only |
 

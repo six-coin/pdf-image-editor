@@ -145,3 +145,12 @@ def test_show_inspector_default_and_clamp(temp_config):
     assert settings.load_app()["show_inspector"] is True
     (temp_config / "app.json").write_text(json.dumps({"show_inspector": "false"}), encoding="utf-8")
     assert settings.load_app()["show_inspector"] is False
+
+
+def test_eight_handles_defaults_to_on(temp_config):
+    assert settings.load_app()["eight_handles"] is True
+
+
+def test_eight_handles_can_be_turned_off(temp_config):
+    (temp_config / "app.json").write_text(json.dumps({"eight_handles": "off"}), encoding="utf-8")
+    assert settings.load_app()["eight_handles"] is False

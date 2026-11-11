@@ -44,7 +44,7 @@ app/
 ├─ locales/                   zh-CN.json / en-US.json
 ├─ core/                      纯逻辑，零界面依赖
 │  ├─ units.py                pt/mm 换算、页码范围解析
-│  ├─ geometry.py             夹取、等比缩放、命中、切分矩阵
+│  ├─ geometry.py             夹取、手柄缩放、命中、切分矩阵
 │  ├─ imagestore.py           内容寻址的图片仓库
 │  ├─ document.py             PDF 句柄、页信息、可编辑图片
 │  ├─ render.py               页面光栅化 + LRU 缓存
@@ -163,7 +163,7 @@ app/
 | `errors` | 异常类型；抛出时把文案取好 | 不含逻辑 |
 | `logging_setup` | 配置 loguru、装 `sys.excepthook` 与 `threading.excepthook`、致命错误弹窗 | 不写业务日志 |
 | `core.units` | pt/mm 换算、页码范围解析 | 不认识 PDF 也不认识界面 |
-| `core.geometry` | 夹取、等比缩放、命中测试、切分矩阵 | 不碰 PyMuPDF 页面 |
+| `core.geometry` | 夹取、手柄缩放（角等比 / 边单向）、命中测试、切分矩阵 | 不碰 PyMuPDF 页面 |
 | `core.imagestore` | 内容寻址存取、缩略图、垃圾回收 | 不知道图属于谁 |
 | `core.document` | 打开 / 关闭、页信息、抽取可编辑图片 | 不渲染、不保存 |
 | `core.render` | 页面光栅化 + 涂白 + LRU 缓存 | 不决定显示在哪一页 |
@@ -346,7 +346,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
   "selection": ["p0-x12-0"],
   "history": { "can_undo": true, "can_redo": false, "label": "edit.move" },
   "language": "zh-CN", "languages": ["zh-CN", "en-US"],
-  "theme": "light", "show_guides": true, "show_inspector": true,
+  "theme": "light", "show_guides": true, "show_inspector": true, "eight_handles": true,
   "keybindings": {}, "reference": { "left_mm": 10, … }, "undo_limit": 100
 }
 ```
@@ -418,9 +418,9 @@ closing（UI 线程） → 有未保存修改就 request_close_prompt()（丢进
 | `bridge.js` | 桥接封装：`call()`、`T()`、`toast()` |
 | `state.js` | 纯视图状态（缩放、DPI、主题、手势中） |
 | `sync.js` | **唯一**的快照通道，合并短时间内的多次刷新 |
-| `render.js` | 快照 → DOM，含属性栏与语言替换 |
+| `render.js` | 快照 → DOM，含属性栏、多选组框与语言替换 |
 | `canvas.js` | 页面可见性、位图加载、缩放与滚动 |
-| `interact.js` | 指针手势：选中、拖动、四角缩放、平移 |
+| `interact.js` | 指针手势：选中、拖动、八手柄缩放、组缩放、框选、平移 |
 | `split.js` | 分割模式：切线、格子高亮、执行 |
 | `guides.js` | 参考线绘制 |
 | `settings.js` | 设置弹窗 |
@@ -455,11 +455,21 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 
 ### 8.4 手势
 
+| 手势 | 起点 | 结果 |
+|---|---|---|
+| 移动 | 按在图片上拖动 | 整组（多选时）改 `rect`，跨页则改 `page` |
+| 单图缩放 | 图片的八个手柄 | 角等比、边单向；`Alt` 解锁比例 |
+| 组缩放 | 大框的八个手柄 | 按同一 `sx/sy` 缩放整组，锚点是对面那条边 |
+| 框选 | 空白处拖动 | 与选框相交（含部分重叠）的本页图片 |
+| 平移 | `Space` + 拖动 / 中键 | 只改滚动位置，不碰模型 |
+
 - 拖动只改 `left/top`，不重排布局；松手一次性提交。
-- 移动阈值 3px，最小尺寸 4pt。
-- 四角缩放默认等比，`Alt` 自由比例。
-- `Space` 按住进入平移模式，中键拖动同样平移。
-- 手势期间后端快照一律不落地（见 6.4）。
+- 移动阈值 3px，最小尺寸 4pt；组缩放还要保证组里最小的那张不低于 4pt、整组不出页面。
+- 八个手柄是纯 CSS 开关（`#app.eight-handles`），关掉时边手柄 `display:none`，不用重建 DOM。
+- 多选限同一页：组框要有共同坐标系；`api.select` 也会截断跨页的 id。
+- 手势期间后端快照一律不落地（见 6.4），组框在非组手势期间临时隐藏。
+
+保存期间另有一层锁：`state.view.busy` 为真时指针与快捷键都不响应，底部显示「正在保存」横幅。后端在保存过程中已经把文档句柄放掉，此时任何编辑都会落空。
 
 ### 8.5 键位系统
 
@@ -515,7 +525,7 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 | `undo_limit` | 10 – 500 |
 | `render_dpi_cap` | 96 – 400（`RenderCache` 的渲染上限） |
 | `preprocess_threshold` | 0 – 255 |
-| `show_guides` / `show_inspector` | 布尔 |
+| `show_guides` / `show_inspector` / `eight_handles` | 布尔 |
 | `keybindings` | `{作用域: {命令: 组合键}}` |
 | `reference.*_mm` | 0 – 300 |
 
@@ -538,7 +548,7 @@ tests/
 ├─ test_settings.py         夹取、迁移、原子写
 ├─ test_i18n.py             语言发现与键完整性
 ├─ test_units.py            pt/mm、页码范围
-├─ test_geometry.py         夹取、等比缩放、切分矩阵
+├─ test_geometry.py         夹取、角/边手柄缩放、切分矩阵
 ├─ test_document.py         打开、页信息、可编辑图片筛选
 ├─ test_render.py           涂白、渲染上限、缓存淘汰
 ├─ test_split.py            切分 / 保留 / 打孔

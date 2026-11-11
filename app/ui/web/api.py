@@ -213,8 +213,7 @@ class EditorApi:
         with self._lock:
             if self._doc is None:
                 return self._snapshot()
-            known = {obj.id for obj in self._state.objects}
-            self._state.selection = [str(item) for item in (ids or []) if str(item) in known]
+            self._state.selection = self._selection_on_one_page(ids or [])
             return self._snapshot()
 
     def commit_transform(
@@ -279,9 +278,29 @@ class EditorApi:
             if after:
                 stack.push(ObjectsChanged(before, after, "edit.move"))
             if selection is not None:
-                known = {obj.id for obj in self._state.objects}
-                self._state.selection = [str(item) for item in selection if str(item) in known]
+                self._state.selection = self._selection_on_one_page(selection)
             return self._snapshot()
+
+    def _selection_on_one_page(self, ids: list[Any]) -> list[str]:
+        """只保留落在同一页的选择。
+
+        多选后要画一个组框、按组缩放，跨页的对象没有共同的坐标系；所以以第一个
+        有效 id 所在的页为准，其余页的对象直接丢掉。前端也会拦，这里是兜底。
+        """
+        page_by_id = {obj.id: obj.page for obj in self._state.objects}
+        chosen: list[str] = []
+        page: int | None = None
+        for raw in ids:
+            object_id = str(raw)
+            target = page_by_id.get(object_id)
+            if target is None:
+                continue
+            if page is None:
+                page = target
+            elif target != page:
+                continue
+            chosen.append(object_id)
+        return chosen
 
     def _ensure_pages(self, items: list[dict[str, Any]] | None, doc: PdfDocument) -> None:
         """把这次操作涉及、但还没装载过的页的原图先抽进模型。
@@ -949,6 +968,7 @@ class EditorApi:
             "theme": self._settings.get("theme", "light"),
             "show_guides": bool(self._settings.get("show_guides", True)),
             "show_inspector": bool(self._settings.get("show_inspector", True)),
+            "eight_handles": bool(self._settings.get("eight_handles", True)),
             "keybindings": dict(self._settings.get("keybindings") or {}),
             "reference": dict(self._reference),
             "undo_limit": int(self._settings.get("undo_limit", 100)),

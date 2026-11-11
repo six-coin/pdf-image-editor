@@ -10,6 +10,10 @@ const $ = (id) => document.getElementById(id);
 // 最近一次滚动到的页。快照落地时不能把页码重置成第 1 页。
 let lastPageIndex = 0;
 
+// 角手柄改长宽比（默认等比），边手柄只动一个方向，本来就是为了改长宽比。
+const CORNERS = ['tl', 'tr', 'bl', 'br'];
+const EDGES = ['n', 's', 'w', 'e'];
+
 export function pageEl(index) {
   return document.querySelector(`.page[data-page="${index}"]`);
 }
@@ -99,6 +103,7 @@ export function apply(data) {
 
   renderInspector();
   applyShortcutHints();
+  renderGroupBox();
 }
 
 function applyChrome() {
@@ -130,7 +135,11 @@ function applyChrome() {
   $('dirtyDot').classList.toggle('hidden', !doc.dirty);
 
   const showInspector = hasDoc && Boolean(state.data.show_inspector);
-  $('app').classList.toggle('inspector-hidden', !showInspector);
+  const app = $('app');
+  app.classList.toggle('inspector-hidden', !showInspector);
+  // 八个手柄与多选都是纯样式开关：手柄始终在 DOM 里，靠 class 决定显示哪些。
+  app.classList.toggle('eight-handles', Boolean(state.data.eight_handles));
+  app.classList.toggle('multi-select', (state.data.selection || []).length > 1);
   const toggle = $('btnInspector');
   if (toggle) {
     toggle.disabled = !hasDoc;
@@ -245,6 +254,7 @@ export function layoutPages() {
     resizeOverlay(el, info);
   }
   positionObjects();
+  positionGroupBox();
   document.dispatchEvent(new CustomEvent('layout:done'));
 }
 
@@ -309,8 +319,11 @@ function objectNode(obj, k) {
 
   const handles = document.createElement('div');
   handles.className = 'handles';
-  for (const corner of ['tl', 'tr', 'bl', 'br']) {
+  // 八个都建出来：四个角 + 四条边的中点。关掉「八个手柄」时由 CSS 藏掉边手柄，
+  // 不用重建 DOM，切换是即时的。
+  for (const corner of [...CORNERS, ...EDGES]) {
     const grip = document.createElement('i');
+    grip.className = 'grip';
     grip.dataset.corner = corner;
     handles.appendChild(grip);
   }
@@ -327,10 +340,87 @@ export function applySelection(ids = null) {
   document.querySelectorAll('.obj').forEach((el) => {
     el.classList.toggle('selected', selected.has(el.dataset.id));
   });
+  // 多选时小框不放手柄，只有外面的大框有——类名跟着选择走，拖框选时也一致。
+  const app = document.getElementById('app');
+  if (app) app.classList.toggle('multi-select', selected.size > 1);
 }
 
 export function selectedIds() {
   return (state.data && state.data.selection) || [];
+}
+
+/** 当前选中的对象，按文档顺序返回。 */
+export function selectedObjects() {
+  if (!state.data) return [];
+  const ids = new Set(state.data.selection || []);
+  return state.data.objects.filter((o) => ids.has(o.id));
+}
+
+/** 选中对象的并集包围盒（pt）。少于两个对象时返回 null——单个对象用手柄就够。 */
+export function selectionBounds() {
+  const objects = selectedObjects();
+  if (objects.length < 2) return null;
+  return boundsOf(objects);
+}
+
+function boundsOf(objects) {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (const obj of objects) {
+    x0 = Math.min(x0, obj.x);
+    y0 = Math.min(y0, obj.y);
+    x1 = Math.max(x1, obj.x + obj.w);
+    y1 = Math.max(y1, obj.y + obj.h);
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, page: objects[0].page };
+}
+
+/* ---------- 多选组框 ---------- */
+
+function placeGroupBox(box, bounds) {
+  const k = pxPerPt();
+  box.style.left = `${bounds.x * k}px`;
+  box.style.top = `${bounds.y * k}px`;
+  box.style.width = `${bounds.w * k}px`;
+  box.style.height = `${bounds.h * k}px`;
+}
+
+/** 多选时的大框：每张图保留自己的小框，外面再套一个可整体缩放的组框。 */
+export function renderGroupBox() {
+  document.querySelectorAll('.group-box').forEach((el) => el.remove());
+  if (!state.data) return;
+  const bounds = selectionBounds();
+  if (!bounds) return;
+  const page = pageEl(bounds.page);
+  if (!page) return;
+
+  const box = document.createElement('div');
+  box.className = 'group-box';
+  box.id = 'groupBox';
+  for (const corner of [...CORNERS, ...EDGES]) {
+    const grip = document.createElement('i');
+    grip.className = 'grip';
+    grip.dataset.corner = corner;
+    box.appendChild(grip);
+  }
+  page.appendChild(box);
+  placeGroupBox(box, bounds);
+}
+
+/** 缩放页面时只挪组框，不重建。 */
+export function positionGroupBox() {
+  const box = document.getElementById('groupBox');
+  if (!box) return;
+  const bounds = selectionBounds();
+  if (bounds) placeGroupBox(box, bounds);
+}
+
+/** 手势期间临时藏起来，免得挡住对象的实时位置。 */
+export function setGroupBoxVisible(visible) {
+  const box = document.getElementById('groupBox');
+  if (box) box.style.display = visible ? '' : 'none';
 }
 
 /* ---------- 属性面板 ---------- */

@@ -31,6 +31,8 @@ DEFAULT_APP: dict[str, Any] = {
     "preprocess_threshold": 235,
     "show_guides": True,
     "show_inspector": True,
+    # 图片选中时显示八个手柄（四角 + 四边中点）；关掉只留四角。
+    "eight_handles": True,
     # 空表示用前端的默认键位表；用户改过才会写进来。
     "keybindings": {},
     # 参考线边距。放在这里而不是单独一个文件：一处配置一条读写路径，少一处能不同步。
@@ -141,6 +143,7 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     )
     merged["show_guides"] = _boolean(raw.get("show_guides"), DEFAULT_APP["show_guides"])
     merged["show_inspector"] = _boolean(raw.get("show_inspector"), DEFAULT_APP["show_inspector"])
+    merged["eight_handles"] = _boolean(raw.get("eight_handles"), DEFAULT_APP["eight_handles"])
     merged["keybindings"] = _bindings(raw.get("keybindings"))
     reference = raw.get("reference")
     merged["reference"] = _normalize_reference(reference if isinstance(reference, dict) else {})

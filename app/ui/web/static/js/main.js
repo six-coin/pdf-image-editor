@@ -86,6 +86,8 @@ function bindClicks() {
   document.addEventListener('click', async (event) => {
     const trigger = event.target.closest('[data-act]');
     if (!trigger || trigger.disabled) return;
+    // 保存进行中：任何动作都不该插进去，后端此刻已经把文档句柄放掉了。
+    if (state.view.busy) return;
     const handler = ACTIONS[trigger.dataset.act];
     if (handler) await handler();
   });
