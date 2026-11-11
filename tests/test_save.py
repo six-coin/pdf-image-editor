@@ -1,4 +1,4 @@
-"""保存：文字保全、z 序、失败不毁源文件、备份、raster 模式。
+"""保存：文字保全、z 序、失败不毁源文件、备份、跨页拖动。
 
 ``test_text_survives_roundtrip`` 是整个项目最贵那个 bug 的回归测试。
 """
@@ -130,22 +130,6 @@ def test_in_place_save_creates_backup(pdf_factory, store):
     out.close()
 
 
-def test_raster_mode_drops_text(pdf_factory, store, tmp_path):
-    src = pdf_factory("in.pdf")
-    doc = PdfDocument.open(src, store)
-    state = _state(doc)
-
-    dst = tmp_path / "raster.pdf"
-    report = save(src, dst, state, store, mode="raster")
-    assert report.mode == "raster"
-
-    out = pymupdf.open(dst)
-    assert out[0].get_text().strip() == ""
-    assert len(out[0].get_image_info(xrefs=True)) >= 1
-    out.close()
-    doc.close()
-
-
 def test_out_of_page_image_is_clamped(pdf_factory, store, tmp_path):
     src = pdf_factory("in.pdf")
     doc = PdfDocument.open(src, store)
@@ -162,11 +146,6 @@ def test_out_of_page_image_is_clamped(pdf_factory, store, tmp_path):
     assert bbox[3] <= 842 + 1
     out.close()
     doc.close()
-
-
-def test_invalid_mode_raises(store, tmp_path):
-    with pytest.raises(SaveError):
-        save(tmp_path / "a.pdf", tmp_path / "b.pdf", DocumentState(), store, mode="magic")
 
 
 def _annotated_pdf(tmp_path):
@@ -249,26 +228,5 @@ def test_cross_page_move_erases_the_source(pdf_factory, store, tmp_path):
     out = pymupdf.open(dst)
     assert out[0].get_image_info(xrefs=True) == []
     assert len(out[1].get_image_info(xrefs=True)) == 2
-    out.close()
-    doc.close()
-
-
-def test_raster_mode_erases_the_source_too(pdf_factory, store, tmp_path):
-    src = pdf_factory("in.pdf", pages=2, images=1)
-    doc = PdfDocument.open(src, store)
-    state = _state(doc)
-    obj = state.objects[0]
-    obj.page = 1
-    obj.rect = Rect(60, 60, 120, 90)
-
-    dst = tmp_path / "out.pdf"
-    save(src, dst, state, store, mode="raster")
-
-    out = pymupdf.open(dst)
-    # 第 1 页：整页位图 + 本来就在这页的那张 + 拖过来的那张
-    assert len(out[0].get_image_info(xrefs=True)) == 1
-    assert len(out[1].get_image_info(xrefs=True)) == 3
-    pix = out[0].get_pixmap(dpi=72)
-    assert pix.pixel(150, 150) == (255, 255, 255)
     out.close()
     doc.close()

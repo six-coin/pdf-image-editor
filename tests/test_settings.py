@@ -13,7 +13,7 @@ from app.errors import ConfigError
 def test_first_load_creates_defaults(temp_config):
     config = settings.load_app()
     assert config["language"] == "zh-CN"
-    assert config["save_mode"] == "preserve"
+    assert config["reference"]["right_mm"] == settings.DEFAULT_REFERENCE["right_mm"]
     assert (temp_config / "app.json").is_file()
 
 
@@ -75,6 +75,10 @@ def test_reference_defaults_and_clamp(temp_config):
     reloaded = settings.load_reference()
     assert reloaded["left_mm"] == 0.0
     assert reloaded["top_mm"] == settings.DEFAULT_REFERENCE["top_mm"]
+    # 边距必须落在 app.json 里，不能另开一个文件
+    stored = json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
+    assert stored["reference"]["left_mm"] == 0.0
+    assert not (temp_config / "reference.json").exists()
 
 
 def test_legacy_reference_is_migrated(temp_config):
@@ -88,7 +92,28 @@ def test_legacy_reference_is_migrated(temp_config):
     config = settings.load_reference()
     assert config["left_mm"] == pytest.approx(10.0)
     assert config["right_mm"] == pytest.approx(50.0)
-    assert (temp_config / "reference.json").is_file()
+    stored = json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
+    assert stored["reference"]["right_mm"] == pytest.approx(50.0)
+    assert not (temp_config / "reference_line.json").exists()
+
+
+def test_reference_json_is_merged_into_app_json(temp_config):
+    (temp_config / "app.json").write_text(json.dumps({"theme": "dark"}), encoding="utf-8")
+    (temp_config / "reference.json").write_text(json.dumps({"left_mm": 33}), encoding="utf-8")
+
+    config = settings.load_app()
+
+    assert config["reference"]["left_mm"] == pytest.approx(33)
+    assert not (temp_config / "reference.json").exists()
+    stored = json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
+    assert stored["reference"]["left_mm"] == pytest.approx(33)
+
+
+def test_save_mode_is_dropped(temp_config):
+    (temp_config / "app.json").write_text(json.dumps({"save_mode": "raster"}), encoding="utf-8")
+    config = settings.load_app()
+    assert "save_mode" not in config
+    assert "save_mode" not in json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
 
 
 def test_keybindings_are_normalized(temp_config):

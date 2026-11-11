@@ -101,8 +101,8 @@ async function showWarnings(report) {
   });
 }
 
-async function commitSave(mode, path) {
-  const result = await call('save_document', mode, path || null);
+async function commitSave(path) {
+  const result = await call('save_document', path || null);
   if (!result) return;
   if (!result.ok) {
     toast(result.message || T('error.unexpected'), false);
@@ -115,7 +115,7 @@ async function commitSave(mode, path) {
 
 export async function saveDoc() {
   if (!state.data || !state.data.doc.page_count) return;
-  await commitSave(null, null);
+  await commitSave(null);
 }
 
 export async function saveAs() {
@@ -125,47 +125,7 @@ export async function saveAs() {
   const stem = (data.doc.name || 'output.pdf').replace(/\.pdf$/i, '');
   const path = await call('browse_save', `${stem}-edited.pdf`);
   if (!path) return;
-
-  const chosen = { mode: data.doc.save_mode };
-  const body = document.createElement('div');
-  body.className = 'save-mode';
-
-  const hint = document.createElement('p');
-  hint.className = 'hint';
-  hint.textContent = T(`save.mode_${chosen.mode}_hint`);
-
-  const seg = document.createElement('div');
-  seg.className = 'seg';
-  for (const mode of ['preserve', 'raster']) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = `seg-item${mode === chosen.mode ? ' active' : ''}`;
-    button.textContent = T(`save.mode_${mode}`);
-    button.addEventListener('click', () => {
-      chosen.mode = mode;
-      seg.querySelectorAll('.seg-item').forEach((node) => node.classList.remove('active'));
-      button.classList.add('active');
-      hint.textContent = T(`save.mode_${mode}_hint`);
-    });
-    seg.appendChild(button);
-  }
-
-  const label = document.createElement('div');
-  label.className = 'field-label';
-  label.textContent = T('save.mode');
-  body.append(label, seg, hint);
-
-  const choice = await openModal({
-    title: T('save.title'),
-    text: path,
-    body,
-    actions: [
-      { label: T('dialog.cancel'), value: 'cancel', kind: 'ghost' },
-      { label: T('dialog.save'), value: 'ok', kind: 'primary' },
-    ],
-  });
-  if (choice !== 'ok') return;
-  await commitSave(chosen.mode, path);
+  await commitSave(path);
 }
 
 /** 从磁盘重新加载当前文件。有未保存修改时先确认。 */
@@ -278,9 +238,26 @@ export async function externalEdit() {
 
 /* ---------- 预处理 ---------- */
 
+/** 黑白化预处理：先解释清楚再让用户选文件，避免点一下就开始跑。 */
 export async function preprocessPdf() {
+  const choice = await openModal({
+    title: T('preprocess.title'),
+    text: T('preprocess.text'),
+    narrow: true,
+    actions: [
+      { label: T('dialog.cancel'), value: 'cancel', kind: 'ghost' },
+      { label: T('preprocess.start'), value: 'ok', kind: 'primary' },
+    ],
+  });
+  if (choice !== 'ok') return;
+
   const started = await call('preprocess_pdf');
-  if (!started || !started.ok) return;
+  if (!started) return;
+  if (!started.ok) {
+    // 在选择框里点了取消不是错误，不弹提示。
+    if (started.reason !== 'cancel') toast(started.message || T('error.unexpected'), false);
+    return;
+  }
   const done = await waitTask(started.task);
   if (!done || done.state !== 'ready') {
     if (done && done.message) toast(done.message, false);

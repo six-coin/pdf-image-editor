@@ -1,3 +1,5 @@
+# 国内镜像源：https://mirrors.aliyun.com/pypi/simple
+# 官方源：https://pypi.org/simple
 [[index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
 default = true

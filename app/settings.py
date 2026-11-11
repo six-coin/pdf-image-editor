@@ -1,6 +1,6 @@
 """配置读写。
 
-两个文件，职责分开：``app.json`` 放应用级设置，``reference.json`` 放参考线边距。
+全部设置放在一个 ``app.json`` 里，参考线边距在 ``reference`` 子对象下。
 读的时候夹取、不信任文件内容；未知键原样保留；结构损坏抛 ``ConfigError`` 而不是
 静默重建——静默重建会把用户数据洗掉。
 """
@@ -16,20 +16,6 @@ from typing import Any
 from app import i18n, paths
 from app.errors import ConfigError
 
-DEFAULT_APP: dict[str, Any] = {
-    "language": "zh-CN",
-    "theme": "light",
-    "zoom": 1.0,
-    "save_mode": "preserve",
-    "undo_limit": 100,
-    "render_dpi_cap": 300,
-    "preprocess_threshold": 235,
-    "show_guides": True,
-    "show_inspector": True,
-    # 空表示用前端的默认键位表；用户改过才会写进来。
-    "keybindings": {},
-}
-
 DEFAULT_REFERENCE: dict[str, Any] = {
     "left_mm": 10.0,
     "top_mm": 10.0,
@@ -37,8 +23,22 @@ DEFAULT_REFERENCE: dict[str, Any] = {
     "bottom_mm": 10.0,
 }
 
+DEFAULT_APP: dict[str, Any] = {
+    "language": "zh-CN",
+    "theme": "light",
+    "zoom": 1.0,
+    "undo_limit": 100,
+    "render_dpi_cap": 300,
+    "preprocess_threshold": 235,
+    "show_guides": True,
+    "show_inspector": True,
+    # 空表示用前端的默认键位表；用户改过才会写进来。
+    "keybindings": {},
+    # 参考线边距。旧版本单独放在 reference.json 里，现在合并到这里。
+    "reference": dict(DEFAULT_REFERENCE),
+}
+
 _THEMES = ("light", "dark")
-_SAVE_MODES = ("preserve", "raster")
 
 # 旧版本用厘米作单位，键名也不同。
 _LEGACY_MARGIN_KEYS = {
@@ -134,7 +134,6 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     )
     merged["theme"] = _choice(raw.get("theme"), DEFAULT_APP["theme"], _THEMES)
     merged["zoom"] = _number(raw.get("zoom"), DEFAULT_APP["zoom"], 0.1, 8.0)
-    merged["save_mode"] = _choice(raw.get("save_mode"), DEFAULT_APP["save_mode"], _SAVE_MODES)
     merged["undo_limit"] = _integer(raw.get("undo_limit"), DEFAULT_APP["undo_limit"], 10, 500)
     merged["render_dpi_cap"] = _integer(
         raw.get("render_dpi_cap"), DEFAULT_APP["render_dpi_cap"], 96, 400
@@ -145,6 +144,10 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     merged["show_guides"] = _boolean(raw.get("show_guides"), DEFAULT_APP["show_guides"])
     merged["show_inspector"] = _boolean(raw.get("show_inspector"), DEFAULT_APP["show_inspector"])
     merged["keybindings"] = _bindings(raw.get("keybindings"))
+    reference = raw.get("reference")
+    merged["reference"] = _normalize_reference(reference if isinstance(reference, dict) else {})
+    # 旧版本的单选保存方式，已经删掉了，别留在文件里。
+    merged.pop("save_mode", None)
     return merged
 
 
@@ -170,13 +173,43 @@ def _migrate_legacy_reference() -> dict[str, Any] | None:
     return migrated or None
 
 
+def _legacy_reference() -> dict[str, Any]:
+    """把老版本单独存放的边距读出来。都找不到就用默认值。"""
+    path = paths.REFERENCE_CONFIG_PATH
+    if path.is_file():
+        try:
+            return _normalize_reference(_read_json(path))
+        except ConfigError:
+            pass
+    migrated = _migrate_legacy_reference()
+    return _normalize_reference(migrated or dict(DEFAULT_REFERENCE))
+
+
+def _drop_legacy_reference() -> None:
+    """合并进 app.json 之后删掉旧文件。删不掉也不影响使用。"""
+    for path in (paths.REFERENCE_CONFIG_PATH, paths.LEGACY_REFERENCE_PATH):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def load_app() -> dict[str, Any]:
     path = paths.APP_CONFIG_PATH
     if not path.is_file():
         config = dict(DEFAULT_APP)
+        config["reference"] = _legacy_reference()
         save_app(config)
-        return config
-    return _normalize_app(_read_json(path))
+        _drop_legacy_reference()
+        return _normalize_app(config)
+
+    raw = _read_json(path)
+    if "reference" not in raw:
+        # 老版本把边距单独放在 reference.json 里，这里一次性并进来。
+        raw["reference"] = _legacy_reference()
+        save_app(raw)
+        _drop_legacy_reference()
+    return _normalize_app(raw)
 
 
 def save_app(config: dict[str, Any]) -> None:
@@ -184,14 +217,10 @@ def save_app(config: dict[str, Any]) -> None:
 
 
 def load_reference() -> dict[str, Any]:
-    path = paths.REFERENCE_CONFIG_PATH
-    if path.is_file():
-        return _normalize_reference(_read_json(path))
-    migrated = _migrate_legacy_reference()
-    config = _normalize_reference(migrated or dict(DEFAULT_REFERENCE))
-    save_reference(config)
-    return config
+    return dict(load_app()["reference"])
 
 
 def save_reference(config: dict[str, Any]) -> None:
-    _write_json(paths.REFERENCE_CONFIG_PATH, _normalize_reference(config))
+    app = load_app()
+    app["reference"] = _normalize_reference(config)
+    save_app(app)

@@ -1,13 +1,7 @@
 """保存。
 
-两种模式：
-
-``preserve``（默认）
-    逐页把原图 redaction 掉，再把画布上的图插回去。文字、矢量、注释、书签、
-    链接全部保留。这是修掉"保存后文档变白页"那个 P0 缺陷的核心。
-
-``raster``
-    整页重新成像，只保留图片。仅用于纯扫描件，界面上必须明确告知会丢文字层。
+逐页把原图 redaction 掉，再把画布上的图插回去。文字、矢量、注释、书签、链接
+全部保留。这是修掉"保存后文档变白页"那个 P0 缺陷的核心。
 
 落盘一律先写临时文件再 ``os.replace``，中途失败不会留下半个文件；就地保存时
 第一次会留一份 ``.bak.pdf``。
@@ -29,19 +23,15 @@ import pymupdf
 
 from app.core.geometry import clamp_rect_to_page
 from app.core.imagestore import ImageStore
-from app.core.render import page_png
 from app.errors import SaveError
 from app.models import DocumentState, ImageObject, Rect
 
-VALID_MODES = ("preserve", "raster")
-_RASTER_DPI = 300
 _VALID_ROTATIONS = (0, 90, 180, 270)
 
 
 @dataclass
 class SaveReport:
     path: Path | None = None
-    mode: str = "preserve"
     pages: int = 0
     replaced: int = 0
     warnings: list[dict[str, Any]] = field(default_factory=list)
@@ -54,7 +44,6 @@ class SaveReport:
         return {
             "ok": self.ok,
             "path": str(self.path) if self.path else "",
-            "mode": self.mode,
             "pages": self.pages,
             "replaced": self.replaced,
             "warnings": list(self.warnings),
@@ -188,41 +177,13 @@ def _apply_preserve(
         _insert_objects(page, objects, store, report, index)
 
 
-def _apply_raster(
-    doc: pymupdf.Document,
-    state: DocumentState,
-    store: ImageStore,
-    report: SaveReport,
-) -> pymupdf.Document:
-    out = pymupdf.open()
-    for index in range(doc.page_count):
-        source = doc[index]
-        rect = source.rect
-        page = out.new_page(width=rect.width, height=rect.height)
-        objects = [o for o in state.objects if o.page == index]
-        # 底图要按"原图本来在哪一页"涂白：跨页拖走的图，原页也得擦掉。
-        sources = [
-            o
-            for o in state.objects
-            if o.src_rect is not None
-            and (o.src_page if o.src_page is not None else o.page) == index
-        ]
-        page.insert_image(rect, stream=page_png(source, sources, _RASTER_DPI))
-        _insert_objects(page, objects, store, report, index)
-    return out
-
-
 def save(
     src_path: Path,
     dst_path: Path,
     state: DocumentState,
     store: ImageStore,
-    mode: str = "preserve",
     backup: bool = True,
 ) -> SaveReport:
-    if mode not in VALID_MODES:
-        raise SaveError(key="error.invalid_argument", name="mode")
-
     src_path = Path(src_path)
     dst_path = Path(dst_path)
     try:
@@ -230,7 +191,7 @@ def save(
     except OSError as exc:
         raise SaveError(key="error.save_failed", reason=str(exc)) from exc
     temp_path = dst_path.with_name(f"{dst_path.name}.tmp-{os.getpid()}")
-    report = SaveReport(path=dst_path, mode=mode)
+    report = SaveReport(path=dst_path)
 
     try:
         doc = pymupdf.open(src_path)
@@ -239,15 +200,8 @@ def save(
 
     try:
         report.pages = doc.page_count
-        if mode == "raster":
-            built = _apply_raster(doc, state, store, report)
-            try:
-                built.save(temp_path, garbage=4, deflate=True)
-            finally:
-                built.close()
-        else:
-            _apply_preserve(doc, state, store, report)
-            doc.save(temp_path, garbage=4, deflate=True)
+        _apply_preserve(doc, state, store, report)
+        doc.save(temp_path, garbage=4, deflate=True)
     except SaveError:
         raise
     except Exception as exc:

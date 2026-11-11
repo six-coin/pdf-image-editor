@@ -79,8 +79,9 @@
   gap: 4px;
 }
 
-.zoom-input {
-  width: 64px;
+/* 要压过 base.css 里的 input[type="text"]（0,1,1），所以带上 .zoom-box */
+.zoom-box .zoom-input {
+  width: 52px;
   height: 32px;
   padding: 0 6px;
   border: 1px solid var(--border);
@@ -93,12 +94,12 @@
   transition: border-color 0.14s ease, background 0.14s ease;
 }
 
-.zoom-input:hover {
+.zoom-box .zoom-input:hover {
   border-color: var(--border-strong);
   background: var(--surface-sunken);
 }
 
-.zoom-input:focus {
+.zoom-box .zoom-input:focus {
   border-color: var(--blue);
   outline: none;
 }
@@ -346,7 +347,8 @@
   gap: 6px;
 }
 
-.page-input {
+/* 同样要压过 input[type="number"] 的通用样式 */
+.inspector .page-input {
   flex: 1 1 auto;
   min-width: 0;
   height: 32px;
@@ -359,13 +361,13 @@
   font-size: 13px;
 }
 
-.page-input:focus {
+.inspector .page-input:focus {
   border-color: var(--blue);
   outline: none;
 }
 
-.page-input::-webkit-outer-spin-button,
-.page-input::-webkit-inner-spin-button {
+.inspector .page-input::-webkit-outer-spin-button,
+.inspector .page-input::-webkit-inner-spin-button {
   margin: 0;
   -webkit-appearance: none;
 }
@@ -465,14 +467,12 @@
 
 /* ---------- 弹窗里的表单 ---------- */
 .settings,
-.save-mode,
 .export-form {
   display: flex;
   flex-direction: column;
   gap: 18px;
 }
 
-.save-mode,
 .export-form {
   gap: 10px;
 }

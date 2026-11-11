@@ -267,27 +267,6 @@ export async function openSettings() {
       )
     );
 
-    const modeHint = document.createElement('p');
-    modeHint.className = 'hint';
-    modeHint.textContent = T(`save.mode_${data.doc.save_mode}_hint`);
-    body.appendChild(
-      field(
-        'settings.save_mode',
-        segmented(
-          [
-            { value: 'preserve', label: T('save.mode_preserve') },
-            { value: 'raster', label: T('save.mode_raster') },
-          ],
-          data.doc.save_mode,
-          (value) => {
-            modeHint.textContent = T(`save.mode_${value}_hint`);
-            writeSettings({ save_mode: value });
-          }
-        )
-      )
-    );
-    body.appendChild(modeHint);
-
     body.appendChild(
       field(
         'settings.undo_limit',

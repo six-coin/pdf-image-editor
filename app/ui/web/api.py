@@ -27,7 +27,6 @@ from app.core.document import PdfDocument
 from app.core.geometry import MIN_SIZE, clamp_rect_to_page
 from app.core.imagestore import ImageStore
 from app.core.render import RenderCache
-from app.core.save import VALID_MODES
 from app.core.save import save as save_to_disk
 from app.core.undo import ImageReplaced, ObjectsChanged, StructureChanged, UndoStack
 from app.core.units import parse_page_range
@@ -288,7 +287,7 @@ class EditorApi:
         """把这次操作涉及、但还没装载过的页的原图先抽进模型。
 
         不抽的话，拖过去的那张会成为该页唯一被模型知晓的图；保存时文件里
-        却还有这一页原有的图，模型和文件对不上，只能整页重建。
+        却还有这一页原有的图，模型和文件对不上，只能整体重建。
         """
         wanted: set[int] = set()
         for raw in items or []:
@@ -447,7 +446,7 @@ class EditorApi:
 
     # ---- 保存 ----
 
-    def save_document(self, mode: str | None = None, path: str | None = None) -> dict[str, Any]:
+    def save_document(self, path: str | None = None) -> dict[str, Any]:
         """保存。给了 path 就是另存为，保存后以目标文件为新基线。"""
         with self._lock:
             doc = self._doc
@@ -457,7 +456,6 @@ class EditorApi:
             target = Path(path) if path else source
             state = self._state
             store = self._store
-            use_mode = mode if mode in VALID_MODES else self._settings.get("save_mode", "preserve")
             # 只读文件原地保存会撞 WinError 5，提前拦下来给一句人话。
             if target.exists() and not os.access(target, os.W_OK):
                 return {"ok": False, "message": i18n.t("error.file_readonly", name=target.name)}
@@ -466,7 +464,7 @@ class EditorApi:
             self._doc = None
 
         try:
-            report = save_to_disk(source, target, state, store, mode=use_mode)
+            report = save_to_disk(source, target, state, store)
         except AppError as exc:
             logger.warning("保存失败 {}: {}", target, exc)
             with self._lock:
@@ -475,9 +473,9 @@ class EditorApi:
             return {"ok": False, "message": str(exc)}
 
         with self._lock:
-            # 保留模式下把新文件当作基线，但对象、撤销栈、页面 DOM 都不重建——
-            # 保存完界面不该闪一下。对不上（张数不一致、raster 模式）就退回完整重建。
-            if use_mode == "preserve" and self._rebase_after_save(target):
+            # 把新文件当作基线，但对象、撤销栈、页面 DOM 都不重建——保存完界面不该闪一下。
+            # 对不上（张数不一致）就退回完整重建。
+            if self._rebase_after_save(target):
                 # 栈留着，只是把"已保存"的位置挪到当前：还能继续撤销。
                 if self._stack is not None:
                     self._stack.mark_saved()
@@ -906,7 +904,6 @@ class EditorApi:
                 "name": doc.path.name if doc else "",
                 "dirty": bool(self._stack and self._stack.dirty),
                 "page_count": doc.page_count if doc else 0,
-                "save_mode": self._settings.get("save_mode", "preserve"),
                 "generation": self._generation,
                 "can_save": doc is not None,
             },

@@ -18,6 +18,7 @@ const ACTIONS = {
   save: actions.saveDoc,
   'save-as': actions.saveAs,
   export: openExport,
+  preprocess: actions.preprocessPdf,
   reload: actions.reloadDoc,
   'page-jump': pageJump,
   settings: openSettings,

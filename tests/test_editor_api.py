@@ -270,7 +270,7 @@ def test_save_as_switches_baseline(editor, opened, tmp_path):
     opened()
     target = tmp_path / "copy.pdf"
 
-    result = instance.save_document(None, str(target))
+    result = instance.save_document(str(target))
 
     assert result["ok"] is True
     assert target.is_file()
@@ -518,7 +518,7 @@ def test_reset_settings_restores_defaults(editor, opened):
 def test_move_to_unloaded_page_pulls_in_its_images(editor, pdf_factory, wait):
     """拖到还没装载过的页：那页原有的图要先抽进模型。
 
-    否则模型里只有拖过去的那张、文件里却有两张，保存时只能整页重建（界面闪一下），
+    否则模型里只有拖过去的那张、文件里却有两张，保存时只能整体重建（界面闪一下），
     页面之后装载时还会把同一张图再抽一遍。
     """
     instance, _server = editor
@@ -536,7 +536,7 @@ def test_move_to_unloaded_page_pulls_in_its_images(editor, pdf_factory, wait):
 
     result = instance.save_document()
     assert result["ok"] is True
-    # 重定基线成功：没有整页重建
+    # 重定基线成功：没有整体重建
     assert instance.get_state()["doc"]["generation"] == snapshot["doc"]["generation"]
     assert len(instance.get_state()["objects"]) == 2
 
