@@ -69,6 +69,19 @@ class EditorApi:
     def attach_window(self, window: webview.Window) -> None:
         self._window = window
 
+    def _retitle(self) -> None:
+        """窗口标题跟着界面语言走。
+
+        老版本 pywebview 没有 ``set_title``，改标题失败也绝不能影响语言切换
+        本身，所以这里兜住一切异常。
+        """
+        if self._window is None:
+            return
+        try:
+            self._window.set_title(i18n.t("app.title"))
+        except Exception as error:
+            logger.debug("修改窗口标题失败: {}", error)
+
     @property
     def settings_snapshot(self) -> dict[str, Any]:
         return dict(self._settings)
@@ -884,6 +897,7 @@ class EditorApi:
                 logger.warning("保存设置失败: {}", exc)
                 return {**self._snapshot(), "ok": False, "message": str(exc)}
             i18n.set_language(self._settings["language"])
+            self._retitle()
             return self._snapshot()
 
     def set_language(self, code: str) -> dict[str, Any]:
@@ -904,6 +918,7 @@ class EditorApi:
                 logger.warning("重置设置失败: {}", exc)
                 return {**self._snapshot(), "ok": False, "message": str(exc)}
             i18n.set_language(self._settings["language"])
+            self._retitle()
             return self._snapshot()
 
     # ---- 关闭 ----

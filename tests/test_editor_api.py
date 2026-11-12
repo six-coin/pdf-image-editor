@@ -612,3 +612,25 @@ def test_move_to_unloaded_page_pulls_in_its_images(editor, pdf_factory, wait):
     assert len(out[0].get_image_info(xrefs=True)) == 0
     assert len(out[1].get_image_info(xrefs=True)) == 2
     out.close()
+
+
+class _FakeWindow:
+    """只记录标题，不建真窗口。"""
+
+    def __init__(self) -> None:
+        self.titles: list[str] = []
+
+    def set_title(self, title: str) -> None:
+        self.titles.append(title)
+
+
+def test_language_change_retitles_the_window(editor):
+    """窗口标题要跟着界面语言走，不能停在启动时那一种。"""
+    instance, _server = editor
+    window = _FakeWindow()
+    instance.attach_window(window)
+
+    instance.update_settings({"language": "en-US"})
+    instance.update_settings({"language": "zh-CN"})
+
+    assert window.titles == ["PDF Image Editor", "PDF 图像编辑器"]
