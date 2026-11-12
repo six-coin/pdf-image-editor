@@ -60,7 +60,7 @@ setup.bat
 
 它会检查 `uv`，然后建 `.venv` 并装依赖。装完之后想升级依赖或换机器，重跑一次即可，版本由 `uv.lock` 锁定。
 
-包索引固定在项目根的 `uv.toml`（官方 PyPI）。国内网络慢的话，把 `uv.toml` 里的 `url` 换成镜像再执行 `uv lock`；锁文件会跟着变成镜像地址，这类改动只在本机用，不要提交。
+包索引固定在项目根的 `uv.toml`，默认用阿里云镜像（`https://mirrors.aliyun.com/pypi/simple`），`uv.lock` 里的下载地址也一并指向镜像，两者都随仓库提交。要换回官方源，把 `url` 改成 `https://pypi.org/simple` 再执行 `uv lock`。
 
 ## 4. 启动
 

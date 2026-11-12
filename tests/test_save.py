@@ -232,15 +232,17 @@ def test_cross_page_move_erases_the_source(pdf_factory, store, tmp_path):
     doc.close()
 
 
-def test_aspect_ratio_survives_save(tmp_path, store):
+@pytest.mark.parametrize("pixels", [(40, 20), (40, 40)], ids=["wide", "square"])
+def test_aspect_ratio_survives_save(tmp_path, store, pixels):
     """改过长宽比的图，保存后重新打开必须还是那个矩形。
 
-    PyMuPDF 对 JPEG 走 DCTDecode 直通，此时默认的 ``keep_proportion=True`` 会把
-    图按原始比例居中塞进目标矩形：中心不变、短边不变，看起来就是「比例被还原」。
-    PNG 因为要重新编码反而不受影响，所以这里必须用 JPEG 才能复现。
+    ``insert_image`` 默认的 ``keep_proportion=True`` 会按图片原始比例把图居中塞进
+    目标矩形：中心不变、短边不变，看起来就是「比例被还原」。PyMuPDF 2.x 起这对
+    JPEG 和 PNG 一致生效，方图也不例外，所以样本要覆盖这两种像素比例。
     """
+    width, height = pixels
     src = tmp_path / "ratio.pdf"
-    pix = pymupdf.Pixmap(pymupdf.csRGB, 40, 20, b"\xff\x00\x00" * 800, False)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, width, height, b"\xff\x00\x00" * (width * height), False)
     doc = pymupdf.open()
     page = doc.new_page(width=595, height=842)
     page.insert_image(pymupdf.Rect(100, 100, 300, 200), stream=pix.tobytes("jpg"))
@@ -249,7 +251,9 @@ def test_aspect_ratio_survives_save(tmp_path, store):
 
     handle = PdfDocument.open(src, store)
     obj = handle.editable_images(0)[0]
-    assert (obj.rect.w, obj.rect.h) == (pytest.approx(200), pytest.approx(100))
+    # 造样本时用的是默认 keep_proportion，图会被缩进目标矩形（方图变成 100×100
+    # 居中）。这里只确认读出了一张图，随后统一改成 3:1 再验证保存。
+    assert obj.rect.w > 0 and obj.rect.h > 0
 
     obj.rect = Rect(100, 100, 300, 100)  # 3:1，像素是 2:1
     state = DocumentState(path=src, objects=[obj])

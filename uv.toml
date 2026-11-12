@@ -1,5 +1,4 @@
-# 国内镜像源：https://mirrors.aliyun.com/pypi/simple
-# 官方源：https://pypi.org/simple
+# 默认走阿里云镜像。换回官方源：把 url 改成 https://pypi.org/simple，再 uv lock。
 [[index]]
-url = "https://pypi.org/simple"
+url = "https://mirrors.aliyun.com/pypi/simple"
 default = true

@@ -60,7 +60,7 @@ setup.bat
 
 It checks for `uv`, then creates `.venv` and installs the dependencies. Re-run it to upgrade dependencies or to move to another machine; versions are pinned by `uv.lock`.
 
-The package index is fixed in `uv.toml` at the project root (official PyPI). On a slow connection in mainland China, point `url` at a mirror and run `uv lock` again — the lock file will then record the mirror addresses. Keep that change local; do not commit it.
+The package index is fixed in `uv.toml` at the project root and defaults to the Aliyun mirror (`https://mirrors.aliyun.com/pypi/simple`); `uv.lock` records the same mirror URLs, and both are committed with the repo. To switch back to the official index, point `url` at `https://pypi.org/simple` and run `uv lock` again.
 
 ## 4. Starting
 

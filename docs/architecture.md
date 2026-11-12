@@ -30,7 +30,7 @@
 ```
 main.pyw                      入口薄壳
 main.bat / setup.bat          启动与装环境
-uv.toml / uv.lock             包索引与锁文件
+uv.toml / uv.lock             包索引（阿里云镜像）与锁文件
 
 app/
 ├─ paths.py                   全部路径的唯一来源
@@ -84,6 +84,8 @@ app/
 5. **前端只认快照**，不自己合并业务数据（见第 7 节）。
 
 `settings.py` 会读 `i18n.available()` 来校验语言代码，这是基础层内部的一次调用，不构成反向依赖。
+
+`pymupdf` 要求 **2.x**：1.x 有已知安全问题，且 2.x 把 `keep_proportion` 的行为统一到了所有图片格式（见 6.8）。2.1 会带入 `numpy` / `onnxruntime` 等依赖，本项目不使用它们，只是上游的硬依赖。
 
 ## 4. 数据模型
 
@@ -285,7 +287,7 @@ api.save_document(path?)
 
 `apply_redactions` 的参数是刻意的：`images=REMOVE` 只摘图，`graphics=LINE_ART_NONE`、`text=TEXT_NONE` 保证文字与矢量不动。
 
-`insert_image` 也必须显式写 `keep_proportion=False`。默认值 `True` 对 JPEG（DCTDecode 直通）会生效：它按原始比例把图居中塞进目标矩形，中心与短边不变，看起来就是「用户调过的长宽比被还原了」；PNG 因为要重新编码，反而看不出问题。所以这个坑只在照片类扫描件上出现。
+`insert_image` 也必须显式写 `keep_proportion=False`。默认值 `True` 会按图片原始比例把图居中塞进目标矩形，中心与短边不变，看起来就是「用户调过的长宽比被还原了」。PyMuPDF 2.x 起这条对所有格式一致生效（1.x 只对 JPEG 生效，PNG 重新编码时会被忽略），所以样本里必须带上 JPEG 才能覆盖到。
 
 单页失败不拖累其他页，只记一条警告，最后汇总成一份报告（见使用手册第 9 节）。
 
@@ -323,7 +325,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 
 入口在顶栏的「预处理」：先弹说明框，里面两条路——「处理当前打开的文档」（要求没有未保存修改，因为处理的是磁盘版本）或「处理其他文档」（另选文件）；确认后再选目标文件。跑完会问要不要立刻打开结果，打开走的是和「打开」同一条路径，所以未保存修改照样会被拦下。
 
-不用 numpy / Pillow：`bytes.translate` 是 C 实现，逐字节查表比逐像素循环快两个数量级；灰度转换交给 `pymupdf.Pixmap(csGRAY, pix)`。带 alpha 的图跳过——压成二值会把透明区域变成黑块。
+不用 numpy / Pillow（numpy 只是 PyMuPDF 2.x 的传递依赖，本项目不直接调用）：`bytes.translate` 是 C 实现，逐字节查表比逐像素循环快两个数量级；灰度转换交给 `pymupdf.Pixmap(csGRAY, pix)`。带 alpha 的图跳过——压成二值会把透明区域变成黑块。
 
 落盘同样是「临时文件 + `os.replace`」，目标与源相同时直接拒绝：源文件正被自己打开着，写回去只会得到半个坏文件。任务在线程池里跑，通过 `progress` 回调更新任务进度。
 
