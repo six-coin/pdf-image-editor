@@ -1,6 +1,8 @@
 """文案查表。
 
 启动时扫描 locales/ 目录，放进去什么语言就支持什么语言。
+每种语言在文件里用 ``language.name`` 声明自己的显示名（用该语言自己的文字），
+而且必须是文件里的第一个键；程序里不硬编码任何语言名。
 缺键回退默认语言，再缺返回键名本身，绝不抛异常。
 """
 
@@ -12,6 +14,9 @@ from typing import Any
 from app import paths
 
 DEFAULT_LANGUAGE = "zh-CN"
+
+#: 语言包里的语言自称。用它自己的文字书写，界面上直接展示这个值。
+NAME_KEY = "language.name"
 
 _catalog: dict[str, dict[str, str]] = {}
 _language: str = DEFAULT_LANGUAGE
@@ -73,6 +78,20 @@ def set_language(code: str | None) -> str:
 
 def current() -> str:
     return _language
+
+
+def language_names() -> dict[str, str]:
+    """语言代码 → 界面显示名。
+
+    显示名由每种语言在自己的语言包里用 ``language.name`` 声明，所以列表里
+    永远显示"简体中文 (中国)"而不是当前界面语言翻译出来的名字。缺键时退回
+    语言代码本身。
+    """
+    names: dict[str, str] = {}
+    for code in available():
+        label = str(_load(code).get(NAME_KEY) or "").strip()
+        names[code] = label or code
+    return names
 
 
 def strings(code: str | None = None) -> dict[str, str]:

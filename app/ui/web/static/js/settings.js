@@ -89,8 +89,9 @@ function toggle(checked, onChange) {
 }
 
 function languageLabel(code) {
-  const text = T(`lang.${code}`);
-  return text === `lang.${code}` ? code : text;
+  // 语言名由后端下发（每种语言用自己的文字写），不按当前界面语言翻译。
+  const names = (state.data && state.data.language_names) || {};
+  return names[code] || code;
 }
 
 /* ---------- 快捷键 ---------- */

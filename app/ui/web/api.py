@@ -982,6 +982,7 @@ class EditorApi:
             },
             "language": i18n.current(),
             "languages": i18n.available(),
+            "language_names": i18n.language_names(),
             "theme": self._settings.get("theme", "light"),
             "show_guides": bool(self._settings.get("show_guides", True)),
             "show_inspector": bool(self._settings.get("show_inspector", True)),

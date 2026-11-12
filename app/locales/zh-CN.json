@@ -1,4 +1,5 @@
 {
+  "language.name": "简体中文 (中国)",
   "app.title": "PDF 图像编辑器",
   "app.tagline": "切分、移动、替换 PDF 里的图片，保留原有文字层",
   "fatal.unexpected": "程序遇到无法继续的错误：{error}",
@@ -46,8 +47,6 @@
   "theme.light": "浅色",
   "theme.dark": "深色",
   "theme.toggle": "切换深浅色",
-  "lang.zh-CN": "简体中文 (中国)",
-  "lang.en-US": "English (US)",
   "empty.title": "还没有打开文件",
   "empty.hint": "打开一个 PDF，就能开始切分和替换里面的图片。",
   "empty.open": "打开 PDF",
