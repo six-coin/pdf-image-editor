@@ -25,7 +25,7 @@ Saving only swaps the images; everything else is left untouched.
 
 - Pages are rendered at a DPI chosen from the current zoom, so zooming in stays sharp
 - Wheel to scroll, `Ctrl`+wheel to zoom around the pointer, `Space`+drag or middle-drag to pan
-- Light and dark themes, following the system or set by hand
+- Light and dark themes, switchable at any time
 - Page-margin guides with independently adjustable edges
 
 **Edit**
