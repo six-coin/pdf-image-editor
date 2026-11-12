@@ -65,7 +65,7 @@ The package index is fixed in `uv.toml` at the project root (official PyPI). On 
 ## 4. Starting
 
 ```bat
-run.bat
+main.bat
 ```
 
 It launches through `pythonw.exe`, so no console window appears. You can call it from any directory: every internal path is derived from the program directory, not from the current working directory.
@@ -161,6 +161,8 @@ With one image selected there are eight handles: four corners plus the midpoint 
 | Edges | Stretch one axis only, so the aspect ratio changes |
 
 The edge handles exist for images whose displayed ratio differs from their pixel ratio: a square icon stretched flat can be squeezed back by dragging the top or bottom edge, no re-cropping needed. The pixels are untouched; only the rectangle on the page changes.
+
+While scaling, the edge you drag (both edges, for a corner) **stops at the page border**: drag past it and the edge sticks there, so the image is never squashed or cropped.
 
 The eight handles can be switched off in Settings, leaving the four corners.
 

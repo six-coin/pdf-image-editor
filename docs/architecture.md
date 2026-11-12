@@ -28,8 +28,8 @@
 ## 2. 目录结构
 
 ```
-pdf_image_editor.pyw          入口薄壳
-run.bat / setup.bat           启动与装环境
+main.pyw                      入口薄壳
+main.bat / setup.bat          启动与装环境
 uv.toml / uv.lock             包索引与锁文件
 
 app/
@@ -63,9 +63,9 @@ app/
 ## 3. 分层与依赖方向
 
 ```
-        pdf_image_editor.pyw
-                 │
-                 ▼
+        main.pyw
+            │
+            ▼
             ui/web/app.py ──► ui/web/api.py
                                    │
                  ┌─────────────────┼─────────────────┐
@@ -469,6 +469,8 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 
 - 拖动只改 `left/top`，不重排布局；松手一次性提交。
 - 移动阈值 3px，最小尺寸 4pt；组缩放还要保证组里最小的那张不低于 4pt、整组不出页面。
+- 缩放的锚点是手柄的**对边**。角手柄命名是 `tl/tr/bl/br`、边手柄是 `n/s/w/e`，判断方向必须两套都认（`l/r` 与 `w`、`t/b` 与 `n`），否则 `tl` 会被当成往右下长。
+- 缩放结果先按锚点到页边的距离算出最大倍率再夹取（`clampScale`），不能留给后端：`clamp_rect_to_page` 只按边裁，长宽比会被裁坏。
 - 八个手柄是纯 CSS 开关（`#app.eight-handles`），关掉时边手柄 `display:none`，不用重建 DOM。
 - 多选限同一页：组框要有共同坐标系；`api.select` 也会截断跨页的 id。
 - 手势期间后端快照一律不落地（见 6.4），组框在非组手势期间临时隐藏。

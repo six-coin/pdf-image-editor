@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "app"
-ENTRY = ROOT / "pdf_image_editor.pyw"
+ENTRY = ROOT / "main.pyw"
 
 UI_LIBS = {"PySide6", "PyQt5", "PyQt6", "webview"}
 

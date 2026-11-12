@@ -134,6 +134,8 @@ function endGesture() {
 /* ---------- 与 core/geometry.py 同构的手柄缩放 ---------- */
 
 const CORNER_HANDLES = ['tl', 'tr', 'bl', 'br'];
+const VERTICAL_HANDLES = ['n', 's'];
+const HORIZONTAL_HANDLES = ['w', 'e'];
 
 export function scaleFromCorner(rect, corner, dx, dy, keepRatio, minSize = MIN_SIZE) {
   const right = rect.x + rect.w;
@@ -196,6 +198,70 @@ export function scaleFromCorner(rect, corner, dx, dy, keepRatio, minSize = MIN_S
 
   if (nw < minSize || nh < minSize) return { ...rect };
   return { x: nx, y: ny, w: nw, h: nh };
+}
+
+/* 手柄的命名分两套：角是 tl/tr/bl/br（t=上 b=下 l=左 r=右），边是 n/s/w/e。
+   判断"往哪边长"必须两套都认，否则 tl 会被当成向右下长，锚点整个反掉。 */
+
+function anchorOf(rect, corner) {
+  return {
+    x: corner.includes('w') || corner.includes('l') ? rect.x + rect.w : rect.x,
+    y: corner.includes('n') || corner.includes('t') ? rect.y + rect.h : rect.y,
+  };
+}
+
+/** 沿手柄方向最多能放大到多少倍——再大对应的那条边就出页了。 */
+function limitScale(corner, anchor, w, h, pageW, pageH) {
+  return {
+    maxSx:
+      corner.includes('w') || corner.includes('l') ? anchor.x / w : (pageW - anchor.x) / w,
+    maxSy:
+      corner.includes('n') || corner.includes('t') ? anchor.y / h : (pageH - anchor.y) / h,
+  };
+}
+
+/**
+ * 把缩放结果夹进页内，再按锚点重建矩形。
+ *
+ * ``scaleFromCorner`` 只认指针位移，不知道页面边界；超出页面的部分会被后端的
+ * ``clamp_rect_to_page`` 按边裁掉，长宽比就变了。所以这里先按锚点到页边的距离
+ * 算出最大倍率，再统一作用到每张图上——组缩放靠这一步保证整组同比例且不出页。
+ */
+function clampScale(before, corner, scaled, keepRatio, pageW, pageH, minSx = 0, minSy = 0) {
+  const anchor = anchorOf(before, corner);
+  const { maxSx, maxSy } = limitScale(corner, anchor, before.w, before.h, pageW, pageH);
+  let sx = before.w ? scaled.w / before.w : 1;
+  let sy = before.h ? scaled.h / before.h : 1;
+
+  // 边手柄只驱动一个方向，另一条边保持原样——那里算出来的 max 没有意义。
+  const drivesX = !VERTICAL_HANDLES.includes(corner);
+  const drivesY = !HORIZONTAL_HANDLES.includes(corner);
+
+  if (keepRatio) {
+    const s = Math.min(Math.max(sx, minSx, minSy), maxSx, maxSy);
+    sx = s;
+    sy = s;
+  } else if (drivesX && drivesY) {
+    sx = Math.min(Math.max(sx, minSx), maxSx);
+    sy = Math.min(Math.max(sy, minSy), maxSy);
+  } else if (drivesX) {
+    sx = Math.min(Math.max(sx, minSx), maxSx);
+    sy = 1;
+  } else {
+    sx = 1;
+    sy = Math.min(Math.max(sy, minSy), maxSy);
+  }
+
+  return {
+    sx,
+    sy,
+    anchorX: anchor.x,
+    anchorY: anchor.y,
+    x: anchor.x + (before.x - anchor.x) * sx,
+    y: anchor.y + (before.y - anchor.y) * sy,
+    w: before.w * sx,
+    h: before.h * sy,
+  };
 }
 
 /* ---------- 事件 ---------- */
@@ -403,11 +469,17 @@ function startResize(event, node, corner) {
 function resizeItem(point, freeRatio) {
   const k = pxPerPt();
   const item = gesture.item;
+  const before = item.before;
+  const info = state.data.pages.find((p) => p.index === before.page);
+  if (!info) return;
+
   const dx = (point.x - gesture.start.x) / k;
   const dy = (point.y - gesture.start.y) / k;
   // 边手柄本身就是改长宽比，Alt 对它们没有意义。
   const keepRatio = CORNER_HANDLES.includes(gesture.corner) && !freeRatio;
-  const rect = scaleFromCorner(item.before, gesture.corner, dx, dy, keepRatio);
+  const scaled = scaleFromCorner(before, gesture.corner, dx, dy, keepRatio);
+  const rect = clampScale(before, gesture.corner, scaled, keepRatio, info.w, info.h);
+
   item.next = rect;
   item.el.style.left = `${rect.x * k}px`;
   item.el.style.top = `${rect.y * k}px`;
@@ -449,13 +521,10 @@ function resizeGroup(point, freeRatio) {
   const { bounds, corner } = gesture;
   const keepRatio = CORNER_HANDLES.includes(corner) && !freeRatio;
 
-  // 缩放围绕对面那条边/那个角，锚点在整组缩放里固定不动。
-  const anchorX = corner.includes('w') ? bounds.x + bounds.w : bounds.x;
-  const anchorY = corner.includes('n') ? bounds.y + bounds.h : bounds.y;
+  const info = state.data.pages.find((p) => p.index === gesture.page);
+  if (!info) return;
 
   const scaled = scaleFromCorner(bounds, corner, dx, dy, keepRatio);
-  let sx = bounds.w ? scaled.w / bounds.w : 1;
-  let sy = bounds.h ? scaled.h / bounds.h : 1;
 
   // 组里最小的那张不能小于 MIN_SIZE，否则会被后端拒掉、整组变形。
   let minSx = 0;
@@ -464,37 +533,34 @@ function resizeGroup(point, freeRatio) {
     minSx = Math.max(minSx, MIN_SIZE / item.before.w);
     minSy = Math.max(minSy, MIN_SIZE / item.before.h);
   }
-  // 也别把组拖出页面：超出部分会被逐张夹取，相对位置就散了。
-  const info = state.data.pages.find((p) => p.index === gesture.page);
-  if (!info) return;
-  const maxSx = corner.includes('w') ? anchorX / bounds.w : (info.w - anchorX) / bounds.w;
-  const maxSy = corner.includes('n') ? anchorY / bounds.h : (info.h - anchorY) / bounds.h;
 
-  if (keepRatio) {
-    const s = Math.min(Math.max(sx, minSx, minSy), Math.min(maxSx, maxSy));
-    sx = s;
-    sy = s;
-  } else {
-    sx = Math.min(Math.max(sx, minSx), maxSx);
-    sy = Math.min(Math.max(sy, minSy), maxSy);
-  }
+  const next = clampScale(
+    bounds,
+    corner,
+    scaled,
+    keepRatio,
+    info.w,
+    info.h,
+    minSx,
+    minSy
+  );
+  gesture.next = next;
 
-  gesture.next = { sx, sy, anchorX, anchorY };
   for (const item of gesture.items) {
     const before = item.before;
     if (!item.el) continue;
-    item.el.style.left = `${(anchorX + (before.x - anchorX) * sx) * k}px`;
-    item.el.style.top = `${(anchorY + (before.y - anchorY) * sy) * k}px`;
-    item.el.style.width = `${before.w * sx * k}px`;
-    item.el.style.height = `${before.h * sy * k}px`;
+    item.el.style.left = `${(next.anchorX + (before.x - next.anchorX) * next.sx) * k}px`;
+    item.el.style.top = `${(next.anchorY + (before.y - next.anchorY) * next.sy) * k}px`;
+    item.el.style.width = `${before.w * next.sx * k}px`;
+    item.el.style.height = `${before.h * next.sy * k}px`;
   }
 
   const box = document.getElementById('groupBox');
   if (box) {
-    box.style.left = `${(anchorX + (bounds.x - anchorX) * sx) * k}px`;
-    box.style.top = `${(anchorY + (bounds.y - anchorY) * sy) * k}px`;
-    box.style.width = `${bounds.w * sx * k}px`;
-    box.style.height = `${bounds.h * sy * k}px`;
+    box.style.left = `${next.x * k}px`;
+    box.style.top = `${next.y * k}px`;
+    box.style.width = `${next.w * k}px`;
+    box.style.height = `${next.h * k}px`;
   }
 }
 
@@ -732,7 +798,11 @@ export function nudge(dx, dy) {
   for (const id of ids) {
     const obj = state.data.objects.find((o) => o.id === id);
     if (!obj) continue;
-    payload.push({ id, page: obj.page, x: obj.x + dx, y: obj.y + dy, w: obj.w, h: obj.h });
+    // 和拖动一样夹在页内：后端只按边裁，微调出界会把长宽比裁坏。
+    const info = state.data.pages.find((p) => p.index === obj.page);
+    const x = info ? Math.min(Math.max(obj.x + dx, 0), Math.max(info.w - obj.w, 0)) : obj.x + dx;
+    const y = info ? Math.min(Math.max(obj.y + dy, 0), Math.max(info.h - obj.h, 0)) : obj.y + dy;
+    payload.push({ id, page: obj.page, x, y, w: obj.w, h: obj.h });
   }
   if (!payload.length) return;
   call('commit_transform', payload).then((snapshot) => snapshot && apply(snapshot));
