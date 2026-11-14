@@ -1,6 +1,8 @@
 """窗口装配。
 
-启动顺序：日志 → API（配置错误在这里就能报）→ 资源服务 → 窗口 → 关闭握手。
+启动顺序：目录准备 → 单实例 → 日志 → API（配置错误在这里就能报）→ 资源
+服务 → 窗口 → 关闭握手。关窗后如果用户点过「立即重启」，由这里在释放单实例
+锁之后拉起新进程。
 """
 
 from __future__ import annotations
@@ -10,8 +12,11 @@ import logging
 
 import webview
 
-from app import i18n, logging_setup, paths
+from app import bootstrap, i18n, logging_setup, paths
+from app import settings as settings_module
+from app.errors import ConfigError
 from app.system.asset_server import AssetServer
+from app.system.single import MAIN_MUTEX, InstanceLock, activate_window
 from app.ui.web.api import EditorApi
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,9 +45,33 @@ def _make_closing_handler(api: EditorApi):
 
 
 def main() -> None:
+    warnings = bootstrap.prepare()
+    lock = InstanceLock(MAIN_MUTEX)
+    if not lock.acquire():
+        _activate_existing()
+        return
+
+    api: EditorApi | None = None
+    try:
+        api = _run(warnings)
+    finally:
+        lock.release()
+
+    if api is not None and api.restart_requested:
+        bootstrap.restart_app()
+
+
+def _run(warnings: list[str]) -> EditorApi | None:
     logging_setup.setup("pdf_image_editor")
 
-    api = EditorApi()
+    try:
+        api = EditorApi()
+    except ConfigError as error:
+        logging_setup.fatal(str(error))
+        return None
+    for warning in warnings:
+        _LOGGER.warning(warning)
+
     server = AssetServer(api, api.store, paths.WEB_DIR)
     server.start()
     api.attach_server(server)
@@ -69,6 +98,17 @@ def main() -> None:
     finally:
         server.stop()
         api.shutdown()
+    return api
+
+
+def _activate_existing() -> None:
+    """已经有一个窗口开着：把它提到前面，提不上来就弹框说明。"""
+    try:
+        i18n.set_language(str(settings_module.load_app()["language"]))
+    except Exception:  # 读配置失败不该挡住「多开」这条提示
+        pass
+    if not activate_window(i18n.t("app.title")):
+        bootstrap.info(i18n.t("app.already_running"), i18n.t("app.title"))
 
 
 if __name__ == "__main__":

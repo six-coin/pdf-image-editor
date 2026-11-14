@@ -12,9 +12,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 def _run() -> None:
+    from app import bootstrap
     from app.ui.web.app import main
 
-    main()
+    bootstrap.guard(main, "pdf_image_editor")
 
 
 if __name__ == "__main__":

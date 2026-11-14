@@ -50,7 +50,7 @@ def test_switch_to_english():
 
 
 def test_invalid_language_falls_back():
-    assert i18n.set_language("xx-YY") == "zh-CN"
+    assert i18n.set_language("xx-YY") == "en-US"
 
 
 def test_available_lists_both():
@@ -62,7 +62,7 @@ def test_strings_falls_back_to_the_default_language(monkeypatch):
     monkeypatch.setitem(i18n._catalog, "xx-XX", {"app.title": "X"})
     table = i18n.strings("xx-XX")
     assert table["app.title"] == "X"
-    assert table["toolbar.open"] == "打开"
+    assert table["toolbar.open"] == "Open"
 
 
 def test_app_title_is_the_current_name():

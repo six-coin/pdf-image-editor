@@ -1,4 +1,4 @@
-# 默认走阿里云镜像。换回官方源：把 url 改成 https://pypi.org/simple，再 uv lock。
+# https://pypi.org/simple
 [[index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
 default = true

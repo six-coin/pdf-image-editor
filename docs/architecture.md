@@ -60,6 +60,21 @@ app/
    └─ static/                 index.html + css/ + js/（无构建）
 ```
 
+## 2.5 路径、版本与首次运行
+
+| 位置 | 内容 | 默认 |
+|---|---|---|
+| 程序目录 | 代码与 `docs/` | 仓库根目录 |
+| 数据目录 | `app.json`、`pdfs/` | `%PROGRAMDATA%\six-coin\pdf-image-editor` |
+| 本地目录 | `logs/`、`locks/`、`data-dir.txt` | `%LOCALAPPDATA%\six-coin\pdf-image-editor` |
+| 临时目录 | 外部编辑的中间文件 | `%TEMP%\six-coin\pdf-image-editor` |
+
+- 数据目录可改：设置页写 `data-dir.txt`，**重启后生效**；`paths.resolve_user_path()` 的相对路径以数据目录为基准。
+- 旧版本留在程序目录里的 `config/`、`logs/`、`pdfs/`、`temp/` 由 `paths.migrate_legacy()` 在启动最前面搬走（`temp/` 直接删）。
+- 版本号只有 `pyproject.toml` 一处，`app/version.py` 读它。
+- `bootstrap.is_first_run()` 的判据是数据目录里没有 `app.json`；首次运行时网页依次弹语言下拉框与使用说明。
+- `main` 是唯一入口，持 `Local\SixCoin.PdfImageEditor.Main` 互斥量；重复启动先提窗，提不到再弹信息框。重启按钮走「释放锁 → 拉新进程」。
+
 ## 3. 分层与依赖方向
 
 ```
@@ -518,7 +533,7 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 
 ### 配置
 
-所有设置在一个文件 `config/app.json` 里，参考线边距是它的 `reference` 子对象。
+所有设置在一个文件 `<数据目录>/app.json` 里，参考线边距是它的 `reference` 子对象。
 
 - **原子写入**：临时文件 + `os.replace`，中途崩溃不会留下半个文件。
 - **读的时候夹取**：数字越界夹回范围，非数字回退默认，`NaN` 视为非法，布尔接受 `1/true/yes/on`。
@@ -570,7 +585,7 @@ tests/
 
 约定：
 
-- **不碰真实的 `config/` 与 `logs/`**：`temp_config` 夹具用 `monkeypatch` 把 `paths` 里的路径改到 `tmp_path`。
+- **不碰真实的 ProgramData / LOCALAPPDATA**：`conftest.py` 在导入 `app` 之前设置三个 `SIXCOIN_*` 环境变量，`temp_config` 夹具再把 `paths` 里的路径改到 `tmp_path`。
 - **PDF 现场生成**：`pdf_factory` 造带文字层和若干张彩色块的文档，用完即弃。
 - **界面后端跑真的**：`editor` 夹具起真实的 `EditorApi` + `AssetServer`，只是不建窗口，所以接口层的行为（含线程与任务）都被覆盖。
 - **断言文案用中文**：`conftest.py` 把语言钉死，测试不受环境影响。

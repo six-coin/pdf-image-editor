@@ -4,6 +4,7 @@
 
 import { call, setStrings, T, toast } from './bridge.js';
 import { COMMANDS, accelOf, bindings, findConflicts } from './keymap.js';
+import { renderMarkdown } from './markdown.js';
 import { openModal } from './modal.js';
 import { apply, applyStrings, refreshTexts } from './render.js';
 import { refreshSplitBar } from './split.js';
@@ -236,6 +237,70 @@ export async function openSettings() {
     toast(T('settings.reset_done'));
   }
 
+  async function openReadme() {
+    const readme = await call('get_readme');
+    const body = renderMarkdown((readme && readme.markdown) || '');
+    if (!body.textContent.trim()) {
+      body.textContent = T('about.readme_missing');
+    }
+    await openModal({
+      title: T('about.readme_title'),
+      body,
+      actions: [
+        { label: T('dialog.close'), value: 'ok', kind: 'primary', i18n: 'dialog.close' },
+      ],
+    });
+  }
+
+  async function changeDataDir() {
+    const picked = await call('browse_folder');
+    if (!picked) return;
+    const snapshot = await call('set_data_dir', picked);
+    if (!snapshot) return;
+    apply(snapshot);
+    if (snapshot.message) toast(snapshot.message, snapshot.ok !== false);
+    renderBody();
+  }
+
+  function aboutBlock(data) {
+    const wrap = document.createElement('div');
+    wrap.className = 'about-block';
+
+    const path = document.createElement('div');
+    path.className = 'about-path';
+    path.textContent = data.data_dir || '';
+    path.title = data.data_dir || '';
+
+    const actions = document.createElement('div');
+    actions.className = 'about-actions';
+
+    const change = document.createElement('button');
+    change.type = 'button';
+    change.className = 'btn sm';
+    change.textContent = T('about.data_dir_change');
+    change.addEventListener('click', changeDataDir);
+    actions.appendChild(change);
+
+    if (data.data_dir_next && data.data_dir_next !== data.data_dir) {
+      const restart = document.createElement('button');
+      restart.type = 'button';
+      restart.className = 'btn sm primary';
+      restart.textContent = T('about.restart');
+      restart.addEventListener('click', () => call('restart_app'));
+      actions.appendChild(restart);
+    }
+
+    const hint = document.createElement('div');
+    hint.className = 'about-hint';
+    hint.textContent =
+      data.data_dir_next && data.data_dir_next !== data.data_dir
+        ? T('about.data_dir_pending', { path: data.data_dir_next })
+        : T('about.data_dir_hint');
+
+    wrap.append(path, actions, hint);
+    return wrap;
+  }
+
   function renderBody() {
     const data = state.data;
     const keys = bindings();
@@ -327,6 +392,28 @@ export async function openSettings() {
     body.appendChild(resetKeys);
 
     body.append(keySection('global', keys, bindKey), keySection('split', keys, bindKey));
+
+    body.appendChild(section('about.title'));
+
+    const versionRow = document.createElement('div');
+    versionRow.className = 'field-row';
+    const versionLabel = document.createElement('span');
+    versionLabel.className = 'field-label';
+    versionLabel.textContent = T('about.version');
+    const versionValue = document.createElement('span');
+    versionValue.className = 'about-value';
+    versionValue.textContent = data.version || '';
+    versionRow.append(versionLabel, versionValue);
+    body.appendChild(versionRow);
+
+    body.appendChild(field('about.data_dir', aboutBlock(data)));
+
+    const readme = document.createElement('button');
+    readme.type = 'button';
+    readme.className = 'btn sm';
+    readme.textContent = T('about.readme');
+    readme.addEventListener('click', openReadme);
+    body.appendChild(field('about.readme', readme));
   }
 
   renderBody();

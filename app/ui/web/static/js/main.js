@@ -6,7 +6,8 @@ import { bindCanvas, fitWidth, observePages, pageJump, resetZoom, zoomBy } from 
 import { openExport } from './export.js';
 import { bindGuides } from './guides.js';
 import { bindInteract } from './interact.js';
-import { askUnsaved } from './modal.js';
+import { renderMarkdown } from './markdown.js';
+import { askUnsaved, openModal } from './modal.js';
 import { apply, applyStrings, applyTheme } from './render.js';
 import { state } from './state.js';
 import { openSettings } from './settings.js';
@@ -95,6 +96,64 @@ function bindClicks() {
   document.addEventListener('pages:rebuilt', () => observePages());
 }
 
+/* ---------- 首次启动 ---------- */
+
+async function runFirstRun() {
+  const data = state.data;
+  const body = document.createElement('div');
+
+  const intro = document.createElement('p');
+  intro.className = 'modal-text';
+  intro.textContent = T('firstrun.text');
+  body.appendChild(intro);
+
+  const label = document.createElement('label');
+  label.className = 'field';
+  label.textContent = T('firstrun.title');
+
+  const select = document.createElement('select');
+  select.id = 'firstrun-language';
+  select.className = 'about-select';
+  const names = data.language_names || {};
+  for (const code of data.languages || []) {
+    const option = document.createElement('option');
+    option.value = code;
+    option.textContent = names[code] || code;
+    if (code === data.language) option.selected = true;
+    select.appendChild(option);
+  }
+  label.appendChild(select);
+  body.appendChild(label);
+
+  const choice = await openModal({
+    title: T('firstrun.title'),
+    body,
+    narrow: true,
+    actions: [{ label: T('firstrun.start'), value: 'go', kind: 'primary' }],
+  });
+  if (choice !== 'go') return;
+
+  const snapshot = await call('complete_first_run', select.value);
+  if (snapshot) {
+    apply(snapshot);
+    const strings = await call('get_strings');
+    if (strings) setStrings(strings);
+    applyStrings();
+  }
+
+  const readme = await call('get_readme');
+  const manual = renderMarkdown((readme && readme.markdown) || '');
+  if (!manual.textContent.trim()) manual.textContent = T('about.readme_missing');
+  await openModal({
+    title: T('firstrun.readme_title'),
+    text: T('firstrun.readme_text'),
+    body: manual,
+    actions: [
+      { label: T('firstrun.readme_close'), value: 'ok', kind: 'primary' },
+    ],
+  });
+}
+
 /* ---------- 启动 ---------- */
 
 async function init() {
@@ -122,6 +181,7 @@ async function init() {
   if (!snapshot) return;
   apply(snapshot);
   if (snapshot.doc.page_count) fitWidth();
+  if (snapshot.first_run) await runFirstRun();
 }
 
 if (bridgeReady()) {

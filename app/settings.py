@@ -15,6 +15,7 @@ from typing import Any
 
 from app import i18n, paths
 from app.errors import ConfigError
+from app.system import theme as theme_tool
 
 DEFAULT_REFERENCE: dict[str, Any] = {
     "left_mm": 10.0,
@@ -40,6 +41,20 @@ DEFAULT_APP: dict[str, Any] = {
 }
 
 _THEMES = ("light", "dark")
+
+
+def default_app() -> dict[str, Any]:
+    """出厂默认设置。
+
+    语言与外观不是写死的常量：第一次启动按系统语言与系统主题定一次，之后
+    以配置文件里的值为准。
+    """
+    config = dict(DEFAULT_APP)
+    config["language"] = i18n.initial_language()
+    config["theme"] = theme_tool.system_theme()
+    config["reference"] = dict(DEFAULT_REFERENCE)
+    return config
+
 
 # 迁移用：早期版本以厘米为单位，键名带 _cm 后缀。
 _LEGACY_MARGIN_KEYS = {
@@ -131,9 +146,10 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
 def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     merged = dict(raw)
     merged["language"] = _choice(
-        raw.get("language"), DEFAULT_APP["language"], tuple(i18n.available())
+        raw.get("language"), i18n.initial_language(), tuple(i18n.available())
     )
-    merged["theme"] = _choice(raw.get("theme"), DEFAULT_APP["theme"], _THEMES)
+    # 旧配置里的 system 在这里定成当时的浅色/深色，之后不再随系统变化。
+    merged["theme"] = theme_tool.resolve(raw.get("theme"))
     merged["undo_limit"] = _integer(raw.get("undo_limit"), DEFAULT_APP["undo_limit"], 10, 500)
     merged["render_dpi_cap"] = _integer(
         raw.get("render_dpi_cap"), DEFAULT_APP["render_dpi_cap"], 96, 400
@@ -198,7 +214,7 @@ def _drop_legacy_reference() -> None:
 def load_app() -> dict[str, Any]:
     path = paths.APP_CONFIG_PATH
     if not path.is_file():
-        config = dict(DEFAULT_APP)
+        config = default_app()
         config["reference"] = _legacy_reference()
         save_app(config)
         _drop_legacy_reference()

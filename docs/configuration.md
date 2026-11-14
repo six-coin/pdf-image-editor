@@ -1,6 +1,16 @@
 # 配置与数据格式
 
-程序只有一个配置文件 `config/app.json`，UTF-8 编码的 JSON。写入使用「临时文件 + `os.replace`」的原子替换，中途崩溃不会留下写了一半的文件。
+程序只有一个配置文件 `app.json`，放在**数据目录**里（默认 `%PROGRAMDATA%\six-coin\pdf-image-editor`），UTF-8 编码的 JSON。写入使用「临时文件 + `os.replace`」的原子替换，中途崩溃不会留下写了一半的文件。
+
+| 位置 | 内容 |
+|---|---|
+| `<数据目录>\app.json` | 设置 |
+| `<数据目录>\pdfs\` | 打开对话框的默认目录 |
+| `%LOCALAPPDATA%\six-coin\pdf-image-editor\data-dir.txt` | 数据目录指针，改目录后写这里 |
+| `%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\` | 日志 |
+| `%TEMP%\six-coin\pdf-image-editor\` | 外部编辑的临时目录 |
+
+数据目录在设置页「关于」里改，**重启后生效**；只把 `app.json` 复制到新目录，PDF 不自动搬。
 
 首次启动时若文件不存在，会自动生成一份可用的默认内容。手改坏了不会静默重建，而是抛 `ConfigError`、弹窗指出文件名并退出——静默重建会把用户数据洗掉。
 
@@ -31,8 +41,8 @@
 
 | 字段 | 类型 | 默认 | 取值与行为 |
 |---|---|---|---|
-| `language` | 字符串 | `"zh-CN"` | `app/locales` 下已有的语言代码；其他值回退 `zh-CN` |
-| `theme` | 字符串 | `"light"` | `light` / `dark`；其他值回退 `light` |
+| `language` | 字符串 | 系统语言 | `app/locales` 下已有的语言代码；没有匹配或无法识别时回退 `en-US` |
+| `theme` | 字符串 | 系统主题 | `light` / `dark`，没有 `system`；首次启动读一次系统偏好，旧值 `system` 在读取时定成当时的浅色/深色 |
 | `undo_limit` | 整数 | `100` | 10–500，越界夹取；非数字回退 100 |
 | `render_dpi_cap` | 整数 | `300` | 96–400，越界夹取；页面位图的渲染上限，调低省内存但放大后发虚 |
 | `preprocess_threshold` | 整数 | `235` | 0–255，越界夹取；黑白化时亮于该值的像素压成纯白 |
@@ -69,8 +79,8 @@
 
 | 旧文件 | 旧键 | 换算 |
 |---|---|---|
-| `config/reference.json` | `left_mm` 等 | 原样 |
-| `config/reference_line.json` | `left_cm` 等 | 厘米 × 10 → 毫米 |
+| `<数据目录>/reference.json` | `left_mm` 等 | 原样 |
+| `<数据目录>/reference_line.json` | `left_cm` 等 | 厘米 × 10 → 毫米 |
 
 删除失败不影响使用，下次启动会再试一次。`save_mode` 是早期版本的单选保存方式，读到后直接丢弃。
 
@@ -103,23 +113,22 @@
 
 ## 5. 日志
 
-`logs/pdf_image_editor_*.log`，每次启动新建一个，文件名带启动时间。
+`%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\pdf_image_editor_*.log`，每次启动新建一个，文件名带启动时间。
 
 - 单文件超过 5 MB 轮转，保留 14 天。
 - 格式：`[级别] [YYYY-MM-DD HH:MM:SS] 消息`。
 - `diagnose=False`：不把局部变量写进日志，避免把路径、密钥一类内容带出去。
 - 标准库 `logging`（`http.server`、PyMuPDF 等）的输出被接到 loguru，`pythonw` 下不会丢。
-- 未捕获异常由 `sys.excepthook` / `threading.excepthook` 记录后弹原生窗口，窗口里给出日志目录。
+- 未捕获异常由 `sys.excepthook` / `threading.excepthook` 记录后弹原生窗口，窗口里给出错误、时间与日志文件路径。
 
 日志路径永远是绝对路径，由 `app/paths.py::LOG_DIR` 决定。
 
 ## 6. 运行期目录
 
-| 目录 | 内容 | 是否进版本库 |
+| 目录 | 内容 | 位置 |
 |---|---|---|
-| `config/` | `app.json` | 否 |
-| `logs/` | 每次启动一个日志文件 | 否 |
-| `temp/` | 外部编辑的临时目录，启动时清理一天前的残留 | 否 |
-| `pdfs/` | 打开对话框的默认目录，不存在会自动创建 | 否 |
+| 数据目录 | `app.json`、`pdfs/` | `%PROGRAMDATA%\six-coin\pdf-image-editor`，可更改 |
+| 本地目录 | `logs/`、`locks/`、`data-dir.txt` | `%LOCALAPPDATA%\six-coin\pdf-image-editor` |
+| 临时目录 | 外部编辑的临时目录，启动时清理一天前的残留 | `%TEMP%\six-coin\pdf-image-editor` |
 
-删除以上任意目录后重启即可重新生成，不会影响程序本身。
+删除日志或临时目录不影响程序；删除 `app.json` 会重新问一次语言并生成默认设置。旧版本留在程序目录里的 `config/`、`logs/`、`pdfs/`、`temp/` 会在第一次以新版本启动时自动搬走。

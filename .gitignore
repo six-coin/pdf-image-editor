@@ -9,15 +9,9 @@ wheels/
 # 虚拟环境与编辑器
 .venv/
 .idea/
-.vscode/
 .workbuddy-ai/
 
 # 测试与类型检查缓存
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
-
-# 用户数据
-pdfs/
-logs/
-config/

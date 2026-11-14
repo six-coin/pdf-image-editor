@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import math
 import os
+import shutil
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +24,7 @@ import webview
 from loguru import logger
 
 from app import i18n, paths, settings
+from app import version as version_module
 from app.core import split as split_ops
 from app.core.document import PdfDocument
 from app.core.geometry import MIN_SIZE, clamp_rect_to_page
@@ -33,6 +36,7 @@ from app.core.units import parse_page_range
 from app.errors import AppError
 from app.models import DocumentState, ImageObject, PageInfo, Rect
 from app.system import clipboard, opener, preprocess
+from app.system import theme as theme_tool
 from app.system.asset_server import AssetServer
 
 PREVIEW_PX = 320
@@ -56,10 +60,18 @@ class EditorApi:
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="pdfedit")
         self._server: AssetServer | None = None
         self._window: webview.Window | None = None
+        # 必须在 load_app() 之前判断：它会把默认配置写到磁盘。
+        self.first_run = not paths.APP_CONFIG_PATH.exists()
+        self._restart = False
         self._settings = settings.load_app()
         self._reference = settings.load_reference()
         _sweep_temp()
         self._close_confirmed = False
+
+    @property
+    def restart_requested(self) -> bool:
+        """窗口已经关掉、进程马上要重启。"""
+        return self._restart
 
     # ---- 装配 ----
 
@@ -125,6 +137,19 @@ class EditorApi:
             directory=directory,
             file_types=(i18n.t("dialog.filter_pdf"), i18n.t("dialog.filter_all")),
         )
+        return _first_path(result)
+
+    def browse_folder(self) -> str | None:
+        """选目录：改数据目录用。"""
+        if self._window is None:
+            return None
+        try:
+            result = self._window.create_file_dialog(
+                webview.FileDialog.FOLDER, directory=str(paths.DATA_DIR)
+            )
+        except Exception as error:  # 对话框打不开时返回空，由界面提示
+            logger.warning("打开目录对话框失败: {}", error)
+            return None
         return _first_path(result)
 
     def open_path(self, path: str, force: bool = False) -> dict[str, Any]:
@@ -903,6 +928,75 @@ class EditorApi:
     def set_language(self, code: str) -> dict[str, Any]:
         return self.update_settings({"language": code})
 
+    def complete_first_run(self, language: str) -> dict[str, Any]:
+        """首次启动选完语言：语言落盘，外观按系统偏好定一次。"""
+        with self._lock:
+            merged = dict(self._settings)
+            merged["language"] = str(language)
+            merged["theme"] = theme_tool.system_theme()
+            try:
+                settings.save_app(merged)
+                self._settings = settings.load_app()
+            except AppError as exc:
+                logger.warning("保存设置失败: {}", exc)
+                return {**self._snapshot(), "ok": False, "message": str(exc)}
+            i18n.set_language(self._settings["language"])
+            self._retitle()
+            self.first_run = False
+            return self._snapshot()
+
+    def get_readme(self) -> dict[str, Any]:
+        """当前语言的使用手册；没有这一份就退回英文。"""
+        language = i18n.current()
+        path = paths.PROGRAM_DIR / "docs" / "readme" / f"{language}.md"
+        if not path.is_file():
+            language = i18n.FALLBACK_LANGUAGE
+            path = paths.PROGRAM_DIR / "docs" / "readme" / f"{language}.md"
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            text = ""
+        return {"language": language, "markdown": text}
+
+    def set_data_dir(self, raw: str) -> dict[str, Any]:
+        """改数据目录：写指针，下次启动生效。
+
+        设置文件复制一份到新目录，重启后语言与外观不会丢；PDF 文件仍留在
+        旧目录，要不要搬由用户自己决定。
+        """
+        target = paths.resolve_user_path(str(raw))
+        if not target.is_absolute():
+            return {**self._snapshot(), "ok": False, "message": i18n.t("about.data_dir_failed")}
+        if target == paths.DATA_DIR:
+            return self._snapshot()
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+            destination = target / paths.APP_CONFIG_PATH.name
+            if not destination.exists() and paths.APP_CONFIG_PATH.exists():
+                shutil.copy2(paths.APP_CONFIG_PATH, destination)
+            paths.write_data_dir(target)
+        except OSError as error:
+            return {
+                **self._snapshot(),
+                "ok": False,
+                "message": i18n.t("about.data_dir_failed", error=error),
+            }
+        return {**self._snapshot(), "message": i18n.t("about.restart_hint")}
+
+    def restart_app(self) -> dict[str, Any]:
+        """关掉窗口，由入口在释放单实例锁之后拉起新进程。"""
+        self._restart = True
+        threading.Timer(0.2, self._close_window).start()
+        return {"ok": True}
+
+    def _close_window(self) -> None:
+        if self._window is None:
+            return
+        try:
+            self._window.destroy()
+        except Exception as error:  # 窗口已经关了或平台不支持
+            logger.debug("关闭窗口失败: {}", error)
+
     def reset_settings(self) -> dict[str, Any]:
         """把应用设置、参考线、快捷键全部恢复默认。
 
@@ -910,7 +1004,7 @@ class EditorApi:
         """
         with self._lock:
             try:
-                settings.save_app(dict(settings.DEFAULT_APP))
+                settings.save_app(settings.default_app())
                 settings.save_reference(dict(settings.DEFAULT_REFERENCE))
                 self._settings = settings.load_app()
                 self._reference = settings.load_reference()
@@ -979,6 +1073,10 @@ class EditorApi:
             "ok": True,
             "rev": self._rev,
             "message": "",
+            "version": version_module.version(),
+            "first_run": self.first_run,
+            "data_dir": str(paths.DATA_DIR),
+            "data_dir_next": str(paths.read_data_dir()),
             "doc": {
                 "path": str(doc.path) if doc else "",
                 "name": doc.path.name if doc else "",

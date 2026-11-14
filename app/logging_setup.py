@@ -103,9 +103,19 @@ def fatal(message: str) -> NoReturn:
         # 日志系统本身坏了也要能把话说给用户听，这里只能吞。
         pass
     title = i18n.t("app.title")
-    hint = i18n.t("fatal.log_hint", path=str(_log_file or paths.LOG_DIR))
-    ctypes.windll.user32.MessageBoxW(None, f"{message}\n\n{hint}", title, 0x10)
+    ctypes.windll.user32.MessageBoxW(None, crash_text(message), title, 0x10)
     # 用 os._exit 而不是 sys.exit：后者会等所有非 daemon 线程，可能永远退不掉。
     import os
 
     os._exit(1)
+
+
+def crash_text(message: str) -> str:
+    """崩溃弹窗的正文：错误、时间、日志位置。"""
+    stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    where = str(_log_file or paths.LOG_DIR)
+    return (
+        f"{message}\n\n"
+        f"{i18n.t('fatal.time_line', value=stamp)}\n"
+        f"{i18n.t('fatal.log_line', value=where)}"
+    )

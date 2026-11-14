@@ -1,10 +1,8 @@
 # PDF Image Editor User Manual
 
-Split, move and replace images inside a PDF, **keeping the original text layer**.
+Split, move and replace images inside a PDF, keeping the original text layer.
 
 [简体中文](zh-CN.md)
-
-[Back to project home](../../README.md) · [Architecture](../architecture.md) · [Configuration & data formats](../configuration.md)
 
 ---
 
@@ -25,7 +23,7 @@ Saving only swaps the images; everything else is left untouched.
 
 - Pages are rendered at a DPI chosen from the current zoom, so zooming in stays sharp
 - Wheel to scroll, `Ctrl`+wheel to zoom around the pointer, `Space`+drag or middle-drag to pan
-- Light and dark themes, following the system or set by hand
+- Light and dark themes; the system preference seeds the default once, then you switch by hand
 - Page-margin guides with independently adjustable edges
 
 **Edit**
@@ -68,7 +66,9 @@ The package index is fixed in `uv.toml` at the project root and defaults to the 
 main.bat
 ```
 
-It launches through `pythonw.exe`, so no console window appears. You can call it from any directory: every internal path is derived from the program directory, not from the current working directory.
+It launches through `pythonw.exe`, so no console window appears. You can call it from any directory: every internal path is derived from the program directory and the system folders, not from the current working directory.
+
+On the **first run** you pick the interface language (the Windows UI language by default, English when there is no matching locale), then read the manual. This is the only entry point, so there is no "wrong program" case.
 
 ## 5. Interface
 
@@ -297,7 +297,7 @@ Then pick the target file; choosing the source file itself is refused.
 |---|---|
 | What it processes | Raster images on the pages; text, vectors and annotations are left as they are |
 | What it skips | Images with an alpha channel (logos, watermarks) — thresholding would turn transparent areas into black blocks |
-| Threshold | 235 by default; change `preprocess_threshold` in `config/app.json` (0–255) |
+| Threshold | 235 by default; change `preprocess_threshold` in Settings or in `app.json` in the data folder (0–255) |
 | Output | The target file you choose; choosing the source file itself is refused |
 | Progress | The busy bar on the right of the top bar shows processed / total |
 
@@ -340,12 +340,12 @@ When it finishes you are told where the file went and how many images were proce
 
 `Ctrl+,` or the gear in the top bar.
 
-**There is no Save and no Cancel**: every change is written to `config/app.json` immediately, and closing the dialog undoes nothing. The red "Reset all" at the bottom-left restores settings, shortcuts and guides together.
+**There is no Save and no Cancel**: every change is written to `app.json` in the data folder immediately, and closing the dialog undoes nothing. The red "Reset all" at the bottom-left restores settings, shortcuts and guides together.
 
 | Item | Range | Notes |
 |---|---|---|
-| Language | 中文 / English | Applied immediately, window title and hints included |
-| Theme | Light / Dark | The moon/sun button in the top bar does the same |
+| Language | 中文 / English | Applied immediately, window title and hints included; the list is sorted by language code |
+| Theme | Light / Dark | No follow-system option; the system preference seeds it once on the first run. The moon/sun button in the top bar does the same |
 | Undo limit | 10–500 | Lowering it only affects entries pushed afterwards |
 | Guides | On / Off | The page-margin lines on the canvas |
 | Eight handles | On / Off | Off leaves only the four corner handles |
@@ -354,19 +354,39 @@ When it finishes you are told where the file went and how many images were proce
 
 Shortcuts are normalised through `event.code`, so `Ctrl+Shift+S` and `Ctrl+S` never get confused by Shift changing the character, and the same bindings work on any keyboard layout.
 
+The last block in Settings is "About":
+
+| Item | Notes |
+|---|---|
+| Version | Current version, read from `pyproject.toml` |
+| Data folder | Where settings and the default PDF folder live; defaults to `%PROGRAMDATA%\six-coin\pdf-image-editor`. "Change" picks a new folder and **takes effect after a restart**; existing PDFs are not moved, and a "Restart now" button appears |
+| User manual | Opens the manual in the current language (English if that file is missing) |
+
 ## 13. Files and folders
 
+The program folder holds code only; runtime files live in system folders.
+
 ```
-program directory/
-├─ config/app.json     settings (language, theme, guide margins, key bindings)
-├─ logs/               one log file per launch
-├─ temp/               scratch files for external editing; anything older than a day is cleaned on start
-└─ pdfs/               default folder for the open dialog
+program directory\
+├─ main.bat / main.pyw   entry point
+├─ setup.bat             environment setup
+└─ app\                  all code
+
+%PROGRAMDATA%\six-coin\pdf-image-editor\     data folder (configurable)
+├─ app.json             settings (language, theme, guide margins, key bindings)
+└─ pdfs\                default folder for the open dialog
+
+%LOCALAPPDATA%\six-coin\pdf-image-editor\
+├─ logs\                one log file per launch
+├─ locks\               locks
+└─ data-dir.txt         data folder pointer
+
+%TEMP%\six-coin\pdf-image-editor\            scratch files for external editing; anything older than a day is cleaned on start
 ```
 
-- `config/`, `logs/`, `temp/` and `pdfs/` are not versioned; delete them and they are recreated.
-- Configuration is written atomically (temporary file + replace), so a crash mid-write never leaves half a file. A hand-edited file that breaks is reported with its file name — it is never silently reset.
+- `app.json` is written atomically (temporary file + replace), so a crash mid-write never leaves half a file. A hand-edited file that breaks is reported with its file name — it is never silently reset.
 - Unknown keys in the configuration are preserved, which keeps old and new versions compatible.
+- The old `config\`, `logs\`, `pdfs\` and `temp\` folders in the program directory are moved the first time the new version starts; `temp\` is simply deleted.
 
 ## 14. Troubleshooting
 
