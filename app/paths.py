@@ -12,15 +12,16 @@
 | 本地目录 | 日志、锁、数据目录指针 | ``%LOCALAPPDATA%\\six-coin\\pdf-image-editor`` |
 | 临时目录 | 外部编辑的中间文件 | ``%TEMP%\\six-coin\\pdf-image-editor`` |
 
-数据目录可在设置里改，落点恒以项目代号结尾；改完在下次启动时把旧目录的内容
-搬过去，指针跟着改。搬迁只认「待搬迁标记」，不会去改写历史指针——把指针改写成
-它自己的子目录，永远搬不成，那是死循环而不是修复。
+数据目录可在设置里改，落点恒以项目代号结尾；改完在下次启动时把旧目录的内容复制
+过去、改指针，成功后再删掉旧目录。搬迁只认「待搬迁标记」，不会去改写历史指针——
+把指针改写成它自己的子目录，永远搬不成，那是死循环而不是修复。
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -190,47 +191,60 @@ def _is_nested(inner: Path, outer: Path) -> bool:
     return left.startswith(right.rstrip("\\/") + os.sep)
 
 
-def _merge_into(source: Path, target: Path, notes: list[str], failures: list[str]) -> int:
-    """把 ``source`` 里的东西并进 ``target``，返回搬走的条数。
+def _force_remove(path: Path) -> None:
+    """删一个文件或目录，只读属性也清掉。
+
+    用户的数据目录里常有只读的 PDF（从别处拷来、或者从光盘上下来），直接删会报
+    「拒绝访问」，把整个删除过程卡在第一个文件上。
+    """
+    if path.is_dir():
+        for child in path.iterdir():
+            _force_remove(child)
+        path.rmdir()
+        return
+    try:
+        path.unlink()
+    except PermissionError:
+        os.chmod(path, stat.S_IWRITE)
+        path.unlink()
+
+
+def _copy_into(source: Path, target: Path, notes: list[str], failures: list[str]) -> int:
+    """把 ``source`` 里的东西复制进 ``target``，返回复制的条数。
 
     目录递归合并：同名**文件**保留目标那一份，同名**目录**继续往下并——否则目标
     里只要先有了 ``pdfs/``，源里的 PDF 就整目录被跳过，数据当场分家。
 
-    ``notes`` 是「没搬但不算失败」的说明（目标已有同名文件），``failures`` 是真正
-    搬不动的项。两者分开：只要有一项失败，这次迁移就不算成功，指针不动、下次再来。
+    只复制、不移动：``app.json`` 是「这里是不是数据目录」的判据，先把它搬走再
+    失败，指针还留在源目录，下次启动就会被当成第一次运行——用户看到的是设置和
+    说明书全没了。删旧目录发生在切换成功之后，见 :func:`_discard_old`。
     """
-    moved = 0
+    copied = 0
     for item in sorted(source.iterdir()):
         if item.suffix == ".lock":
             # 锁恒在本地目录，数据目录里的锁文件没有搬运价值。
-            try:
-                item.unlink()
-            except OSError:
-                pass
             continue
         destination = target / item.name
         if item.is_dir() and destination.is_dir():
-            moved += _merge_into(item, destination, notes, failures)
-            try:
-                item.rmdir()
-            except OSError:
-                # 还有搬不走的文件（被占用、权限不足），空壳留着即可。
-                pass
+            copied += _copy_into(item, destination, notes, failures)
             continue
         if destination.exists():
             notes.append(f"{item.name} 在目标里已存在，保留目标那一份")
             continue
         try:
-            shutil.move(str(item), str(destination))
+            if item.is_dir():
+                shutil.copytree(item, destination)
+            else:
+                shutil.copy2(item, destination)
         except OSError as error:
-            failures.append(f"迁移 {item.name} 失败：{error}")
+            failures.append(f"复制 {item.name} 失败：{error}")
             continue
-        moved += 1
-    return moved
+        copied += 1
+    return copied
 
 
-def _move_contents(source: Path, target: Path) -> tuple[list[str], list[str], int]:
-    """把 ``source`` 里的东西搬到 ``target``，返回（说明, 失败, 条数）。"""
+def _copy_contents(source: Path, target: Path) -> tuple[list[str], list[str], int]:
+    """把 ``source`` 里的东西复制到 ``target``，返回（说明, 失败, 条数）。"""
     try:
         target.mkdir(parents=True, exist_ok=True)
     except OSError as error:
@@ -240,13 +254,33 @@ def _move_contents(source: Path, target: Path) -> tuple[list[str], list[str], in
 
     notes: list[str] = []
     failures: list[str] = []
-    moved = _merge_into(source, target, notes, failures)
-    try:
-        source.rmdir()
-    except OSError:
-        # 还有搬不走的文件（被占用、权限不足），目录留着即可。
-        pass
-    return notes, failures, moved
+    copied = _copy_into(source, target, notes, failures)
+    return notes, failures, copied
+
+
+def _discard_old(source: Path) -> list[str]:
+    """切换成功后清掉旧目录，返回删不掉的原因。
+
+    目录名就是项目代号时整个删掉；历史指针可能指在用户自己的文件夹上（少了项目
+    代号那一层），那种只清空内容、留下文件夹本身——不能把无关文件一起带走。
+    程序目录永远不会被删。
+    """
+    if not source.is_dir():
+        return []
+    if _same_dir(source, PROGRAM_DIR) or _is_nested(PROGRAM_DIR, source):
+        return [f"没有删除旧目录 {source}：它包含程序目录"]
+    notes: list[str] = []
+    for item in sorted(source.iterdir()):
+        try:
+            _force_remove(item)
+        except OSError as error:
+            notes.append(f"删除旧目录里的 {item.name} 失败：{error}")
+    if source.name.lower() == PROJECT:
+        try:
+            source.rmdir()
+        except OSError as error:
+            notes.append(f"删除旧目录 {source} 失败：{error}")
+    return notes
 
 
 def _migration(status: str, **fields: Any) -> dict[str, Any]:
@@ -289,10 +323,10 @@ def _reconcile_data_dir() -> None:
         return
 
     had_config = (source / "app.json").is_file()
-    notes, failures, moved = _move_contents(source, pending)
-    # 有东西没搬过去，或者配置文件没跟过来：指针留在原处，下次启动再试。搬了一半
-    # 就改指针，等于让程序在一个残缺的目录里跑，用户的设置会凭空消失。重试是幂等
-    # 的：已经搬过去的文件会被当成「目标已有」跳过。
+    notes, failures, copied = _copy_contents(source, pending)
+    # 有东西没复制过去，或者配置文件没跟过来：指针留在原处，下次启动再试。复制
+    # 了一半就改指针，等于让程序在一个残缺的目录里跑，用户的设置会凭空消失。
+    # 重试是幂等的：已经复制过去的文件会被当成「目标已有」跳过。
     if failures or not pending.is_dir() or (had_config and not (pending / "app.json").is_file()):
         MIGRATION = _migration(
             "failed", source=str(source), target=str(pending), warnings=[*notes, *failures]
@@ -306,8 +340,14 @@ def _reconcile_data_dir() -> None:
         )
         return
     clear_pending_data_dir()
+    # 指针已经指向新目录，旧目录里的东西全是副本，删掉；删不干净只记一条说明。
+    leftovers = _discard_old(source)
     MIGRATION = _migration(
-        "done", source=str(source), target=str(pending), moved=moved, warnings=notes
+        "done",
+        source=str(source),
+        target=str(pending),
+        moved=copied,
+        warnings=[*notes, *leftovers],
     )
 
 

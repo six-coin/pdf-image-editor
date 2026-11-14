@@ -441,6 +441,13 @@ kbd {
   overflow-y: auto;
 }
 
+/* 正文里的说明段落不再自带左右内边距：.modal-body 已经给过一层，
+   叠加起来会比同屏的标签、按钮多缩进一截。 */
+.modal-body .modal-text {
+  padding: 0;
+  margin-bottom: 14px;
+}
+
 .modal-actions {
   display: flex;
   flex-wrap: wrap;

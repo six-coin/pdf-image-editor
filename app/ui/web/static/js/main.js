@@ -3,6 +3,7 @@
 import * as actions from './actions.js';
 import { bridgeReady, call, setStrings, T, toast } from './bridge.js';
 import { bindCanvas, fitWidth, observePages, pageJump, resetZoom, zoomBy } from './canvas.js';
+import { segmented } from './controls.js';
 import { openExport } from './export.js';
 import { bindGuides } from './guides.js';
 import { bindInteract } from './interact.js';
@@ -108,43 +109,33 @@ async function runFirstRun() {
   intro.textContent = T('firstrun.text');
   body.appendChild(intro);
 
-  const field = document.createElement('div');
-  field.className = 'field';
-
-  const label = document.createElement('label');
-  label.htmlFor = 'firstrun-language';
-  label.dataset.i18n = 'firstrun.title';
-  label.textContent = T('firstrun.title');
-
-  const select = document.createElement('select');
-  select.id = 'firstrun-language';
-  select.className = 'about-select';
+  // 与设置页同一个分段选择器：语言就那两三种，下拉框要点开才看得全。
   const names = data.language_names || {};
-  for (const code of data.languages || []) {
-    const option = document.createElement('option');
-    option.value = code;
-    option.textContent = names[code] || code;
-    if (code === data.language) option.selected = true;
-    select.appendChild(option);
-  }
-  field.append(label, select);
-  body.appendChild(field);
-
-  // 下拉框一改就把界面切成那种语言：用户不必先点「开始使用」才能看懂界面。
-  select.addEventListener('change', () => previewLanguage(select.value));
+  let picked = data.language;
+  const picker = segmented(
+    (data.languages || []).map((code) => ({ value: code, label: names[code] || code })),
+    picked,
+    (value) => {
+      picked = value;
+      previewLanguage(value);
+    }
+  );
+  body.appendChild(picker);
 
   const choice = await openModal({
     title: T('firstrun.title'),
     titleKey: 'firstrun.title',
     body,
     narrow: true,
+    // 首次运行必须按按钮走完：Esc 和点空白都不关。
+    dismissible: false,
     actions: [
       { label: T('firstrun.start'), value: 'go', kind: 'primary', i18n: 'firstrun.start' },
     ],
   });
   if (choice !== 'go') return;
 
-  const snapshot = await call('complete_first_run', select.value);
+  const snapshot = await call('complete_first_run', picked);
   if (snapshot) {
     apply(snapshot);
     const strings = await call('get_strings');
@@ -159,6 +150,7 @@ async function runFirstRun() {
     title: T('firstrun.readme_title'),
     text: T('firstrun.readme_text'),
     body: manual,
+    dismissible: false,
     actions: [
       { label: T('firstrun.readme_close'), value: 'ok', kind: 'primary' },
     ],

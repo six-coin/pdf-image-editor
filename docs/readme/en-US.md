@@ -68,7 +68,7 @@ main.bat
 
 It launches through `pythonw.exe`, so no console window appears. You can call it from any directory: at startup the working directory is pinned to the program folder, and every internal path is derived from the program directory and the system folders rather than from wherever you launched it.
 
-On the **first run** you pick the interface language (the Windows UI language by default, English when there is no matching locale; the dialog switches the moment you change it), then read the manual. This is the only entry point, so there is no "wrong program" case.
+On the **first run** you pick the interface language (the Windows UI language by default, English when there is no matching locale; pick another option and the dialog switches at once), then read the manual. Both steps must be finished with the button — Esc and clicking outside do nothing. This is the only entry point, so there is no "wrong program" case.
 
 ## 5. Interface
 
@@ -348,7 +348,7 @@ The last block in Settings is "About":
 | Item | Notes |
 |---|---|
 | Version | Current version, read from `pyproject.toml` |
-| Data folder | Where settings and the default PDF folder live; defaults to `%PROGRAMDATA%\six-coin\pdf-image-editor`. An input box with "Change" and "Reset" on its right: pick a folder and `pdf-image-editor` is appended automatically; the old folder is moved there **after a restart**. You are asked whether to restart right away; unsaved changes are held back first |
+| Data folder | Where settings and the default PDF folder live; defaults to `%PROGRAMDATA%\six-coin\pdf-image-editor`. An input box with "Change" and "Reset" on its right: pick a folder and `pdf-image-editor` is appended automatically; the old folder is copied there **after a restart** and then removed. Press "Restart now" under the field when you are done; unsaved changes are held back first |
 | User manual | Opens the manual in the current language (English if that file is missing) |
 
 ## 13. Files and folders
@@ -375,7 +375,7 @@ program directory\
 
 - `app.json` is written atomically (temporary file + replace), so a crash mid-write never leaves half a file. A hand-edited file that breaks is reported with its file name — it is never silently reset.
 - Unknown keys in the configuration are preserved, which keeps old and new versions compatible.
-- The data folder always ends with the project code: picking `D://Data` gives `D://Data//pdf-image-editor`. On a change the old contents move there after a restart: folders are merged, and files already present in the target are never overwritten. If the move fails the data stays where it is and Settings says why — you never end up with a new folder and no settings.
+- The data folder always ends with the project code: picking `D://Data` gives `D://Data//pdf-image-editor`. On a change the old contents are copied there after a restart: folders are merged, and files already present in the target are never overwritten. If the copy fails nothing is touched and Settings says why — you never end up with a new folder and no settings. The old folder is removed once the switch succeeds.
 
 ## 14. Troubleshooting
 
@@ -404,7 +404,7 @@ First check whether you are in split mode (global shortcuts are suspended), then
 The WebView2 runtime is missing or too old. Install [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) once and start again.
 
 **Changing the data folder had no effect after a restart**
-Look at the line under the field in Settings: if it still says "Takes effect after restart", the move has not succeeded yet (missing drive, file in use, no write permission). Type the current folder back or press "Reset" to cancel the change; once the problem is fixed press "Restart now" — closing the window and starting it again works too, but it must really exit: while the old process is alive, a new one quits immediately and nothing happens.
+Look at the line under the field in Settings: if it still says "Takes effect after restart", the copy has not succeeded yet (missing drive, file in use, no write permission). Type the current folder back or press "Reset" to cancel the change; once the problem is fixed press "Restart now" — closing the window and starting it again works too, but it must really exit: while the old process is alive, a new one quits immediately and nothing happens.
 
 ## 15. Known limitations
 

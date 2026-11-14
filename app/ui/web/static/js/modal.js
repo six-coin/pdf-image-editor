@@ -30,6 +30,8 @@ function syncInert() {
  * @param {boolean}[options.narrow]   窄版
  * @param {string} [options.name]     给卡片打个标记，便于外部更新标题
  * @param {Node}   [options.leading]  页脚左侧的次要动作
+ * @param {boolean}[options.dismissible] 能否用 Esc / 点空白关掉（默认 true）。
+ *                 首次运行的几步必须走完，传 false。
  * @returns {Promise<string>}         选中的 value；Esc 或点遮罩返回 'cancel'
  */
 export function openModal({
@@ -41,6 +43,7 @@ export function openModal({
   narrow = false,
   name = '',
   leading = null,
+  dismissible = true,
 }) {
   return new Promise((resolve) => {
     const host = root();
@@ -107,9 +110,12 @@ export function openModal({
     card.appendChild(footer);
 
     layer.appendChild(card);
-    layer.addEventListener('mousedown', (event) => {
-      if (event.target === layer) finish('cancel');
-    });
+    if (dismissible) {
+      // 点空白处关掉。首次运行的几步不绑：那几步必须按按钮走完。
+      layer.addEventListener('mousedown', (event) => {
+        if (event.target === layer) finish('cancel');
+      });
+    }
 
     host.appendChild(layer);
     openCount += 1;
@@ -119,7 +125,7 @@ export function openModal({
     const onKey = (event) => {
       if (event.key === 'Escape') {
         event.preventDefault();
-        finish('cancel');
+        if (dismissible) finish('cancel');
         return;
       }
       if (event.key === 'Tab') trapTab(event, card);

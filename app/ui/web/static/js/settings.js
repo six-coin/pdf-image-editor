@@ -3,6 +3,7 @@
    界面上看到的永远等于 config 里的内容。 */
 
 import { call, setStrings, T, toast } from './bridge.js';
+import { segmented } from './controls.js';
 import { COMMANDS, accelOf, bindings, findConflicts } from './keymap.js';
 import { renderMarkdown } from './markdown.js';
 import { openModal } from './modal.js';
@@ -24,33 +25,6 @@ function section(labelKey) {
   title.className = 'settings-section-title';
   title.textContent = T(labelKey);
   return title;
-}
-
-function segmented(options, current, onChange) {
-  const box = document.createElement('div');
-  box.className = 'seg';
-  box.setAttribute('role', 'group');
-  for (const option of options) {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'seg-item';
-    const active = option.value === current;
-    if (active) button.classList.add('active');
-    button.setAttribute('aria-pressed', active ? 'true' : 'false');
-    button.textContent = option.label;
-    button.addEventListener('click', () => {
-      if (option.value === current) return;
-      current = option.value;
-      box.querySelectorAll('.seg-item').forEach((node) => {
-        const on = node === button;
-        node.classList.toggle('active', on);
-        node.setAttribute('aria-pressed', on ? 'true' : 'false');
-      });
-      onChange(option.value);
-    });
-    box.appendChild(button);
-  }
-  return box;
 }
 
 function numberBox(value, min, max, step, onChange) {
@@ -259,26 +233,6 @@ export async function openSettings() {
     // 成功时后端会直接关掉窗口，这一页不会再有下文。
   }
 
-  /**
-   * 有待生效的落点就问一句要不要现在重启。
-   *
-   * 搬迁只在启动早期发生，所以必须是真重启：给一个按钮，免得用户以为关掉窗口
-   * 再点一次图标就算重启（旧进程还没退干净时，新进程会撞上单实例锁直接退出）。
-   */
-  async function offerRestart(snapshot) {
-    if (!snapshot || snapshot.ok === false || !snapshot.data_dir_next) return;
-    const choice = await openModal({
-      title: T('about.data_dir_restart_title'),
-      text: T('about.data_dir_restart_text', { path: snapshot.data_dir_next }),
-      narrow: true,
-      actions: [
-        { label: T('dialog.cancel'), value: 'cancel', kind: 'ghost' },
-        { label: T('about.data_dir_restart'), value: 'go', kind: 'primary' },
-      ],
-    });
-    if (choice === 'go') await restartApp();
-  }
-
   async function applyDataDir(value) {
     const text = String(value || '').trim();
     if (!text) {
@@ -290,7 +244,6 @@ export async function openSettings() {
     apply(snapshot);
     if (snapshot.message) toast(snapshot.message, snapshot.ok !== false);
     renderBody();
-    await offerRestart(snapshot);
   }
 
   async function changeDataDir() {
@@ -305,7 +258,6 @@ export async function openSettings() {
     apply(snapshot);
     if (snapshot.message) toast(snapshot.message, snapshot.ok !== false);
     renderBody();
-    await offerRestart(snapshot);
   }
 
   /** 输入框下面那行小字：待生效 / 上次迁移的结果 / 默认说明。 */

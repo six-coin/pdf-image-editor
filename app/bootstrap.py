@@ -55,7 +55,10 @@ def _migration_warnings() -> list[str]:
 def prepare() -> list[str]:
     """建目录，返回需要写进日志的警告。"""
     warnings: list[str] = _migration_warnings()
-    for folder in (paths.DATA_DIR, paths.LOCAL_DIR, paths.LOG_DIR, paths.LOCK_DIR):
+    # pdfs 是打开对话框的默认落点，开机就建好：第一次点「打开」不该停在一个
+    # 不存在的目录上。
+    folders = (paths.DATA_DIR, paths.PDFS_DIR, paths.LOCAL_DIR, paths.LOG_DIR, paths.LOCK_DIR)
+    for folder in folders:
         try:
             folder.mkdir(parents=True, exist_ok=True)
         except OSError as error:

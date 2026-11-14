@@ -69,13 +69,15 @@ app/
 | 本地目录 | `logs/`、`locks/`、`data-dir.txt` | `%LOCALAPPDATA%\six-coin\pdf-image-editor` |
 | 临时目录 | 外部编辑的中间文件 | `%TEMP%\six-coin\pdf-image-editor` |
 
-- 数据目录可改：设置页当场校验目标（建目录 + 写一次探针文件），通过后写 `data-dir.pending`，**重启后**在启动早期把旧目录的内容搬过去再改 `data-dir.txt`；落点恒以项目代号结尾，`paths.normalize_data_dir()` 负责补齐。`paths.resolve_user_path()` 的相对路径以数据目录为基准。
-- 启动时 `paths._reconcile_data_dir()` 只做一件事：有 `data-dir.pending` 就搬到那里并改指针。搬不动（目标不可用、配置文件没跟过来）就**不动指针、保留标记**，下次启动再试；结果写进 `paths.MIGRATION`，由设置页说明原因。
+- 数据目录可改：设置页当场校验目标（建目录 + 写一次探针文件），通过后写 `data-dir.pending`，**重启后**在启动早期把旧目录的内容**复制**过去、改 `data-dir.txt`，成功后再删掉旧目录。落点恒以项目代号结尾，`paths.normalize_data_dir()` 负责补齐。`paths.resolve_user_path()` 的相对路径以数据目录为基准。
+- 复制而不是移动：`app.json` 是「这里是不是数据目录」的判据，先搬走再失败，指针还留在旧目录，下次启动就会被当成第一次运行——用户看到的是设置和说明书全没了。删旧目录只发生在切换成功之后。
+- 启动时 `paths._reconcile_data_dir()` 只做一件事：有 `data-dir.pending` 就复制到那里并改指针。有文件没复制过去（目标不可用、被占用、只读）就**不动指针、保留标记**，下次启动再试（重试幂等：已存在的文件跳过）；结果写进 `paths.MIGRATION`，由设置页说明原因。
 - 目标落在源目录里面（旧版本把「没补项目代号的指针」规范化后正是这种标记）按「没有变化」收敛：保留当前目录并丢掉标记。留着标记就是每次启动卡在同一条警告上，永远好不了。
 - **指针是权威**：只有「用户选新目录」时才做规范化，不会去改写历史指针——把指针改写成它自己的子目录，永远搬不成。
 - 改完目录由设置页的「立即重启」拉起新进程（释放单实例锁 → `pythonw main.pyw`）。搬迁只发生在启动早期，重开窗口是搬不动的。
+- `bootstrap.prepare()` 建齐数据目录、`pdfs/`、本地目录与日志目录；打开对话框的默认落点不存在时不会停在一个空目录上。
 - 版本号只有 `pyproject.toml` 一处，`app/version.py` 读它。
-- `bootstrap.is_first_run()` 的判据是数据目录里没有 `app.json`；首次运行时网页依次弹语言下拉框与使用说明。
+- `bootstrap.is_first_run()` 的判据是数据目录里没有 `app.json`；首次运行时网页依次弹语言选择与使用说明。这两步用 `openModal({dismissible: false})` 打开：Esc 与点空白都不关，必须按按钮走完。
 - `main` 是唯一入口，持 `Local\SixCoin.PdfImageEditor.Main` 互斥量；重复启动先提窗，提不到再弹信息框。
 
 ## 3. 分层与依赖方向
@@ -434,7 +436,7 @@ closing（UI 线程） → 有未保存修改就 request_close_prompt()（丢进
 
 ### 8.1 模块划分
 
-零构建，原生 ES module，15 个文件各管一件事：
+零构建，原生 ES module，16 个文件各管一件事：
 
 | 文件 | 职责 |
 |---|---|
@@ -447,6 +449,7 @@ closing（UI 线程） → 有未保存修改就 request_close_prompt()（丢进
 | `interact.js` | 指针手势：选中、拖动、八手柄缩放、组缩放、框选、平移 |
 | `split.js` | 分割模式：切线、格子高亮、执行 |
 | `guides.js` | 参考线绘制 |
+| `controls.js` | 通用表单控件（分段选择器），设置页与首次运行共用 |
 | `settings.js` | 设置弹窗 |
 | `modal.js` | 通用弹窗与确认框 |
 | `export.js` | 导出页弹窗 |

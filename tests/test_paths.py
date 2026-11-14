@@ -112,7 +112,7 @@ def test_requesting_the_current_dir_clears_the_pending_marker(tmp_path, monkeypa
 
 
 def test_reconcile_moves_files_and_drops_locks(tmp_path, monkeypatch):
-    """启动时把旧目录的内容搬进新目录，指针跟着改，旧锁文件丢掉。"""
+    """启动时把旧目录的内容复制进新目录，指针跟着改，旧锁文件不跟着走。"""
     monkeypatch.delenv("SIXCOIN_DATA_DIR", raising=False)
     monkeypatch.setattr(paths, "LOCAL_DIR", tmp_path / "local")
     monkeypatch.setattr(paths, "DATA_POINTER", tmp_path / "local" / "data-dir.txt")
@@ -130,9 +130,85 @@ def test_reconcile_moves_files_and_drops_locks(tmp_path, monkeypatch):
 
     assert (target / "app.json").is_file()
     assert not (target / "stale.lock").exists()
-    assert not source.exists()
     assert paths.read_data_dir() == target
     assert paths.pending_data_dir() is None
+    # 旧目录里的东西都搬走了：非项目代号的目录只清空、留下文件夹本身。
+    assert source.is_dir()
+    assert list(source.iterdir()) == []
+
+
+def test_discard_removes_a_project_named_old_dir(tmp_path, monkeypatch):
+    """旧目录名就是项目代号时整个删掉，不留空壳。"""
+    monkeypatch.delenv("SIXCOIN_DATA_DIR", raising=False)
+    monkeypatch.setattr(paths, "LOCAL_DIR", tmp_path / "local")
+    monkeypatch.setattr(paths, "DATA_POINTER", tmp_path / "local" / "data-dir.txt")
+    monkeypatch.setattr(paths, "DATA_PENDING", tmp_path / "local" / "data-dir.pending")
+    monkeypatch.setattr(paths, "DATA_DIR_DEFAULT", tmp_path / "default" / paths.PROJECT)
+    source = tmp_path / "old" / paths.PROJECT
+    source.mkdir(parents=True)
+    (source / "app.json").write_text("{}", encoding="utf-8")
+    paths.write_data_dir(source)
+
+    target = tmp_path / "new" / paths.PROJECT
+    paths.request_data_dir(str(target))
+    paths._reconcile_data_dir()
+
+    assert paths.MIGRATION["status"] == "done"
+    assert not source.exists()
+    assert (target / "app.json").is_file()
+
+
+def test_discard_clears_read_only_files(tmp_path, monkeypatch):
+    """只读的 PDF 不能把删旧目录卡住（用户的数据目录里很常见）。"""
+    import os
+    import stat
+
+    monkeypatch.delenv("SIXCOIN_DATA_DIR", raising=False)
+    monkeypatch.setattr(paths, "LOCAL_DIR", tmp_path / "local")
+    monkeypatch.setattr(paths, "DATA_POINTER", tmp_path / "local" / "data-dir.txt")
+    monkeypatch.setattr(paths, "DATA_PENDING", tmp_path / "local" / "data-dir.pending")
+    monkeypatch.setattr(paths, "DATA_DIR_DEFAULT", tmp_path / "default" / paths.PROJECT)
+    source = tmp_path / "old" / paths.PROJECT
+    (source / "pdfs").mkdir(parents=True)
+    (source / "app.json").write_text("{}", encoding="utf-8")
+    locked = source / "pdfs" / "scan.pdf"
+    locked.write_text("x", encoding="utf-8")
+    os.chmod(locked, stat.S_IREAD)
+    paths.write_data_dir(source)
+
+    target = tmp_path / "new" / paths.PROJECT
+    paths.request_data_dir(str(target))
+    paths._reconcile_data_dir()
+
+    assert paths.MIGRATION["status"] == "done"
+    assert paths.MIGRATION["warnings"] == []
+    assert not source.exists()
+    assert (target / "pdfs" / "scan.pdf").is_file()
+
+
+def test_failed_copy_keeps_the_config_in_place(tmp_path, monkeypatch):
+    """复制失败时 app.json 必须还在原处，否则下次启动会被当成第一次运行。"""
+    monkeypatch.delenv("SIXCOIN_DATA_DIR", raising=False)
+    monkeypatch.setattr(paths, "LOCAL_DIR", tmp_path / "local")
+    monkeypatch.setattr(paths, "DATA_POINTER", tmp_path / "local" / "data-dir.txt")
+    monkeypatch.setattr(paths, "DATA_PENDING", tmp_path / "local" / "data-dir.pending")
+    monkeypatch.setattr(paths, "DATA_DIR_DEFAULT", tmp_path / "default" / paths.PROJECT)
+    source = tmp_path / "old" / paths.PROJECT
+    (source / "pdfs").mkdir(parents=True)
+    (source / "app.json").write_text("{}", encoding="utf-8")
+    (source / "pdfs" / "a.pdf").write_text("x", encoding="utf-8")
+    paths.write_data_dir(source)
+    blocker = tmp_path / "blocked"
+    blocker.write_text("not a folder", encoding="utf-8")
+    paths.DATA_PENDING.parent.mkdir(parents=True, exist_ok=True)
+    paths.DATA_PENDING.write_text(str(blocker / paths.PROJECT), encoding="utf-8")
+
+    paths._reconcile_data_dir()
+
+    assert paths.MIGRATION["status"] == "failed"
+    assert (source / "app.json").is_file()
+    assert (source / "pdfs" / "a.pdf").is_file()
+    assert paths.read_data_dir() == source
 
 
 def test_reconcile_never_overwrites_existing_files(tmp_path, monkeypatch):
