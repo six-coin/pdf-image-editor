@@ -1,4 +1,4 @@
-"""静态守卫：分层没被破坏、没有 chdir、没有 print、入口够薄。"""
+"""静态守卫：分层没被破坏、cwd 只钉一次、没有 print、入口够薄。"""
 
 from __future__ import annotations
 
@@ -63,9 +63,19 @@ def test_system_has_no_ui_imports():
         assert not [m for m in _imported(text) if m.startswith("app.ui")], path.name
 
 
-def test_no_chdir_anywhere():
+def test_cwd_is_pinned_in_one_place():
+    """工作目录只在启动最早期设置一次，就在 ``bootstrap.ensure_cwd()`` 里。
+
+    cwd 是进程级全局状态、被所有线程共享；多改一次，相对路径就会落到别的目录。
+    其它模块一律用 ``paths`` 给的绝对路径。
+    """
+    bootstrap = APP / "bootstrap.py"
+    assert (bootstrap.read_text(encoding="utf-8")).count("chdir") == 1
     for path, text in _sources(APP):
+        if path == bootstrap:
+            continue
         assert "chdir" not in _calls(text), path.name
+    assert "chdir" not in _calls(ENTRY.read_text(encoding="utf-8"))
 
 
 def test_no_print_anywhere():

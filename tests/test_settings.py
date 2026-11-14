@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from app import settings
+from app import paths, settings
 from app.errors import ConfigError
 
 
@@ -154,3 +154,14 @@ def test_eight_handles_defaults_to_on(temp_config):
 def test_eight_handles_can_be_turned_off(temp_config):
     (temp_config / "app.json").write_text(json.dumps({"eight_handles": "off"}), encoding="utf-8")
     assert settings.load_app()["eight_handles"] is False
+
+
+def test_preview_language_does_not_write_config(editor):
+    """首次运行的语言下拉框只换内存：写了 app.json 就等于跳过了首次运行。"""
+    instance, _ = editor
+    before = paths.APP_CONFIG_PATH.read_bytes()
+
+    result = instance.preview_language("en-US")
+
+    assert result["language"] == "en-US"
+    assert paths.APP_CONFIG_PATH.read_bytes() == before

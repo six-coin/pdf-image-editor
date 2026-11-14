@@ -37,3 +37,7 @@ class SaveError(AppError):
 
 class ActionError(AppError):
     """单个编辑动作无法完成，但程序可以继续。"""
+
+
+class DataDirError(AppError):
+    """数据目录不可用：路径打错、没权限、或者要搬到当前目录里面。"""

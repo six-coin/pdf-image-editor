@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import math
 import os
-import shutil
 import threading
 import time
 import uuid
@@ -62,16 +61,11 @@ class EditorApi:
         self._window: webview.Window | None = None
         # 必须在 load_app() 之前判断：它会把默认配置写到磁盘。
         self.first_run = not paths.APP_CONFIG_PATH.exists()
-        self._restart = False
         self._settings = settings.load_app()
         self._reference = settings.load_reference()
         _sweep_temp()
         self._close_confirmed = False
-
-    @property
-    def restart_requested(self) -> bool:
-        """窗口已经关掉、进程马上要重启。"""
-        return self._restart
+        self._restart_requested = False
 
     # ---- 装配 ----
 
@@ -958,36 +952,59 @@ class EditorApi:
             text = ""
         return {"language": language, "markdown": text}
 
-    def set_data_dir(self, raw: str) -> dict[str, Any]:
-        """改数据目录：写指针，下次启动生效。
+    def preview_language(self, code: str) -> dict[str, Any]:
+        """首次运行的语言下拉框：只换内存里的语言，不落盘。
 
-        设置文件复制一份到新目录，重启后语言与外观不会丢；PDF 文件仍留在
-        旧目录，要不要搬由用户自己决定。
+        落盘会让「第一次运行」的判据（app.json 是否存在）提前成立，用户中途
+        关掉窗口就再也看不到语言选择。
         """
-        target = paths.resolve_user_path(str(raw))
-        if not target.is_absolute():
-            return {**self._snapshot(), "ok": False, "message": i18n.t("about.data_dir_failed")}
-        if target == paths.DATA_DIR:
-            return self._snapshot()
+        i18n.set_language(code)
+        self._retitle()
+        return {"ok": True, "language": i18n.current(), "strings": i18n.strings()}
+
+    def set_data_dir(self, raw: str) -> dict[str, Any]:
+        """记下新的数据目录：当场校验，下次启动把文件搬过去。
+
+        校验放在这里而不是下次启动：失败必须立刻告诉用户，否则界面只会一直说
+        「重启后生效」，重启之后什么也没发生。
+        """
         try:
-            target.mkdir(parents=True, exist_ok=True)
-            destination = target / paths.APP_CONFIG_PATH.name
-            if not destination.exists() and paths.APP_CONFIG_PATH.exists():
-                shutil.copy2(paths.APP_CONFIG_PATH, destination)
-            paths.write_data_dir(target)
+            target = paths.request_data_dir(str(raw), base=paths.DATA_DIR)
+        except AppError as exc:
+            return {**self._snapshot(), "ok": False, "message": str(exc)}
         except OSError as error:
             return {
                 **self._snapshot(),
                 "ok": False,
                 "message": i18n.t("about.data_dir_failed", error=error),
             }
-        return {**self._snapshot(), "message": i18n.t("about.restart_hint")}
+        if paths.pending_data_dir() is None:
+            return {**self._snapshot(), "message": i18n.t("about.data_dir_same")}
+        return {**self._snapshot(), "message": i18n.t("about.data_dir_saved", path=target)}
+
+    def reset_data_dir(self) -> dict[str, Any]:
+        """把数据目录恢复成默认位置。"""
+        return self.set_data_dir(str(paths.DATA_DIR_DEFAULT))
 
     def restart_app(self) -> dict[str, Any]:
-        """关掉窗口，由入口在释放单实例锁之后拉起新进程。"""
-        self._restart = True
-        threading.Timer(0.2, self._close_window).start()
-        return {"ok": True}
+        """重启程序：先把结果送回网页，再关窗。
+
+        数据目录的搬迁只在启动早期发生，所以改完目录必须真重启一次。有未保存的
+        修改时拒绝：重启等于丢弃，得先让用户自己决定。
+        """
+        if self.dirty:
+            return {
+                **self._snapshot(),
+                "ok": False,
+                "message": i18n.t("about.data_dir_restart_dirty"),
+            }
+        self._restart_requested = True
+        self._close_confirmed = True
+        # 关窗放进定时器：调用方要能拿到返回值，否则「重启」看起来像卡住了。
+        timer = threading.Timer(0.2, self._close_window)
+        timer.daemon = True
+        timer.start()
+        return {"ok": True, "message": ""}
 
     def _close_window(self) -> None:
         if self._window is None:
@@ -1020,6 +1037,11 @@ class EditorApi:
     @property
     def close_confirmed(self) -> bool:
         return self._close_confirmed
+
+    @property
+    def restart_requested(self) -> bool:
+        """窗口关掉之后是否要拉起一个新进程。"""
+        return self._restart_requested
 
     def confirm_close(self) -> None:
         self._close_confirmed = True
@@ -1076,7 +1098,9 @@ class EditorApi:
             "version": version_module.version(),
             "first_run": self.first_run,
             "data_dir": str(paths.DATA_DIR),
-            "data_dir_next": str(paths.read_data_dir()),
+            "data_dir_next": str(paths.pending_data_dir() or ""),
+            "data_dir_default": str(paths.DATA_DIR_DEFAULT),
+            "data_dir_status": dict(paths.MIGRATION),
             "doc": {
                 "path": str(doc.path) if doc else "",
                 "name": doc.path.name if doc else "",

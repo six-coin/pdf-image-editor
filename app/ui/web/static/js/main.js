@@ -104,11 +104,16 @@ async function runFirstRun() {
 
   const intro = document.createElement('p');
   intro.className = 'modal-text';
+  intro.dataset.i18n = 'firstrun.text';
   intro.textContent = T('firstrun.text');
   body.appendChild(intro);
 
+  const field = document.createElement('div');
+  field.className = 'field';
+
   const label = document.createElement('label');
-  label.className = 'field';
+  label.htmlFor = 'firstrun-language';
+  label.dataset.i18n = 'firstrun.title';
   label.textContent = T('firstrun.title');
 
   const select = document.createElement('select');
@@ -122,14 +127,20 @@ async function runFirstRun() {
     if (code === data.language) option.selected = true;
     select.appendChild(option);
   }
-  label.appendChild(select);
-  body.appendChild(label);
+  field.append(label, select);
+  body.appendChild(field);
+
+  // 下拉框一改就把界面切成那种语言：用户不必先点「开始使用」才能看懂界面。
+  select.addEventListener('change', () => previewLanguage(select.value));
 
   const choice = await openModal({
     title: T('firstrun.title'),
+    titleKey: 'firstrun.title',
     body,
     narrow: true,
-    actions: [{ label: T('firstrun.start'), value: 'go', kind: 'primary' }],
+    actions: [
+      { label: T('firstrun.start'), value: 'go', kind: 'primary', i18n: 'firstrun.start' },
+    ],
   });
   if (choice !== 'go') return;
 
@@ -152,6 +163,17 @@ async function runFirstRun() {
       { label: T('firstrun.readme_close'), value: 'ok', kind: 'primary' },
     ],
   });
+}
+
+/* 首次运行的语言下拉框：只换内存里的语言，不落盘，界面立刻跟着变。 */
+async function previewLanguage(code) {
+  const data = await call('preview_language', code);
+  if (!data) return;
+  const strings = await call('get_strings');
+  if (strings) setStrings(strings);
+  applyStrings();
+  state.language = data.language;
+  document.documentElement.lang = data.language;
 }
 
 /* ---------- 启动 ---------- */

@@ -439,6 +439,63 @@ def test_answer_close_cancel_resets(editor):
     assert instance.close_confirmed is False
 
 
+# ---------- 数据目录与重启 ----------
+
+
+def test_snapshot_reports_the_migration_status(editor):
+    instance, _server = editor
+    status = instance.get_state()["data_dir_status"]
+    assert status["status"] in {"none", "same", "nested", "done", "failed"}
+
+
+def test_set_data_dir_refuses_a_nested_folder(editor):
+    """把数据目录放进当前目录里面永远搬不成，接口层要直接拒绝而不是返回成功。"""
+    from app import paths
+
+    instance, _server = editor
+    current = paths.read_data_dir()
+
+    result = instance.set_data_dir(str(current / "sub"))
+
+    assert result["ok"] is False
+    assert result["message"]
+    assert instance.get_state()["data_dir_next"] == ""
+
+
+def test_set_data_dir_records_a_pending_target(editor, tmp_path, monkeypatch):
+    from app import paths
+
+    monkeypatch.setattr(paths, "DATA_PENDING", tmp_path / "data-dir.pending")
+    instance, _server = editor
+
+    result = instance.set_data_dir(str(tmp_path / "moved"))
+
+    assert result["ok"] is True
+    assert instance.get_state()["data_dir_next"] == str(tmp_path / "moved" / paths.PROJECT)
+    assert (tmp_path / "moved" / paths.PROJECT).is_dir()
+
+
+def test_restart_marks_the_process_for_relaunch(editor):
+    instance, _server = editor
+    result = instance.restart_app()
+    assert result["ok"] is True
+    assert instance.restart_requested is True
+
+
+def test_restart_is_refused_while_dirty(editor, opened):
+    """重启等于丢弃未保存的修改，有脏数据时必须先拦下。"""
+    instance, _server = editor
+    opened()
+    obj = _objects(instance)[0]
+    instance.commit_transform([{"id": obj["id"], "page": 0, "x": 10, "y": 10, "w": 60, "h": 40}])
+
+    result = instance.restart_app()
+
+    assert result["ok"] is False
+    assert result["message"]
+    assert instance.restart_requested is False
+
+
 def test_preprocess_worker_finishes_task(editor, pdf_factory, tmp_path):
     instance, _server = editor
     source = pdf_factory("scan.pdf")

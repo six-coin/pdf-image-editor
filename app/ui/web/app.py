@@ -1,14 +1,15 @@
 """窗口装配。
 
-启动顺序：目录准备 → 单实例 → 日志 → API（配置错误在这里就能报）→ 资源
+启动顺序：cwd → 目录准备 → 单实例 → 日志 → API（配置错误在这里就能报）→ 资源
 服务 → 窗口 → 关闭握手。关窗后如果用户点过「立即重启」，由这里在释放单实例
-锁之后拉起新进程。
+锁之后拉起新进程——数据目录的搬迁只发生在启动早期，重开窗口是搬不动的。
 """
 
 from __future__ import annotations
 
 import ctypes
 import logging
+import subprocess
 
 import webview
 
@@ -45,6 +46,8 @@ def _make_closing_handler(api: EditorApi):
 
 
 def main() -> None:
+    # 第一件事：把工作目录钉在程序目录。之后不再改，见 bootstrap.ensure_cwd。
+    bootstrap.ensure_cwd()
     warnings = bootstrap.prepare()
     lock = InstanceLock(MAIN_MUTEX)
     if not lock.acquire():
@@ -56,9 +59,8 @@ def main() -> None:
         api = _run(warnings)
     finally:
         lock.release()
-
     if api is not None and api.restart_requested:
-        bootstrap.restart_app()
+        _relaunch()
 
 
 def _run(warnings: list[str]) -> EditorApi | None:
@@ -99,6 +101,20 @@ def _run(warnings: list[str]) -> EditorApi | None:
         server.stop()
         api.shutdown()
     return api
+
+
+def _relaunch() -> None:
+    """释放单实例锁之后拉起一个新进程。
+
+    数据目录的搬迁只在启动早期、所有业务模块打开文件之前发生，所以「改完目录
+    重启」必须是真重启。锁在调用本函数之前已经放掉，新进程不会撞上「已经在运行」。
+    """
+    command = [str(bootstrap.pythonw()), str(paths.MAIN_ENTRY)]
+    try:
+        subprocess.Popen(command, cwd=str(paths.PROGRAM_DIR), close_fds=True)
+    except OSError as error:
+        _LOGGER.error("重启失败：{}", error)
+        bootstrap.info(i18n.t("about.restart_failed", error=error), i18n.t("app.title"))
 
 
 def _activate_existing() -> None:

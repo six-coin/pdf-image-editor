@@ -16,14 +16,14 @@
 
 | 约束 | 原因 | 谁在守 |
 |---|---|---|
-| 全项目不调用 `os.chdir` | 工作目录是进程级全局状态，被所有线程共享 | `test_no_chdir_anywhere` |
+| 只在启动最早期调用一次 `os.chdir` | 工作目录是进程级全局状态，被所有线程共享；多改一次，相对路径就会落到别处 | `test_cwd_is_pinned_in_one_place` |
 | 所有内部路径由 `__file__` 推导 | 从任何目录、任何快捷方式启动行为一致 | `app/paths.py` + 代码评审 |
 | `core` 不导入界面库，也不反向依赖 `ui` / `system` | 核心逻辑要能被纯 pytest 覆盖 | `test_core_has_no_ui_imports`、`test_core_does_not_reach_up` |
 | 全项目不用 `print` | `.pyw` 进程没有控制台，输出等于丢失 | `test_no_print_anywhere` |
 | 入口文件 < 30 行 | 装配集中在一处 | `test_entry_is_thin` |
 | 每个模块都要有 docstring | 说明它负责什么、不负责什么 | `test_every_module_has_a_docstring` |
 
-这些不是风格偏好，是硬性的：工作目录是进程级全局状态，被所有线程共享；一旦切换，别的线程写相对路径就会落到别处，日志和配置会随机出现在目标文件夹里。
+这些不是风格偏好，是硬性的：工作目录是进程级全局状态，被所有线程共享；一旦切换，别的线程写相对路径就会落到别处，日志和配置会随机出现在目标文件夹里。所以启动时由 `bootstrap.ensure_cwd()` 钉一次，之后谁都不许再动。
 
 ## 2. 目录结构
 
@@ -69,11 +69,14 @@ app/
 | 本地目录 | `logs/`、`locks/`、`data-dir.txt` | `%LOCALAPPDATA%\six-coin\pdf-image-editor` |
 | 临时目录 | 外部编辑的中间文件 | `%TEMP%\six-coin\pdf-image-editor` |
 
-- 数据目录可改：设置页写 `data-dir.txt`，**重启后生效**；`paths.resolve_user_path()` 的相对路径以数据目录为基准。
-- 旧版本留在程序目录里的 `config/`、`logs/`、`pdfs/`、`temp/` 由 `paths.migrate_legacy()` 在启动最前面搬走（`temp/` 直接删）。
+- 数据目录可改：设置页当场校验目标（建目录 + 写一次探针文件），通过后写 `data-dir.pending`，**重启后**在启动早期把旧目录的内容搬过去再改 `data-dir.txt`；落点恒以项目代号结尾，`paths.normalize_data_dir()` 负责补齐。`paths.resolve_user_path()` 的相对路径以数据目录为基准。
+- 启动时 `paths._reconcile_data_dir()` 只做一件事：有 `data-dir.pending` 就搬到那里并改指针。搬不动（目标不可用、配置文件没跟过来）就**不动指针、保留标记**，下次启动再试；结果写进 `paths.MIGRATION`，由设置页说明原因。
+- 目标落在源目录里面（旧版本把「没补项目代号的指针」规范化后正是这种标记）按「没有变化」收敛：保留当前目录并丢掉标记。留着标记就是每次启动卡在同一条警告上，永远好不了。
+- **指针是权威**：只有「用户选新目录」时才做规范化，不会去改写历史指针——把指针改写成它自己的子目录，永远搬不成。
+- 改完目录由设置页的「立即重启」拉起新进程（释放单实例锁 → `pythonw main.pyw`）。搬迁只发生在启动早期，重开窗口是搬不动的。
 - 版本号只有 `pyproject.toml` 一处，`app/version.py` 读它。
 - `bootstrap.is_first_run()` 的判据是数据目录里没有 `app.json`；首次运行时网页依次弹语言下拉框与使用说明。
-- `main` 是唯一入口，持 `Local\SixCoin.PdfImageEditor.Main` 互斥量；重复启动先提窗，提不到再弹信息框。重启按钮走「释放锁 → 拉新进程」。
+- `main` 是唯一入口，持 `Local\SixCoin.PdfImageEditor.Main` 互斥量；重复启动先提窗，提不到再弹信息框。
 
 ## 3. 分层与依赖方向
 
@@ -194,6 +197,8 @@ app/
 ### 6.1 启动装配
 
 ```
+bootstrap.ensure_cwd()              cwd 钉在程序目录，只此一次
+bootstrap.prepare()                建目录；把数据目录搬迁的结果交给日志
 logging_setup.setup("pdf_image_editor")
   → EditorApi()                     读配置；配置损坏在这里就抛
   → AssetServer(api, store, WEB_DIR).start()
@@ -202,6 +207,7 @@ logging_setup.setup("pdf_image_editor")
   → window.events.closing += 关闭拦截
   → webview.start()
   → 退出时 server.stop() + api.shutdown()
+  → 用户点过「立即重启」就释放单实例锁之后拉新进程
 ```
 
 窗口尺寸取屏幕的 85%，最小 960×640。`background_color` 必须和页面的 `--bg` 一致，否则深色模式下首帧会闪一下白。
@@ -384,6 +390,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 | 保存导出 | `save_document` `browse_save` `export_pages` |
 | 剪贴板 / 外部 | `paste_image` `edit_external` `replace_image` |
 | 其它 | `preprocess_pdf` `update_reference` `update_settings` `set_language` `reset_settings` |
+| 数据目录 | `set_data_dir` `reset_data_dir` `restart_app` |
 | 关闭 | `answer_close` |
 
 约定：**越界或非法参数不抛异常**，原样返回当前快照。网页拿到 Python traceback 是最难排查的一类问题。
@@ -604,7 +611,7 @@ uv run pytest
 3. **`ImageObject` 同时存 `rect` 与 `src_rect`（以及 `src_page`）。** 少任何一个，「移动一张图」就没法正确落盘。
 4. **删除要留墓碑。** 对象可以走，位置必须留下，否则保存后原图复活。
 5. **`core` 不导入界面库，也不反向依赖 `ui` / `system`。** 由 AST 测试守。
-6. **不调用 `os.chdir`，不写 `print`。** 同样由测试守。
+6. **cwd 只在 `bootstrap.ensure_cwd()` 里钉一次，不写 `print`。** 同样由测试守。
 7. **前端只认快照。** 任何「前端自己算一份业务数据」的写法都会让两边的模型分叉。
 8. **`closing` 回调里不碰网页。** 要弹框就从工作线程 `evaluate_js`。
 9. **保存先写临时文件再替换。** 并且就地保存前必须先关句柄。

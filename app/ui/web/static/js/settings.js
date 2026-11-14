@@ -252,52 +252,139 @@ export async function openSettings() {
     });
   }
 
-  async function changeDataDir() {
-    const picked = await call('browse_folder');
-    if (!picked) return;
-    const snapshot = await call('set_data_dir', picked);
+  async function restartApp() {
+    const snapshot = await call('restart_app');
+    if (!snapshot) return;
+    if (snapshot.ok === false && snapshot.message) toast(snapshot.message, false);
+    // 成功时后端会直接关掉窗口，这一页不会再有下文。
+  }
+
+  /**
+   * 有待生效的落点就问一句要不要现在重启。
+   *
+   * 搬迁只在启动早期发生，所以必须是真重启：给一个按钮，免得用户以为关掉窗口
+   * 再点一次图标就算重启（旧进程还没退干净时，新进程会撞上单实例锁直接退出）。
+   */
+  async function offerRestart(snapshot) {
+    if (!snapshot || snapshot.ok === false || !snapshot.data_dir_next) return;
+    const choice = await openModal({
+      title: T('about.data_dir_restart_title'),
+      text: T('about.data_dir_restart_text', { path: snapshot.data_dir_next }),
+      narrow: true,
+      actions: [
+        { label: T('dialog.cancel'), value: 'cancel', kind: 'ghost' },
+        { label: T('about.data_dir_restart'), value: 'go', kind: 'primary' },
+      ],
+    });
+    if (choice === 'go') await restartApp();
+  }
+
+  async function applyDataDir(value) {
+    const text = String(value || '').trim();
+    if (!text) {
+      renderBody();
+      return;
+    }
+    const snapshot = await call('set_data_dir', text);
     if (!snapshot) return;
     apply(snapshot);
     if (snapshot.message) toast(snapshot.message, snapshot.ok !== false);
     renderBody();
+    await offerRestart(snapshot);
   }
 
+  async function changeDataDir() {
+    const picked = await call('browse_folder');
+    if (!picked) return;
+    await applyDataDir(picked);
+  }
+
+  async function resetDataDir() {
+    const snapshot = await call('reset_data_dir');
+    if (!snapshot) return;
+    apply(snapshot);
+    if (snapshot.message) toast(snapshot.message, snapshot.ok !== false);
+    renderBody();
+    await offerRestart(snapshot);
+  }
+
+  /** 输入框下面那行小字：待生效 / 上次迁移的结果 / 默认说明。 */
+  function dataDirHint(data) {
+    const status = data.data_dir_status || {};
+    if (data.data_dir_next) {
+      return status.status === 'failed'
+        ? T('about.data_dir_pending_failed', { path: data.data_dir_next })
+        : T('about.data_dir_pending', { path: data.data_dir_next });
+    }
+    if (status.status === 'done' && status.moved > 0) {
+      return T('about.data_dir_migrated', { count: status.moved, path: data.data_dir });
+    }
+    return T('about.data_dir_hint');
+  }
+
+  /* 数据目录：左边输入框，右边「更改」「重置」。输入框里是重启后生效的落点，
+     没有待生效的值就是当前目录。 */
   function aboutBlock(data) {
     const wrap = document.createElement('div');
     wrap.className = 'about-block';
 
-    const path = document.createElement('div');
-    path.className = 'about-path';
-    path.textContent = data.data_dir || '';
-    path.title = data.data_dir || '';
+    const row = document.createElement('div');
+    row.className = 'about-control';
 
-    const actions = document.createElement('div');
-    actions.className = 'about-actions';
+    const current = String(data.data_dir_next || data.data_dir || '').trim();
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'about-data-dir';
+    input.spellcheck = false;
+    input.value = current;
+    input.title = current;
+    input.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      applyDataDir(input.value);
+    });
 
     const change = document.createElement('button');
     change.type = 'button';
     change.className = 'btn sm';
     change.textContent = T('about.data_dir_change');
-    change.addEventListener('click', changeDataDir);
-    actions.appendChild(change);
+    change.addEventListener('click', () => {
+      // 输入框改过就按输入的落点走，没改过才去选目录。
+      const typed = input.value.trim();
+      if (typed && typed !== current) {
+        applyDataDir(typed);
+        return;
+      }
+      changeDataDir();
+    });
 
-    if (data.data_dir_next && data.data_dir_next !== data.data_dir) {
-      const restart = document.createElement('button');
-      restart.type = 'button';
-      restart.className = 'btn sm primary';
-      restart.textContent = T('about.restart');
-      restart.addEventListener('click', () => call('restart_app'));
-      actions.appendChild(restart);
-    }
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.className = 'btn sm';
+    reset.textContent = T('about.data_dir_reset');
+    reset.addEventListener('click', resetDataDir);
+
+    row.append(input, change, reset);
+
+    const hintRow = document.createElement('div');
+    hintRow.className = 'about-hint-row';
 
     const hint = document.createElement('div');
     hint.className = 'about-hint';
-    hint.textContent =
-      data.data_dir_next && data.data_dir_next !== data.data_dir
-        ? T('about.data_dir_pending', { path: data.data_dir_next })
-        : T('about.data_dir_hint');
+    hint.textContent = dataDirHint(data);
+    hintRow.appendChild(hint);
 
-    wrap.append(path, actions, hint);
+    // 有待生效的落点才给重启按钮：它才是「重启后生效」的兑现方式。
+    if (data.data_dir_next) {
+      const restart = document.createElement('button');
+      restart.type = 'button';
+      restart.className = 'btn sm';
+      restart.textContent = T('about.data_dir_restart');
+      restart.addEventListener('click', restartApp);
+      hintRow.appendChild(restart);
+    }
+
+    wrap.append(row, hintRow);
     return wrap;
   }
 
@@ -395,6 +482,16 @@ export async function openSettings() {
 
     body.appendChild(section('about.title'));
 
+    body.appendChild(field('about.data_dir', aboutBlock(data)));
+
+    const readme = document.createElement('button');
+    readme.type = 'button';
+    readme.className = 'btn sm';
+    readme.textContent = T('about.readme');
+    readme.addEventListener('click', openReadme);
+    body.appendChild(field('about.readme', readme));
+
+    // 版本放在「关于」的最后：它是只读信息，不该占最显眼的一行。
     const versionRow = document.createElement('div');
     versionRow.className = 'field-row';
     const versionLabel = document.createElement('span');
@@ -405,15 +502,6 @@ export async function openSettings() {
     versionValue.textContent = data.version || '';
     versionRow.append(versionLabel, versionValue);
     body.appendChild(versionRow);
-
-    body.appendChild(field('about.data_dir', aboutBlock(data)));
-
-    const readme = document.createElement('button');
-    readme.type = 'button';
-    readme.className = 'btn sm';
-    readme.textContent = T('about.readme');
-    readme.addEventListener('click', openReadme);
-    body.appendChild(field('about.readme', readme));
   }
 
   renderBody();

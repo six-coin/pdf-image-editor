@@ -867,16 +867,47 @@ body.saving {
   min-width: 0;
 }
 
-.about-path {
-  color: var(--text-soft);
-  font-size: 12.5px;
-  overflow-wrap: anywhere;
+/* 数据目录这一行：左边输入框吃掉剩余宽度，右边两个小按钮。 */
+.about-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
-.about-actions {
+.about-control input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 12.5px;
+}
+
+/* 两个按钮与输入框同高：.btn.sm 是 32px，这里跟输入框的 38px 对齐，
+   否则一行里高高低低，看着像没对齐。 */
+.about-control .btn {
+  flex: none;
+  height: 38px;
+  padding: 0 14px;
+  font-size: 13.5px;
+}
+
+/* 说明文字 + 右侧的「立即重启」。 */
+.about-hint-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.about-hint-row .about-hint {
+  flex: 1;
+  min-width: 0;
+}
+
+.about-hint-row .btn {
+  flex: none;
 }
 
 .about-hint {
@@ -886,8 +917,9 @@ body.saving {
 }
 
 .about-value {
-  color: var(--text-strong);
-  font-size: 13px;
+  color: var(--text-soft);
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 12.5px;
 }
 
 .about-select {
@@ -897,5 +929,16 @@ body.saving {
   border-radius: var(--radius);
   background: var(--panel);
   color: var(--text-strong);
+  font-family: inherit;
   font-size: 13.5px;
+}
+
+/* 展开的选项列表也要跟着主题走，否则深色界面里会弹出一块白底系统菜单。 */
+select option {
+  background: var(--panel);
+  color: var(--text-strong);
+}
+
+[data-theme="dark"] select {
+  color-scheme: dark;
 }
