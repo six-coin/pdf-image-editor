@@ -52,7 +52,7 @@ async function waitTask(taskId) {
 /* ---------- 文档 ---------- */
 
 /** 打开一个已知路径的 PDF：处理未保存修改、等任务、刷新、适合宽度。 */
-async function openFile(path) {
+export async function openFile(path) {
   let started = await call('open_path', path);
   if (!started) return false;
   if (!started.ok) {
@@ -110,6 +110,7 @@ const WARNING_KEYS = {
   image_skipped: 'save.warning_image_skipped',
   annots_lost: 'save.warning_annots_lost',
   reopen_failed: 'save.warning_reopen_failed',
+  backup_failed: 'save.warning_backup_failed',
 };
 
 async function showWarnings(report) {

@@ -28,6 +28,7 @@ function syncInert() {
  * @param {Node}   [options.body]     自定义内容
  * @param {Array}  options.actions    [{label, value, kind, i18n}]；i18n 是按钮的文案键
  * @param {boolean}[options.narrow]   窄版
+ * @param {boolean}[options.wide]     宽版（使用说明这类长文档）
  * @param {string} [options.name]     给卡片打个标记，便于外部更新标题
  * @param {Node}   [options.leading]  页脚左侧的次要动作
  * @param {boolean}[options.dismissible] 能否用 Esc / 点空白关掉（默认 true）。
@@ -41,6 +42,7 @@ export function openModal({
   body,
   actions = [],
   narrow = false,
+  wide = false,
   name = '',
   leading = null,
   dismissible = true,
@@ -52,7 +54,9 @@ export function openModal({
     layer.className = 'modal';
 
     const card = document.createElement('div');
-    card.className = narrow ? 'modal-card narrow' : 'modal-card';
+    card.className = 'modal-card';
+    if (narrow) card.classList.add('narrow');
+    if (wide) card.classList.add('wide');
     card.tabIndex = -1;
     card.setAttribute('role', 'dialog');
     card.setAttribute('aria-modal', 'true');

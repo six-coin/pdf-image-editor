@@ -4,7 +4,7 @@
 全部保留——保存只应该改变图片，其他内容一个字节都不该动。
 
 落盘一律先写临时文件再 ``os.replace``，中途失败不会留下半个文件；就地保存时
-第一次会留一份 ``.bak.pdf``。
+往调用方给的备份目录里留一份 ``YYYYMMDD-原标题.bak.pdf``。
 
 就地保存（``dst_path == src_path``）要求调用方先关掉自己持有的文档句柄：
 Windows 上 ``os.replace`` 无法覆盖仍被打开的文件。``ui`` 层在调用前
@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import os
 import shutil
+import time
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -186,8 +188,9 @@ def save(
     dst_path: Path,
     state: DocumentState,
     store: ImageStore,
-    backup: bool = True,
+    backup_dir: Path | None = None,
 ) -> SaveReport:
+    """保存。``backup_dir`` 给了就地保存时先往那里复制一份原文件。"""
     src_path = Path(src_path)
     dst_path = Path(dst_path)
     try:
@@ -215,8 +218,8 @@ def save(
 
     try:
         _verify(temp_path, report.pages)
-        if backup and dst_path.exists() and _same_path(dst_path, src_path):
-            _backup(dst_path)
+        if backup_dir is not None and dst_path.exists() and _same_path(dst_path, src_path):
+            _backup(dst_path, Path(backup_dir), report)
         os.replace(temp_path, dst_path)
     except SaveError:
         _discard(temp_path)
@@ -244,15 +247,64 @@ def _verify(path: Path, expected_pages: int) -> None:
         check.close()
 
 
-def _backup(dst_path: Path) -> None:
-    backup_path = dst_path.with_name(f"{dst_path.stem}.bak.pdf")
-    if backup_path.exists():
-        return
+def backup_path(directory: Path, source: Path, day: date | None = None) -> Path:
+    """给备份起一个不会撞车的名字：``YYYYMMDD-原标题.bak.pdf``。
+
+    同一天反复保存会得到 ``(1)``、``(2)``……而不是覆盖上一份：备份存的是「保存
+    之前的那一版」，覆盖等于只留下最后一版，等于没有备份。
+    """
+    stamp = (day or date.today()).strftime("%Y%m%d")
+    stem = Path(source).stem
+    candidate = directory / f"{stamp}-{stem}.bak.pdf"
+    index = 1
+    while candidate.exists():
+        candidate = directory / f"{stamp}-{stem}({index}).bak.pdf"
+        index += 1
+    return candidate
+
+
+def _backup(dst_path: Path, directory: Path, report: SaveReport) -> None:
+    """把即将被覆盖的文件复制到备份目录。失败只记警告，不阻止保存。"""
+    target: Path | None = None
     try:
-        shutil.copy2(dst_path, backup_path)
-    except OSError:
-        # 备份失败不该阻止保存本身，但要留下痕迹。
-        return
+        directory.mkdir(parents=True, exist_ok=True)
+        target = backup_path(directory, dst_path)
+        shutil.copy2(dst_path, target)
+    except OSError as exc:
+        # 复制到一半失败会留下一个看着像备份、其实是残片的东西，先收掉。
+        if target is not None:
+            try:
+                target.unlink(missing_ok=True)
+            except OSError:
+                pass
+        # 备份失败不该阻止保存本身，但必须让用户知道这次没有备份——静默失败
+        # 等于告诉用户「有备份」而实际上没有。
+        report.warnings.append({"page": None, "code": "backup_failed", "detail": str(exc)})
+
+
+def sweep_backups(directory: Path, retention_days: int) -> int:
+    """删掉超过保留期的备份，返回删了几个。
+
+    按修改时间判断，不看文件名里的日期：文件名说的是「备份的是哪一版」，修改
+    时间才是「这份文件在这里放了多久」。删不掉的（正被别的程序打开）跳过，
+    下次启动再试。
+    """
+    if retention_days <= 0:
+        return 0
+    root = Path(directory)
+    if not root.is_dir():
+        return 0
+    cutoff = time.time() - retention_days * 86400
+    removed = 0
+    for entry in root.glob("*.pdf"):
+        try:
+            if not entry.is_file() or entry.stat().st_mtime >= cutoff:
+                continue
+            entry.unlink()
+        except OSError:
+            continue
+        removed += 1
+    return removed
 
 
 def _discard(path: Path) -> None:

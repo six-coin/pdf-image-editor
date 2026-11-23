@@ -40,7 +40,7 @@ Saving only swaps the images; everything else is left untouched.
 **Save**
 
 - Only the images are replaced; text, vectors, annotations, bookmarks and links all survive
-- Writes a temporary file first, then swaps it in; the first in-place save leaves a `.bak.pdf`
+- Writes a temporary file first, then swaps it in; an in-place save copies the previous version into `backup\` inside the data folder
 - Export selected pages as a new PDF
 - Black & white preprocessing: save a de-grayed copy, leaving the original alone
 
@@ -101,6 +101,8 @@ Appears at the bottom of the canvas once split mode starts. It shows how many ho
 ### Open
 
 Click "Open" or press `Ctrl+O`. The file dialog starts in `pdfs/` under the program directory and creates that folder if it is missing — keeping frequently used PDFs there saves a few clicks.
+
+You can also **drop a PDF onto the window**: with nothing open it simply opens; with a file already open and unsaved edits, you are asked whether to save, discard or cancel first. Dropping something that is not a PDF is rejected with a hint, and dropping several files opens the first one.
 
 If opening fails you get a reason (corrupt file, encrypted, bad page count); the full stack trace goes to the log.
 
@@ -209,9 +211,9 @@ One continuous drag is one entry; structural changes such as splitting and pasti
 
 ## 8. Splitting
 
-Select **one** image, press `E` or click "Split" in the inspector.
+Select **one** image, press `E` or click "Split" in the inspector. With several images selected split mode refuses to start — a cut belongs to exactly one image, and the message says so.
 
-1. **Place cuts**: click inside the image for a horizontal cut; hold `Shift` and click for a vertical one. Any number of cuts is allowed, positioned where you click.
+1. **Place cuts**: click inside the image for a horizontal cut; hold `Shift` and click for a vertical one. The dashed preview turns as soon as `Shift` goes down or comes back up — no need to move the mouse first. Any number of cuts is allowed, positioned where you click.
 2. **Read the cells**: the cell under the pointer is highlighted, which enables "Keep this cell / Extract this cell" on the split bar.
 3. **Apply**:
    - `1` keep this cell — discard everything else
@@ -228,7 +230,9 @@ Global shortcuts are suspended in split mode, so the two key maps can bind the s
 
 ### In-place save
 
-`Ctrl+S`. The first in-place save leaves a `<name>.bak.pdf` next to the file; later saves do not add more backups.
+`Ctrl+S`. Every in-place save first copies the previous version into `backup\` inside the **data folder**, named `YYYYMMDD-<name>.bak.pdf`; a second save on the same day becomes `YYYYMMDD-<name>(1).bak.pdf`, and so on. Backups stay out of the source folder so a PDF that gets delivered or archived never drags a `.bak.pdf` along.
+
+Backups older than the retention period (30 days by default, adjustable in Settings) are deleted at the next start. PDFs inside the backup folder cannot be opened: they are snapshots taken before a save, and editing one would only edit a copy.
 
 While saving, a banner at the bottom of the window says "Saving — don't edit the document right now" and the canvas plus shortcuts are locked; it disappears when the write finishes. Large files take a few seconds, and clicks during that window are not treated as edits.
 
@@ -342,6 +346,7 @@ When it finishes you are told where the file went and how many images were proce
 | Log level | Debug / Normal / Warnings / Errors | Takes effect at once and keeps writing to the same file |
 | Clean up logs automatically | On / Off | Deletes log files older than the retention period at startup; turn it off to keep them all |
 | Keep logs for (days) | 1–365 | 30 by default; has no effect while the switch above is off |
+| Keep backups for (days) | 1–3650 | 30 by default; at startup, backups in `backup\` older than this are deleted |
 | Shortcuts | Two scopes | Click a field then press the combination; "Reset shortcuts" restores keys only |
 
 Shortcuts are normalised through `event.code`, so `Ctrl+Shift+S` and `Ctrl+S` never get confused by Shift changing the character, and the same bindings work on any keyboard layout.
@@ -366,6 +371,7 @@ program directory\
 
 %PROGRAMDATA%\six-coin\pdf-image-editor\     data folder (configurable)
 ├─ app.json             settings (language, theme, guide margins, key bindings)
+├─ backup\              pre-save backups, YYYYMMDD-<name>.bak.pdf
 └─ pdfs\                default folder for the open dialog
 
 %LOCALAPPDATA%\six-coin\pdf-image-editor\
@@ -377,6 +383,7 @@ program directory\
 ```
 
 - Logs live in `%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\`, named `main_*`, one file per launch, rotating at 5 MB. Only the last 30 days are kept by default; anything older is deleted at startup.
+- Backups live in `backup\` inside the data folder, one per in-place save, kept for 30 days by default. They move with the data folder when you change it.
 - `app.json` is written atomically (temporary file + replace), so a crash mid-write never leaves half a file. A hand-edited file that breaks is reported with its file name — it is never silently reset.
 - Unknown keys in the configuration are preserved, which keeps old and new versions compatible.
 - The data folder always ends with the project code: picking `D://Data` gives `D://Data//pdf-image-editor`. On a change the old contents are copied there after a restart: folders are merged, and files already present in the target are never overwritten. If the copy fails nothing is touched and Settings says why — you never end up with a new folder and no settings. The old folder is removed once the switch succeeds.
@@ -398,6 +405,9 @@ Either it was never recognised as an editable object (same cases as above) or er
 **The big image came back after splitting**
 It does not. Each page's images are read into the model only the first time that page is opened, so deleted or split-away images never reappear.
 
+**The `.bak.pdf` is not next to the file any more**
+Backups moved to `backup\` inside the data folder (Settings → About → Data folder). Names carry a date prefix, e.g. `20261123-report.bak.pdf`, and repeated saves on the same day are numbered.
+
 **Preprocessing skipped an image**
 That image has an alpha channel (logo, watermark); thresholding would turn its transparent areas into black blocks, so it is skipped. Such images are meant to stay as they are.
 
@@ -415,7 +425,7 @@ Look at the line under the field in Settings: if it still says "Takes effect aft
 - **Rotated pages are not editable**: on a page that has been rotated as a whole, none of its images can be edited.
 - **Non-axis-aligned images are not editable**: rotated or flipped images stay in the background.
 - **Rotation is limited to multiples of 90°**: a constraint of the insertion API, not a setting.
-- **Splitting works on one image at a time**: entering split mode with several selected asks you to pick one.
+- **Splitting works on one image at a time**: entering split mode with several selected says only one image can be split.
 - **Export requires saving first**: export reads the file on disk, not the in-memory edits.
 - **Preprocessing only handles raster images**: vectors and text are not thresholded, so a grey background painted as vector art stays where it is.
 - **Only four pages are preloaded**: distant pages render when you get near them, so dragging the scrollbar quickly shows grey placeholders for a moment.

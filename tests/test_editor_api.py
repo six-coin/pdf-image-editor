@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import time
 from pathlib import Path
 
 import pymupdf
@@ -298,6 +299,60 @@ def test_save_as_switches_baseline(editor, opened, tmp_path):
     assert target.is_file()
     assert instance.get_state()["doc"]["path"] == str(target)
     assert instance.get_state()["doc"]["dirty"] is False
+
+
+def test_in_place_save_writes_the_backup_into_the_data_dir(editor, opened):
+    from app import paths
+
+    instance, _server = editor
+    path = opened()
+    obj = _objects(instance)[0]
+    instance.commit_transform([{"id": obj["id"], "page": 0, "x": 400, "y": 500, "w": 120, "h": 90}])
+
+    assert instance.save_document()["ok"] is True
+
+    backups = list(paths.backup_dir().glob("*.bak.pdf"))
+    assert len(backups) == 1
+    assert backups[0].parent == paths.backup_dir()
+    # 源文件旁边不该再留备份
+    assert list(path.parent.glob("*.bak.pdf")) == []
+
+
+def test_backup_files_cannot_be_opened(editor, opened):
+    """备份是只读快照，打开它等于对着副本改，原件反而不知道在哪。"""
+    import shutil
+
+    from app import paths
+
+    instance, _server = editor
+    source = opened()
+    backup = paths.backup_dir() / "20260101-sample.bak.pdf"
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, backup)
+
+    result = instance.open_path(str(backup))
+
+    assert result["ok"] is False
+    assert result["reason"] == "backup"
+    assert result["message"]
+
+
+def test_startup_sweeps_expired_backups(temp_config):
+    from app import paths
+    from app.ui.web.api import EditorApi
+
+    root = paths.backup_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    stale = root / "old.bak.pdf"
+    stale.write_bytes(b"x")
+    stamp = time.time() - 40 * 86400
+    os.utime(stale, (stamp, stamp))
+
+    instance = EditorApi()
+    try:
+        assert not stale.exists()
+    finally:
+        instance.shutdown()
 
 
 def test_export_pages_writes_subset(editor, opened, tmp_path):
@@ -691,3 +746,92 @@ def test_language_change_retitles_the_window(editor):
     instance.update_settings({"language": "zh-CN"})
 
     assert window.titles == ["PDF Image Editor", "PDF 图像编辑器"]
+
+
+# ---------- 拖拽打开 ----------
+
+
+class _Collector:
+    """替身：pywebview 的事件容器只要求支持 +=。"""
+
+    def __init__(self) -> None:
+        self.items: list = []
+
+    def __iadd__(self, item):
+        self.items.append(item)
+        return self
+
+
+class _DropWindow:
+    """只长成 _install_file_drop 需要的样子。"""
+
+    def __init__(self) -> None:
+        self.loaded = _Collector()
+        self.drop = _Collector()
+        self.events = type("Events", (), {"loaded": self.loaded})()
+        document = type("Document", (), {"events": type("Events", (), {"drop": self.drop})()})()
+        self.dom = type("Dom", (), {"document": document})()
+
+
+def test_drop_handler_forwards_the_first_file():
+    """拖进来的文件要带着完整路径交给页面——页面自己拿不到路径。"""
+    from app.ui.web.app import _install_file_drop
+
+    window = _DropWindow()
+    seen: list[str] = []
+
+    _install_file_drop(window, type("Api", (), {"offer_drop": seen.append})())
+    assert len(window.loaded.items) == 1
+
+    # 页面加载完成后才绑 drop：早了拿不到 document。
+    window.loaded.items[0]()
+    assert len(window.drop.items) == 1
+
+    handler = window.drop.items[0]
+    handler.callback(
+        {
+            "dataTransfer": {
+                "files": [
+                    {"name": "a.pdf"},
+                    {"name": "b.pdf", "pywebviewFullPath": r"C:\docs\b.pdf"},
+                ]
+            }
+        }
+    )
+
+    assert seen == [r"C:\docs\b.pdf"]
+
+
+def test_drop_handler_ignores_events_without_paths():
+    from app.ui.web.app import _install_file_drop
+
+    window = _DropWindow()
+    seen: list[str] = []
+    _install_file_drop(window, type("Api", (), {"offer_drop": seen.append})())
+    window.loaded.items[0]()
+
+    handler = window.drop.items[0]
+    handler.callback({"dataTransfer": {"files": [{"name": "a.pdf"}]}})
+    handler.callback({})
+
+    assert seen == []
+
+
+class _ScriptWindow:
+    def __init__(self) -> None:
+        self.scripts: list[str] = []
+
+    def evaluate_js(self, script: str) -> None:
+        self.scripts.append(script)
+
+
+def test_offer_drop_hands_the_path_to_the_page(editor):
+    instance, _server = editor
+    window = _ScriptWindow()
+    instance.attach_window(window)
+
+    instance.offer_drop(r"C:\docs\a b.pdf")
+
+    assert len(window.scripts) == 1
+    assert "dropPath" in window.scripts[0]
+    assert "a b.pdf" in window.scripts[0]

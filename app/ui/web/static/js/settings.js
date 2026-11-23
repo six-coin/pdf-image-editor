@@ -220,6 +220,7 @@ export async function openSettings() {
     await openModal({
       title: T('about.readme_title'),
       body,
+      wide: true,
       actions: [
         { label: T('dialog.close'), value: 'ok', kind: 'primary', i18n: 'dialog.close' },
       ],
@@ -453,6 +454,18 @@ export async function openSettings() {
         'settings.log_retention_days',
         numberBox(data.log_retention_days ?? 30, 1, 365, 1, (value) =>
           writeSettings({ log_retention_days: value })
+        )
+      )
+    );
+
+    body.appendChild(section('settings.backups'));
+
+    // 备份在数据目录的 backup/ 里，启动时按这个天数清理；就地保存每次都会留一份。
+    body.appendChild(
+      field(
+        'settings.backup_retention_days',
+        numberBox(data.backup_retention_days ?? 30, 1, 3650, 1, (value) =>
+          writeSettings({ backup_retention_days: value })
         )
       )
     );

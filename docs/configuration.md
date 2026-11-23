@@ -6,6 +6,7 @@
 |---|---|
 | `<数据目录>\app.json` | 设置 |
 | `<数据目录>\pdfs\` | 打开对话框的默认目录 |
+| `<数据目录>\backup\` | 就地保存前的备份，`YYYYMMDD-原标题.bak.pdf` |
 | `%LOCALAPPDATA%\six-coin\pdf-image-editor\data-dir.txt` | 数据目录指针，改目录后写这里 |
 | `%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\` | 日志 |
 | `%TEMP%\six-coin\pdf-image-editor\` | 外部编辑的临时目录 |
@@ -35,6 +36,7 @@
     "log_level": "INFO",
     "log_cleanup": true,
     "log_retention_days": 30,
+    "backup_retention_days": 30,
     "reference": {
         "left_mm": 10.0,
         "top_mm": 10.0,
@@ -58,6 +60,7 @@
 | `log_level` | 字符串 | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`，认不出来的值回退 `INFO`。改完立刻生效，日志仍写在同一个文件里 |
 | `log_cleanup` | 布尔 | `true` | 为真时在启动与保存这三项设置时清空过期日志，为假时一条都不删 |
 | `log_retention_days` | 整数 | `30` | 1–365，越界夹取，非数字回退 30；`log_cleanup` 为假时不起作用 |
+| `backup_retention_days` | 整数 | `30` | 1–3650，越界夹取，非数字回退 30；启动时删掉 `backup\` 里修改时间早于这个天数的备份 |
 | `reference.left_mm` 等 | 数字 | `10 / 10 / 50 / 10` | 0–300，越界夹取；参考线四边边距（毫米） |
 
 说明：
@@ -139,7 +142,7 @@
 
 | 目录 | 内容 | 位置 |
 |---|---|---|
-| 数据目录 | `app.json`、`pdfs/` | `%PROGRAMDATA%\six-coin\pdf-image-editor`，可更改 |
+| 数据目录 | `app.json`、`pdfs/`、`backup/` | `%PROGRAMDATA%\six-coin\pdf-image-editor`，可更改 |
 | 本地目录 | `logs/`、`locks/`、`data-dir.txt` | `%LOCALAPPDATA%\six-coin\pdf-image-editor` |
 | 临时目录 | 外部编辑的临时目录，启动时清理一天前的残留 | `%TEMP%\six-coin\pdf-image-editor` |
 

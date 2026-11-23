@@ -65,7 +65,7 @@ app/
 | 位置 | 内容 | 默认 |
 |---|---|---|
 | 程序目录 | 代码与 `docs/` | 仓库根目录 |
-| 数据目录 | `app.json`、`pdfs/` | `%PROGRAMDATA%\six-coin\pdf-image-editor` |
+| 数据目录 | `app.json`、`pdfs/`、`backup/` | `%PROGRAMDATA%\six-coin\pdf-image-editor` |
 | 本地目录 | `logs/`、`locks/`、`data-dir.txt` | `%LOCALAPPDATA%\six-coin\pdf-image-editor` |
 | 临时目录 | 外部编辑的中间文件 | `%TEMP%\six-coin\pdf-image-editor` |
 
@@ -219,6 +219,7 @@ logging_setup.setup("main")        默认级别先开文件，崩溃路径也留
 
 ```
 前端 open_path(path)
+  → 落在 backup/ 里：直接拒绝（{reason: "backup"}），备份是只读快照
   → 有未保存修改且没 force：直接返回 {reason: "dirty"}
   → generation += 1，建 task，丢进线程池
 后台线程 _open_worker
@@ -229,6 +230,8 @@ logging_setup.setup("main")        默认级别先开文件，崩溃路径也留
 ```
 
 代次号（`generation`）解决「连续打开两个文件，先发的后到」：晚到的结果直接丢弃并关闭自己的句柄。
+
+拖进来的文件走另一条入口：WebView2 只把真实路径交给宿主，页面自己拿不到，所以由 `app/ui/web/app.py` 在页面 `loaded` 之后接上 `window.dom.document` 的 `drop` 事件（`DOMEventHandler(prevent_default=True)` 顺手挡住「把 PDF 当网页打开」）。拿到路径后调 `api.offer_drop()`，它再 `evaluate_js("window.host.dropPath(...)")` 把活交回页面——**打开动作必须在页面里做**，那里才有未保存修改的三选一询问。
 
 ### 6.3 渲染与缓存
 
@@ -304,7 +307,8 @@ api.save_document(path?)
                 → 挂回 /Annots → 按 z 插入当前图片
        → doc.save(临时文件, garbage=4, deflate=True)
        → 重新打开校验页数
-       → 就地保存且目标已存在时留一份 .bak.pdf
+       → 就地保存时先把原文件复制进 <数据目录>/backup/
+         （YYYYMMDD-原标题.bak.pdf，重名加 (n)；失败只记警告）
        → os.replace(临时文件, 目标)
   → 成功：以新文件为基线；失败：把句柄接回去，编辑不丢
 ```
@@ -374,7 +378,8 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
   "language": "zh-CN", "languages": ["zh-CN", "en-US"],
   "theme": "light", "show_guides": true, "show_inspector": true, "eight_handles": true,
   "keybindings": {}, "reference": { "left_mm": 10, … }, "undo_limit": 100,
-  "log_level": "INFO", "log_cleanup": true, "log_retention_days": 30
+  "log_level": "INFO", "log_cleanup": true, "log_retention_days": 30,
+  "backup_retention_days": 30
 }
 ```
 
@@ -394,6 +399,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 | 保存导出 | `save_document` `browse_save` `export_pages` |
 | 剪贴板 / 外部 | `paste_image` `edit_external` `replace_image` |
 | 其它 | `preprocess_pdf` `update_reference` `update_settings` `set_language` `reset_settings` |
+| 拖拽 | `offer_drop`（后端 → 页面，不是页面调的） |
 | 数据目录 | `set_data_dir` `reset_data_dir` `restart_app` |
 | 关闭 | `answer_close` |
 
@@ -438,7 +444,7 @@ closing（UI 线程） → 有未保存修改就 request_close_prompt()（丢进
 
 ### 8.1 模块划分
 
-零构建，原生 ES module，16 个文件各管一件事：
+零构建，原生 ES module，18 个文件各管一件事：
 
 | 文件 | 职责 |
 |---|---|
@@ -451,6 +457,7 @@ closing（UI 线程） → 有未保存修改就 request_close_prompt()（丢进
 | `interact.js` | 指针手势：选中、拖动、八手柄缩放、组缩放、框选、平移 |
 | `split.js` | 分割模式：切线、格子高亮、执行 |
 | `guides.js` | 参考线绘制 |
+| `drop.js` | 拖文件进窗口：遮罩提示、挡住 WebView2 的默认导航 |
 | `controls.js` | 通用表单控件（分段选择器），设置页与首次运行共用 |
 | `settings.js` | 设置弹窗 |
 | `modal.js` | 通用弹窗与确认框 |
@@ -563,6 +570,7 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 | `show_guides` / `show_inspector` / `eight_handles` | 布尔 |
 | `keybindings` | `{作用域: {命令: 组合键}}` |
 | `reference.*_mm` | 0 – 300 |
+| `backup_retention_days` | 1 – 3650 |
 
 字段的完整含义与越界行为见 [configuration.md](configuration.md)。
 
@@ -588,7 +596,7 @@ tests/
 ├─ test_render.py           涂白、渲染上限、缓存淘汰
 ├─ test_split.py            切分 / 保留 / 打孔
 ├─ test_undo.py             栈行为、宏、dirty
-├─ test_save.py             文字保留、批注保留、长宽比、备份、失败回滚
+├─ test_save.py             文字保留、批注保留、长宽比、备份命名与清理、失败回滚
 ├─ test_editor_api.py       接口层：快照、越界、任务、保存后重定基线
 ├─ test_asset_server.py     路由、token、缓存头、路径穿越
 ├─ test_system.py           剪贴板、外部打开、预处理

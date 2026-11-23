@@ -6,12 +6,14 @@
 from __future__ import annotations
 
 import os
+import time
+from datetime import date
 
 import pymupdf
 import pytest
 
 from app.core.document import PdfDocument
-from app.core.save import save
+from app.core.save import save, sweep_backups
 from app.errors import SaveError
 from app.models import DocumentState, Rect
 
@@ -114,20 +116,69 @@ def test_source_untouched_when_replace_fails(pdf_factory, store, monkeypatch):
     doc.close()
 
 
-def test_in_place_save_creates_backup(pdf_factory, store):
+def test_in_place_save_copies_a_dated_backup(pdf_factory, store, tmp_path):
     src = pdf_factory("in.pdf")
     doc = PdfDocument.open(src, store)
     state = _state(doc)
     # Windows 上覆盖仍被打开的文件会失败，就地保存前必须先释放句柄。
     doc.close()
 
-    save(src, src, state, store)
+    backup_dir = tmp_path / "backup"
+    save(src, src, state, store, backup_dir=backup_dir)
 
-    backup = src.with_name("in.bak.pdf")
-    assert backup.is_file()
+    stamp = date.today().strftime("%Y%m%d")
+    assert (backup_dir / f"{stamp}-in.bak.pdf").is_file()
+    # 备份搬去数据目录之后，源文件旁边不该再出现 .bak.pdf。
+    assert not src.with_name("in.bak.pdf").exists()
     out = pymupdf.open(src)
     assert "Hello text layer" in out[0].get_text()
     out.close()
+
+
+def test_each_in_place_save_keeps_its_own_backup(pdf_factory, store, tmp_path):
+    """同一天保存两次：第二份备份加 (1)，不能把上一份覆盖掉。"""
+    src = pdf_factory("in.pdf")
+    doc = PdfDocument.open(src, store)
+    state = _state(doc)
+    doc.close()
+
+    backup_dir = tmp_path / "backup"
+    save(src, src, state, store, backup_dir=backup_dir)
+    save(src, src, state, store, backup_dir=backup_dir)
+
+    stamp = date.today().strftime("%Y%m%d")
+    assert (backup_dir / f"{stamp}-in.bak.pdf").is_file()
+    assert (backup_dir / f"{stamp}-in(1).bak.pdf").is_file()
+
+
+def test_save_as_leaves_no_backup(pdf_factory, store, tmp_path):
+    """另存为不动原文件，也就没有要备份的东西。"""
+    src = pdf_factory("in.pdf")
+    doc = PdfDocument.open(src, store)
+    state = _state(doc)
+
+    backup_dir = tmp_path / "backup"
+    save(src, tmp_path / "out.pdf", state, store, backup_dir=backup_dir)
+
+    assert not backup_dir.exists()
+    doc.close()
+
+
+def test_sweep_backups_drops_only_expired_files(tmp_path):
+    root = tmp_path / "backup"
+    root.mkdir()
+    old = root / "old.bak.pdf"
+    fresh = root / "fresh.bak.pdf"
+    old.write_bytes(b"x")
+    fresh.write_bytes(b"x")
+    stale = time.time() - 31 * 86400
+    os.utime(old, (stale, stale))
+
+    removed = sweep_backups(root, 30)
+
+    assert removed == 1
+    assert not old.exists()
+    assert fresh.is_file()
 
 
 def test_out_of_page_image_is_clamped(pdf_factory, store, tmp_path):

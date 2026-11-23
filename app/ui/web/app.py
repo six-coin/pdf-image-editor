@@ -12,6 +12,7 @@ import logging
 import subprocess
 
 import webview
+from webview.dom import DOMEventHandler
 
 from app import bootstrap, i18n, logging_setup, paths
 from app import settings as settings_module
@@ -43,6 +44,39 @@ def _make_closing_handler(api: EditorApi):
         return False
 
     return on_closing
+
+
+def _install_file_drop(window: webview.Window, api: EditorApi) -> None:
+    """把「拖文件进窗口」接到页面上。
+
+    WebView2 只把文件的完整路径交给宿主，页面自己拿不到——所以这里必须用
+    pywebview 的 DOM drop 事件，而不是页面里的 drag 监听。``prevent_default``
+    顺手挡住 WebView2 默认的「把拖进来的文件当网页打开」。
+
+    绑定必须等页面加载完：``loaded`` 的回调本来就在工作线程里跑，不占 UI 线程。
+    """
+
+    def on_drop(event) -> None:
+        transfer = event.get("dataTransfer") if isinstance(event, dict) else None
+        files = (transfer or {}).get("files") or []
+        for item in files:
+            full = item.get("pywebviewFullPath") if isinstance(item, dict) else None
+            if full:
+                # 一次只能开一个文档：多选拖进来时只认第一个。
+                api.offer_drop(str(full))
+                return
+        if files:
+            # 没有完整路径就打不开文件，留一条日志，免得只剩「拖了没反应」。
+            _LOGGER.warning("拖入的文件没有完整路径：%s", files)
+
+    def on_loaded() -> None:
+        try:
+            window.dom.document.events.drop += DOMEventHandler(on_drop, prevent_default=True)
+        except Exception:
+            # 注册失败只影响拖拽打开，不能拖累启动与其它功能。
+            _LOGGER.exception("注册拖拽打开失败")
+
+    window.events.loaded += on_loaded
 
 
 def main() -> None:
@@ -95,6 +129,7 @@ def _run(warnings: list[str]) -> EditorApi | None:
     )
     api.attach_window(window)
     window.events.closing += _make_closing_handler(api)
+    _install_file_drop(window, api)
 
     try:
         webview.start()

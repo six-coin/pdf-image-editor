@@ -4,11 +4,12 @@ import * as actions from './actions.js';
 import { bridgeReady, call, setStrings, T, toast } from './bridge.js';
 import { bindCanvas, fitWidth, observePages, pageJump, resetZoom, zoomBy } from './canvas.js';
 import { segmented } from './controls.js';
+import { bindDropZone } from './drop.js';
 import { openExport } from './export.js';
 import { bindGuides } from './guides.js';
 import { bindInteract } from './interact.js';
 import { renderMarkdown } from './markdown.js';
-import { askUnsaved, openModal } from './modal.js';
+import { askUnsaved, isOpen, openModal } from './modal.js';
 import { apply, applyStrings, applyTheme } from './render.js';
 import { state } from './state.js';
 import { openSettings } from './settings.js';
@@ -78,6 +79,19 @@ function installHost() {
         return;
       }
       await call('answer_close', choice);
+    },
+    /**
+     * 拖进窗口的文件。后端只把路径送到这里，打开动作复用「打开」那条路，
+     * 所以未保存的修改照样会先问一句。
+     */
+    dropPath: async (path) => {
+      if (!path || isOpen()) return;
+      const name = String(path).split(/[\\/]/).pop() || '';
+      if (!/\.pdf$/i.test(name)) {
+        toast(T('drop.not_pdf', { name }), false);
+        return;
+      }
+      await actions.openFile(path);
     },
   };
 }
@@ -150,6 +164,7 @@ async function runFirstRun() {
     title: T('firstrun.readme_title'),
     text: T('firstrun.readme_text'),
     body: manual,
+    wide: true,
     dismissible: false,
     actions: [
       { label: T('firstrun.readme_close'), value: 'ok', kind: 'primary' },
@@ -175,6 +190,7 @@ async function init() {
   bindCanvas();
   bindInteract();
   bindSplit();
+  bindDropZone();
   bindGuides();
   bindShortcuts();
   bindClicks();

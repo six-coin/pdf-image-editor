@@ -412,6 +412,12 @@ kbd {
   width: min(440px, 100%);
 }
 
+/* 使用说明这类长文档要更宽：跟设置面板一样宽时，正文挤在一条窄缝里读着累。 */
+.modal-card.wide {
+  width: min(960px, 100%);
+  max-height: 88vh;
+}
+
 .modal-head {
   display: flex;
   align-items: center;

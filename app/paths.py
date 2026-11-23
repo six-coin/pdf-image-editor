@@ -363,6 +363,27 @@ CONFIG_DIR = DATA_DIR
 # 打开 PDF 时的默认目录。软件启动时若不存在会自动创建。
 PDFS_DIR = DATA_DIR / "pdfs"
 
+#: 就地保存的备份。放在数据目录里而不是源文件旁边：用户的 PDF 目录往往要交付
+#: 或归档，多出来的 .bak.pdf 会跟着一起被拷走。
+BACKUP_DIR_NAME = "backup"
+
+
+def backup_dir() -> Path:
+    """备份目录。按 ``DATA_DIR`` 现算，换数据目录或测试里改它都会跟着走。"""
+    return DATA_DIR / BACKUP_DIR_NAME
+
+
+def is_backup_path(path: str | Path) -> bool:
+    """这个路径是否落在备份目录里。
+
+    备份是保存前的只读快照，打开它只会让用户对着一个副本改，改完还不知道原件
+    在哪；所以界面上直接把这类文件拦在门外。
+    """
+    root = backup_dir()
+    target = Path(os.path.abspath(str(path)))
+    return _same_dir(target, root) or _is_nested(target, root)
+
+
 LOCALES_DIR = PACKAGE_DIR / "locales"
 WEB_DIR = PACKAGE_DIR / "ui" / "web" / "static"
 

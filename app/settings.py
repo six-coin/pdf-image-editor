@@ -40,6 +40,8 @@ DEFAULT_APP: dict[str, Any] = {
     "log_level": logging_setup.DEFAULT_LEVEL,
     "log_cleanup": True,
     "log_retention_days": logging_setup.DEFAULT_RETENTION_DAYS,
+    # 就地保存的备份保留天数。备份放在数据目录的 backup/ 里，启动时清掉过期的。
+    "backup_retention_days": 30,
     # 参考线边距。放在这里而不是单独一个文件：一处配置一条读写路径，少一处能不同步。
     "reference": dict(DEFAULT_REFERENCE),
 }
@@ -175,6 +177,9 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
         logging_setup.MAX_RETENTION_DAYS,
     )
     merged["keybindings"] = _bindings(raw.get("keybindings"))
+    merged["backup_retention_days"] = _integer(
+        raw.get("backup_retention_days"), DEFAULT_APP["backup_retention_days"], 1, 3650
+    )
     reference = raw.get("reference")
     merged["reference"] = _normalize_reference(reference if isinstance(reference, dict) else {})
     # save_mode 是早期版本的单选保存方式，读到就丢掉，不再写回文件。

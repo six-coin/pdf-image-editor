@@ -38,8 +38,13 @@ function cutsOf(axis) {
 
 export function startSplit() {
   const ids = (state.data && state.data.selection) || [];
-  if (ids.length !== 1) {
+  if (!ids.length) {
     toast(T('split.need_one'), false);
+    return;
+  }
+  if (ids.length > 1) {
+    // 切分只作用于一张图：多选时后端拿到的 cuts 属于哪一张是说不清的。
+    toast(T('split.need_single'), false);
     return;
   }
   const obj = state.data.objects.find((o) => o.id === ids[0]);
@@ -267,6 +272,15 @@ function onPointerDown(event) {
   updateBar();
 }
 
+/** Shift 一按下 / 一松开就翻转预览线，不用等下一次 pointermove。 */
+function onShiftToggle(event) {
+  if (!split.active || event.key !== 'Shift') return;
+  const pressed = event.type === 'keydown';
+  if (split.vertical === pressed) return;
+  split.vertical = pressed;
+  redraw();
+}
+
 export function bindSplit() {
   const box = viewport();
   box.addEventListener('pointerdown', onPointerDown);
@@ -277,6 +291,15 @@ export function bindSplit() {
     split.hover = null;
     redraw();
     updateBar();
+  });
+  // 捕获阶段收键：焦点在顶栏输入框里时也要能翻方向，分割模式下没有可编辑的东西。
+  window.addEventListener('keydown', onShiftToggle, true);
+  window.addEventListener('keyup', onShiftToggle, true);
+  // 按着 Shift 切走窗口就收不到 keyup，回来时别停在「一直按着」的状态。
+  window.addEventListener('blur', () => {
+    if (!split.active || !split.vertical) return;
+    split.vertical = false;
+    redraw();
   });
 }
 

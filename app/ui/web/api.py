@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import threading
@@ -30,6 +31,7 @@ from app.core.geometry import MIN_SIZE, clamp_rect_to_page
 from app.core.imagestore import ImageStore
 from app.core.render import RenderCache
 from app.core.save import save as save_to_disk
+from app.core.save import sweep_backups
 from app.core.undo import ImageReplaced, ObjectsChanged, StructureChanged, UndoStack
 from app.core.units import parse_page_range
 from app.errors import AppError
@@ -66,6 +68,7 @@ class EditorApi:
         settings.apply_log_settings(self._settings)
         self._reference = settings.load_reference()
         _sweep_temp()
+        _sweep_backups(paths.backup_dir(), int(self._settings.get("backup_retention_days", 30)))
         self._close_confirmed = False
         self._restart_requested = False
 
@@ -151,6 +154,12 @@ class EditorApi:
     def open_path(self, path: str, force: bool = False) -> dict[str, Any]:
         if not path:
             return {"ok": False, "reason": "invalid", "message": i18n.t("error.pdf_open", name="")}
+        if paths.is_backup_path(path):
+            return {
+                "ok": False,
+                "reason": "backup",
+                "message": i18n.t("error.backup_open", name=Path(path).name),
+            }
         with self._lock:
             if self._stack is not None and self._stack.dirty and not force:
                 return {
@@ -194,6 +203,22 @@ class EditorApi:
             self._loaded_pages.clear()
             self._finish_task(task_id, "ready")
         logger.info("已打开 {} 共 {} 页", path, len(pages))
+
+    def offer_drop(self, path: str) -> None:
+        """把拖进窗口的文件交给页面。
+
+        打开动作必须走页面那条路：那里才有「上一个文件还没保存」的三选一询问。
+        后端只管把完整路径送过去——WebView2 只把真实路径交给宿主，页面自己拿不到。
+        """
+        if self._window is None or not path:
+            return
+        literal = json.dumps(str(path))
+        try:
+            self._window.evaluate_js(
+                f"window.host && window.host.dropPath ? void window.host.dropPath({literal}) : null"
+            )
+        except Exception:
+            logger.exception("把拖入的文件交给页面失败 {}", path)
 
     # ---- 渲染 ----
 
@@ -517,7 +542,7 @@ class EditorApi:
             self._doc = None
 
         try:
-            report = save_to_disk(source, target, state, store)
+            report = save_to_disk(source, target, state, store, backup_dir=paths.backup_dir())
         except AppError as exc:
             logger.warning("保存失败 {}: {}", target, exc)
             with self._lock:
@@ -1136,6 +1161,7 @@ class EditorApi:
             "log_level": str(self._settings.get("log_level", "INFO")),
             "log_cleanup": bool(self._settings.get("log_cleanup", True)),
             "log_retention_days": int(self._settings.get("log_retention_days", 30)),
+            "backup_retention_days": int(self._settings.get("backup_retention_days", 30)),
         }
 
     def _new_task(self, label: str) -> str:
@@ -1198,6 +1224,17 @@ def _sweep_temp(max_age_seconds: float = 86400.0) -> None:
             entry.rmdir()
         except OSError:
             continue
+
+
+def _sweep_backups(directory: Path, retention_days: int) -> None:
+    """清掉超过保留期的备份。删不掉的跳过，下次启动再试。"""
+    try:
+        removed = sweep_backups(directory, retention_days)
+    except OSError:
+        logger.warning("清理过期备份失败 {}", directory)
+        return
+    if removed:
+        logger.info("已清理 {} 份过期备份", removed)
 
 
 def _first_path(result: Any) -> str | None:

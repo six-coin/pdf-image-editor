@@ -44,6 +44,22 @@ def test_ensure_pdfs_dir_creates_it(monkeypatch, tmp_path):
     assert paths.ensure_pdfs_dir() == created
 
 
+def test_backup_dir_follows_the_data_dir(monkeypatch, tmp_path):
+    """备份跟着数据目录走：换目录时它也要一起搬过去。"""
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    assert paths.backup_dir() == tmp_path / paths.BACKUP_DIR_NAME
+
+
+def test_backup_paths_are_recognised(monkeypatch, tmp_path):
+    monkeypatch.setattr(paths, "DATA_DIR", tmp_path)
+    root = tmp_path / paths.BACKUP_DIR_NAME
+
+    assert paths.is_backup_path(root / "20260101-a.bak.pdf")
+    assert paths.is_backup_path(str(root / "sub" / "a.pdf"))
+    assert not paths.is_backup_path(tmp_path / "a.pdf")
+    assert not paths.is_backup_path(tmp_path / "backup-copy" / "a.pdf")
+
+
 def test_data_dir_pointer_round_trips(tmp_path, monkeypatch):
     """指针写在本地目录，读回来就是新数据目录。"""
     monkeypatch.delenv("SIXCOIN_DATA_DIR", raising=False)

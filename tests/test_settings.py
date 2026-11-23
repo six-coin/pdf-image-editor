@@ -156,6 +156,25 @@ def test_eight_handles_can_be_turned_off(temp_config):
     assert settings.load_app()["eight_handles"] is False
 
 
+def test_backup_retention_default_and_clamp(temp_config):
+    assert settings.load_app()["backup_retention_days"] == 30
+
+    (temp_config / "app.json").write_text(
+        json.dumps({"backup_retention_days": 0}), encoding="utf-8"
+    )
+    assert settings.load_app()["backup_retention_days"] == 1
+
+    (temp_config / "app.json").write_text(
+        json.dumps({"backup_retention_days": "forever"}), encoding="utf-8"
+    )
+    assert settings.load_app()["backup_retention_days"] == 30
+
+    (temp_config / "app.json").write_text(
+        json.dumps({"backup_retention_days": 99999}), encoding="utf-8"
+    )
+    assert settings.load_app()["backup_retention_days"] == 3650
+
+
 def test_preview_language_does_not_write_config(editor):
     """首次运行的语言下拉框只换内存：写了 app.json 就等于跳过了首次运行。"""
     instance, _ = editor
