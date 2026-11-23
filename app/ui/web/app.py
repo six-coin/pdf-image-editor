@@ -154,13 +154,21 @@ def _relaunch() -> None:
 
 
 def _activate_existing() -> None:
-    """已经有一个窗口开着：把它提到前面，提不上来就弹框说明。"""
+    """已经有一个窗口开着：把它提到前面，然后安静退出。
+
+    不再弹「已经在运行」的框：用户点第二次的意思就是「让我看到那个窗口」，
+    窗到前台就够了；提不上来（窗口标题对不上、被别的会话占用）也只留一条
+    日志，双击完弹一个框只会让人以为出了故障。
+    """
     try:
         i18n.set_language(str(settings_module.load_app()["language"]))
-    except Exception:  # 读配置失败不该挡住「多开」这条提示
+    except Exception:  # 读配置失败不该挡住「多开」这条路径
         pass
-    if not activate_window(i18n.t("app.title")):
-        bootstrap.info(i18n.t("app.already_running"), i18n.t("app.title"))
+    if activate_window(i18n.t("app.title")):
+        return
+    # 提不上来也要留一条记录：「双击了没反应」是最难解释的现象。
+    logging_setup.setup("main")
+    _LOGGER.info("已有实例在运行，但没能把窗口提到前面")
 
 
 if __name__ == "__main__":

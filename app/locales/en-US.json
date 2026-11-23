@@ -1,7 +1,6 @@
 {
   "language.name": "English (US)",
   "app.title": "PDF Image Editor",
-  "app.already_running": "PDF Image Editor is already open.",
   "app.tagline": "Split, move and replace images in a PDF, keeping the text layer intact",
   "fatal.unexpected": "The program hit an unrecoverable error: {error}",
   "fatal.time_line": "Time: {value}",

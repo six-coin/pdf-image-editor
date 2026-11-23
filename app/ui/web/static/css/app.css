@@ -352,43 +352,10 @@
   background: var(--marquee-fill);
 }
 
-/* ---------- 保存中的提示 ---------- */
+/* ---------- 保存中 ---------- */
 
-.save-banner {
-  position: fixed;
-  left: 50%;
-  bottom: 26px;
-  transform: translateX(-50%);
-  z-index: 45;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 18px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--panel);
-  box-shadow: 0 10px 28px var(--shadow-strong);
-  color: var(--text);
-  font-size: 13px;
-  white-space: nowrap;
-}
-
-.save-banner .spinner {
-  width: 13px;
-  height: 13px;
-  border: 2px solid var(--border-strong);
-  border-top-color: var(--blue);
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* 保存期间画布不接受指针，配合 state.view.busy 的键盘拦截。 */
+/* 「正在保存」不再自造横幅：它就是状态栏里一条不自动消失的提示（见 base.css
+   的 .toast），这里只留下保存期间要锁住的交互。 */
 body.saving .viewport {
   pointer-events: none;
 }
@@ -650,6 +617,14 @@ body.saving {
   font-size: 12.5px;
   font-weight: 500;
   letter-spacing: 0.2px;
+}
+
+/* 每一大块之间一条淡细线：设置项之间不再逐条画线。
+   只作用于直接挂在 .settings 下的块标题，快捷键里的小标题不加线。 */
+.settings > .settings-section-title {
+  margin: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-soft);
 }
 
 .key-section {

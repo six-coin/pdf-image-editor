@@ -2,8 +2,6 @@
 
 Split, move and replace images inside a PDF, keeping the original text layer.
 
-[简体中文](zh-CN.md)
-
 ---
 
 ## 1. What it solves
@@ -234,7 +232,7 @@ Global shortcuts are suspended in split mode, so the two key maps can bind the s
 
 Backups older than the retention period (30 days by default, adjustable in Settings) are deleted at the next start. PDFs inside the backup folder cannot be opened: they are snapshots taken before a save, and editing one would only edit a copy.
 
-While saving, a banner at the bottom of the window says "Saving — don't edit the document right now" and the canvas plus shortcuts are locked; it disappears when the write finishes. Large files take a few seconds, and clicks during that window are not treated as edits.
+While saving, the status bar at the bottom of the window (the same one every other message uses) holds "Saving — don't edit the document right now", and the canvas plus shortcuts are locked; it disappears when the write finishes. Large files take a few seconds, and clicks during that window are not treated as edits.
 
 ### Save As
 
@@ -418,7 +416,7 @@ First check whether you are in split mode (global shortcuts are suspended), then
 The WebView2 runtime is missing or too old. Install [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) once and start again.
 
 **Changing the data folder had no effect after a restart**
-Look at the line under the field in Settings: if it still says "Takes effect after restart", the copy has not succeeded yet (missing drive, file in use, no write permission). Type the current folder back or press "Reset" to cancel the change; once the problem is fixed press "Restart now" — closing the window and starting it again works too, but it must really exit: while the old process is alive, a new one quits immediately and nothing happens.
+Look at the line under the field in Settings: if it still says "Takes effect after restart", the copy has not succeeded yet (missing drive, file in use, no write permission). Type the current folder back or press "Reset" to cancel the change; once the problem is fixed press "Restart now" — closing the window and starting it again works too, but it must really exit: while the old process is alive, launching again only brings that window to the front instead of opening a second one.
 
 ## 15. Known limitations
 

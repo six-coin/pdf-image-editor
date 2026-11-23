@@ -46,6 +46,7 @@ if (!result.ok) {
 ```
 
 - 会改后端状态的动作放进 `actions.js`，再在 `main.js` 的 `ACTIONS` 表里挂上 `data-act`。
+- 提示一律用 `toast()`，不要另写横幅或气泡：它落在底部那条统一的状态栏上（最多三条、新的从下面出来、旧的往上挪）。进行中的动作用 `toast(text, true, { sticky: true, busy: true })`，结束调句柄的 `close()`。
 - 只是读数据的调用可以直接在用到它的模块里 `call()`。
 - 拿到快照后交给 `apply(snapshot)`（`render.js`），不要自己改 `state.data`。
 

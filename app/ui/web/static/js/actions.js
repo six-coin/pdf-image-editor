@@ -9,6 +9,9 @@ import { state } from './state.js';
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** 保存期间那条常驻状态；保存结束时由 setSaving(false) 收掉。 */
+let savingToast = null;
+
 /* ---------- 任务 ---------- */
 
 function showBusy(status) {
@@ -144,12 +147,18 @@ async function showWarnings(report) {
   });
 }
 
-/** 保存期间：底部横幅 + 锁住画布与快捷键，避免改动落到正在重建的文档上。 */
+/** 保存期间：状态栏一条常驻提示 + 锁住画布与快捷键，避免改动落到正在重建的文档上。 */
 function setSaving(on) {
   state.view.busy = Boolean(on);
   document.body.classList.toggle('saving', Boolean(on));
-  const banner = $('saveBanner');
-  if (banner) banner.classList.toggle('hidden', !on);
+  if (on) {
+    if (!savingToast) savingToast = toast(T('status.saving'), true, { sticky: true, busy: true });
+    return;
+  }
+  if (savingToast) {
+    savingToast.close();
+    savingToast = null;
+  }
 }
 
 async function commitSave(path) {

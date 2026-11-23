@@ -3,7 +3,7 @@
    界面上看到的永远等于 config 里的内容。 */
 
 import { call, setStrings, T, toast } from './bridge.js';
-import { segmented } from './controls.js';
+import { segmented, selectBox } from './controls.js';
 import { COMMANDS, accelOf, bindings, findConflicts } from './keymap.js';
 import { renderMarkdown } from './markdown.js';
 import { openModal } from './modal.js';
@@ -350,15 +350,12 @@ export async function openSettings() {
       value: code,
       label: languageLabel(code),
     }));
-    body.appendChild(
-      field(
-        'settings.language',
-        segmented(languages, data.language, async (value) => {
-          const snapshot = await writeSettings({ language: value });
-          if (snapshot && snapshot.ok !== false) await reloadLanguage();
-        })
-      )
-    );
+    const languagePicker = selectBox(languages, data.language, async (value) => {
+      const snapshot = await writeSettings({ language: value });
+      if (snapshot && snapshot.ok !== false) await reloadLanguage();
+    });
+    languagePicker.style.width = '100%';
+    body.appendChild(field('settings.language', languagePicker));
 
     body.appendChild(
       field(

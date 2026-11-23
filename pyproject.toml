@@ -1,6 +1,6 @@
 [project]
 name = "pdf-image-editor"
-version = "1.0.0.dev2"
+version = "1.0.0.dev4"
 description = "Split, move and replace images inside a PDF, keeping the original text layer."
 readme = "README.md"
 requires-python = ">=3.11"

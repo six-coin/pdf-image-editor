@@ -468,46 +468,82 @@ kbd {
   margin-right: auto;
 }
 
-/* ---------- 轻提示 ---------- */
-.toast {
+/* ---------- 状态栏 ----------
+   底部居中的圆角黑条，界面上唯一的临时提示出口。容器底边固定、条目往上堆，
+   所以新的一条从下面出来时，已有的会自己上移一格；最多同时三条。 */
+.toast-root {
   position: fixed;
   left: 50%;
   bottom: 28px;
-  z-index: 60;
+  /* 高于弹窗（50）与下拉（45）：提示不能被正在做的事盖住。 */
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   max-width: 70vw;
-  padding: 10px 18px;
+  padding: 9px 18px;
   border-radius: 999px;
   background: var(--toast-bg);
   color: #fff;
   font-size: 13px;
+  line-height: 1.6;
   box-shadow: 0 10px 30px var(--shadow-strong);
-  transform: translateX(-50%);
-  animation: toast-in 0.2s var(--ease);
 }
 
 .toast.error {
   background: var(--toast-error);
 }
 
-.toast.leaving {
+/* 进场：从下方淡入并轻微放大 */
+.toast.is-entering {
+  animation: toast-in 0.2s var(--ease);
+}
+
+/* 退场：往上飘一点同时淡出 */
+.toast.is-leaving {
   animation: toast-out 0.2s ease forwards;
+}
+
+.toast .spinner {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
 }
 
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, 10px) scale(0.96);
+    transform: translateY(10px) scale(0.96);
   }
   to {
     opacity: 1;
-    transform: translate(-50%, 0) scale(1);
+    transform: translateY(0) scale(1);
   }
 }
 
 @keyframes toast-out {
   to {
     opacity: 0;
-    transform: translate(-50%, 8px) scale(0.97);
+    transform: translateY(-8px) scale(0.97);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -550,6 +586,7 @@ kbd {
 
 .select-arrow {
   position: absolute;
+  top: 50%;
   right: 11px;
   width: 12px;
   height: 12px;
@@ -558,11 +595,12 @@ kbd {
   stroke-width: 1.6;
   stroke-linecap: round;
   stroke-linejoin: round;
+  transform: translateY(-50%);
   transition: transform 0.16s var(--ease);
 }
 
 .select.open .select-arrow {
-  transform: rotate(180deg);
+  transform: translateY(-50%) rotate(180deg);
 }
 
 .select-menu {

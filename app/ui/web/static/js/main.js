@@ -3,7 +3,7 @@
 import * as actions from './actions.js';
 import { bridgeReady, call, setStrings, T, toast } from './bridge.js';
 import { bindCanvas, fitWidth, observePages, pageJump, resetZoom, zoomBy } from './canvas.js';
-import { segmented } from './controls.js';
+import { selectBox } from './controls.js';
 import { bindDropZone } from './drop.js';
 import { openExport } from './export.js';
 import { bindGuides } from './guides.js';
@@ -123,10 +123,10 @@ async function runFirstRun() {
   intro.textContent = T('firstrun.text');
   body.appendChild(intro);
 
-  // 与设置页同一个分段选择器：语言就那两三种，下拉框要点开才看得全。
+  // 与设置页同一个自绘下拉框：语言一多，排成一排按钮会把弹窗撑得很长。
   const names = data.language_names || {};
   let picked = data.language;
-  const picker = segmented(
+  const picker = selectBox(
     (data.languages || []).map((code) => ({ value: code, label: names[code] || code })),
     picked,
     (value) => {
@@ -134,6 +134,7 @@ async function runFirstRun() {
       previewLanguage(value);
     }
   );
+  picker.style.width = '100%';
   body.appendChild(picker);
 
   const choice = await openModal({
