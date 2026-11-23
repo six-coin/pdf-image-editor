@@ -418,6 +418,45 @@ export async function openSettings() {
     }
     body.appendChild(field('settings.margins', marginGrid));
 
+    body.appendChild(section('settings.logs'));
+
+    body.appendChild(
+      field(
+        'settings.log_level',
+        segmented(
+          [
+            { value: 'DEBUG', label: T('settings.log_level_debug') },
+            { value: 'INFO', label: T('settings.log_level_info') },
+            { value: 'WARNING', label: T('settings.log_level_warning') },
+            { value: 'ERROR', label: T('settings.log_level_error') },
+          ],
+          data.log_level || 'INFO',
+          (value) => writeSettings({ log_level: value })
+        )
+      )
+    );
+
+    // 开关行与「显示参考线」「八个手柄」同一种版式：左边标题，右边开关。
+    const cleanupRow = document.createElement('div');
+    cleanupRow.className = 'field-row';
+    const cleanupLabel = document.createElement('span');
+    cleanupLabel.className = 'field-label';
+    cleanupLabel.textContent = T('settings.log_cleanup');
+    cleanupRow.append(
+      cleanupLabel,
+      toggle(data.log_cleanup !== false, (value) => writeSettings({ log_cleanup: value }))
+    );
+    body.appendChild(cleanupRow);
+
+    body.appendChild(
+      field(
+        'settings.log_retention_days',
+        numberBox(data.log_retention_days ?? 30, 1, 365, 1, (value) =>
+          writeSettings({ log_retention_days: value })
+        )
+      )
+    );
+
     body.appendChild(section('settings.shortcuts'));
 
     const resetKeys = document.createElement('button');

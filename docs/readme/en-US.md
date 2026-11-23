@@ -339,6 +339,9 @@ When it finishes you are told where the file went and how many images were proce
 | Guides | On / Off | The page-margin lines on the canvas |
 | Eight handles | On / Off | Off leaves only the four corner handles |
 | Margins | 0–300 mm | Left / top / right / bottom |
+| Log level | Debug / Normal / Warnings / Errors | Takes effect at once and keeps writing to the same file |
+| Clean up logs automatically | On / Off | Deletes log files older than the retention period at startup; turn it off to keep them all |
+| Keep logs for (days) | 1–365 | 30 by default; has no effect while the switch above is off |
 | Shortcuts | Two scopes | Click a field then press the combination; "Reset shortcuts" restores keys only |
 
 Shortcuts are normalised through `event.code`, so `Ctrl+Shift+S` and `Ctrl+S` never get confused by Shift changing the character, and the same bindings work on any keyboard layout.
@@ -373,6 +376,7 @@ program directory\
 %TEMP%\six-coin\pdf-image-editor\            scratch files for external editing; anything older than a day is cleaned on start
 ```
 
+- Logs live in `%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\`, named `main_*`, one file per launch, rotating at 5 MB. Only the last 30 days are kept by default; anything older is deleted at startup.
 - `app.json` is written atomically (temporary file + replace), so a crash mid-write never leaves half a file. A hand-edited file that breaks is reported with its file name — it is never silently reset.
 - Unknown keys in the configuration are preserved, which keeps old and new versions compatible.
 - The data folder always ends with the project code: picking `D://Data` gives `D://Data//pdf-image-editor`. On a change the old contents are copied there after a restart: folders are merged, and files already present in the target are never overwritten. If the copy fails nothing is touched and Settings says why — you never end up with a new folder and no settings. The old folder is removed once the switch succeeds.

@@ -201,8 +201,9 @@ app/
 ```
 bootstrap.ensure_cwd()              cwd 钉在程序目录，只此一次
 bootstrap.prepare()                建目录；把数据目录搬迁的结果交给日志
-logging_setup.setup("pdf_image_editor")
-  → EditorApi()                     读配置；配置损坏在这里就抛
+logging_setup.setup("main")        默认级别先开文件，崩溃路径也留得下日志
+  → EditorApi()                     读配置；配置损坏在这里就抛；读完调
+                                    settings.apply_log_settings() 按用户设置重配
   → AssetServer(api, store, WEB_DIR).start()
   → i18n.set_language(config["language"])
   → webview.create_window(..., js_api=api, background_color=主题底色)
@@ -372,7 +373,8 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
   "history": { "can_undo": true, "can_redo": false, "label": "edit.move" },
   "language": "zh-CN", "languages": ["zh-CN", "en-US"],
   "theme": "light", "show_guides": true, "show_inspector": true, "eight_handles": true,
-  "keybindings": {}, "reference": { "left_mm": 10, … }, "undo_limit": 100
+  "keybindings": {}, "reference": { "left_mm": 10, … }, "undo_limit": 100,
+  "log_level": "INFO", "log_cleanup": true, "log_retention_days": 30
 }
 ```
 

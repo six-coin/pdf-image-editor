@@ -62,6 +62,8 @@ class EditorApi:
         # 必须在 load_app() 之前判断：它会把默认配置写到磁盘。
         self.first_run = not paths.APP_CONFIG_PATH.exists()
         self._settings = settings.load_app()
+        # 日志文件在读到设置之前就开了（默认级别），这里补上用户选的那一份。
+        settings.apply_log_settings(self._settings)
         self._reference = settings.load_reference()
         _sweep_temp()
         self._close_confirmed = False
@@ -915,6 +917,9 @@ class EditorApi:
             except AppError as exc:
                 logger.warning("保存设置失败: {}", exc)
                 return {**self._snapshot(), "ok": False, "message": str(exc)}
+            # 只有动了日志三件套才重配日志：其余设置不该顺手把文件重开一遍。
+            if isinstance(patch, dict) and any(str(key).startswith("log_") for key in patch):
+                settings.apply_log_settings(self._settings)
             i18n.set_language(self._settings["language"])
             self._retitle()
             return self._snapshot()
@@ -1028,6 +1033,7 @@ class EditorApi:
             except AppError as exc:
                 logger.warning("重置设置失败: {}", exc)
                 return {**self._snapshot(), "ok": False, "message": str(exc)}
+            settings.apply_log_settings(self._settings)
             i18n.set_language(self._settings["language"])
             self._retitle()
             return self._snapshot()
@@ -1127,6 +1133,9 @@ class EditorApi:
             "keybindings": dict(self._settings.get("keybindings") or {}),
             "reference": dict(self._reference),
             "undo_limit": int(self._settings.get("undo_limit", 100)),
+            "log_level": str(self._settings.get("log_level", "INFO")),
+            "log_cleanup": bool(self._settings.get("log_cleanup", True)),
+            "log_retention_days": int(self._settings.get("log_retention_days", 30)),
         }
 
     def _new_task(self, label: str) -> str:

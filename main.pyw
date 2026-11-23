@@ -15,7 +15,7 @@ def _run() -> None:
     from app import bootstrap
     from app.ui.web.app import main
 
-    bootstrap.guard(main, "pdf_image_editor")
+    bootstrap.guard(main, "main")
 
 
 if __name__ == "__main__":

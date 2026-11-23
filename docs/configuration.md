@@ -32,6 +32,9 @@
         "global": { "save": "Ctrl+S" },
         "split": { "split_keep": "1" }
     },
+    "log_level": "INFO",
+    "log_cleanup": true,
+    "log_retention_days": 30,
     "reference": {
         "left_mm": 10.0,
         "top_mm": 10.0,
@@ -52,6 +55,9 @@
 | `show_inspector` | 布尔 | `true` | 右侧属性栏是否展开 |
 | `eight_handles` | 布尔 | `true` | 选中图片时显示八个手柄（四角 + 四边中点）；关掉只留四角 |
 | `keybindings` | 对象 | `{}` | 见 1.1 |
+| `log_level` | 字符串 | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`，认不出来的值回退 `INFO`。改完立刻生效，日志仍写在同一个文件里 |
+| `log_cleanup` | 布尔 | `true` | 为真时在启动与保存这三项设置时清空过期日志，为假时一条都不删 |
+| `log_retention_days` | 整数 | `30` | 1–365，越界夹取，非数字回退 30；`log_cleanup` 为假时不起作用 |
 | `reference.left_mm` 等 | 数字 | `10 / 10 / 50 / 10` | 0–300，越界夹取；参考线四边边距（毫米） |
 
 说明：
@@ -115,15 +121,19 @@
 
 ## 5. 日志
 
-`%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\pdf_image_editor_*.log`，每次启动新建一个，文件名带启动时间。
+`%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\main_*.log`，每次启动新建一个，文件名带启动时间。
 
-- 单文件超过 5 MB 轮转，保留 14 天。
+- 级别取 `log_level`，`DEBUG` / `INFO` / `WARNING` / `ERROR`。
+- 单文件超过 5 MB 轮转。
+- 清空：`log_cleanup` 打开时，启动与保存这三项设置时删掉超过 `log_retention_days` 天的 `*.log`。
 - 格式：`[级别] [YYYY-MM-DD HH:MM:SS] 消息`。
 - `diagnose=False`：不把局部变量写进日志，避免把路径、密钥一类内容带出去。
 - 标准库 `logging`（`http.server`、PyMuPDF 等）的输出被接到 loguru，`pythonw` 下不会丢。
 - 未捕获异常由 `sys.excepthook` / `threading.excepthook` 记录后弹原生窗口，窗口里给出错误、时间与日志文件路径。
 
 日志路径永远是绝对路径，由 `app/paths.py::LOG_DIR` 决定。
+
+「自动清空」不走 loguru 的 `retention`：它只在轮转那一刻触发，日志目录一直没涨到 5 MB 就永远不清。改成启动时扫一遍 `logs\*.log`，按修改时间删；另一个进程正开着的文件删不掉，跳过，下次启动再试。
 
 ## 6. 运行期目录
 

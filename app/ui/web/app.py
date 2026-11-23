@@ -64,7 +64,8 @@ def main() -> None:
 
 
 def _run(warnings: list[str]) -> EditorApi | None:
-    logging_setup.setup("pdf_image_editor")
+    # 日志文件名跟入口名走：main.pyw 写 main_*.log。
+    logging_setup.setup("main")
 
     try:
         api = EditorApi()

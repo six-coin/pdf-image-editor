@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from app import i18n, paths
+from app import i18n, logging_setup, paths
 from app.errors import ConfigError
 from app.system import theme as theme_tool
 
@@ -36,6 +36,10 @@ DEFAULT_APP: dict[str, Any] = {
     "eight_handles": True,
     # 空表示用前端的默认键位表；用户改过才会写进来。
     "keybindings": {},
+    # 日志三件套：级别、是否自动清空、保留天数。
+    "log_level": logging_setup.DEFAULT_LEVEL,
+    "log_cleanup": True,
+    "log_retention_days": logging_setup.DEFAULT_RETENTION_DAYS,
     # 参考线边距。放在这里而不是单独一个文件：一处配置一条读写路径，少一处能不同步。
     "reference": dict(DEFAULT_REFERENCE),
 }
@@ -160,6 +164,16 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     merged["show_guides"] = _boolean(raw.get("show_guides"), DEFAULT_APP["show_guides"])
     merged["show_inspector"] = _boolean(raw.get("show_inspector"), DEFAULT_APP["show_inspector"])
     merged["eight_handles"] = _boolean(raw.get("eight_handles"), DEFAULT_APP["eight_handles"])
+    merged["log_level"] = _choice(
+        raw.get("log_level"), logging_setup.DEFAULT_LEVEL, logging_setup.LOG_LEVELS
+    )
+    merged["log_cleanup"] = _boolean(raw.get("log_cleanup"), DEFAULT_APP["log_cleanup"])
+    merged["log_retention_days"] = _integer(
+        raw.get("log_retention_days"),
+        DEFAULT_APP["log_retention_days"],
+        logging_setup.MIN_RETENTION_DAYS,
+        logging_setup.MAX_RETENTION_DAYS,
+    )
     merged["keybindings"] = _bindings(raw.get("keybindings"))
     reference = raw.get("reference")
     merged["reference"] = _normalize_reference(reference if isinstance(reference, dict) else {})
@@ -231,6 +245,19 @@ def load_app() -> dict[str, Any]:
 
 def save_app(config: dict[str, Any]) -> None:
     _write_json(paths.APP_CONFIG_PATH, _normalize_app(config))
+
+
+def apply_log_settings(config: dict[str, Any]) -> None:
+    """把日志三件套交给 ``logging_setup``。
+
+    启动读到设置时调一次，设置界面改完再调一次——所以改级别不用重启，写的是
+    同一个日志文件。
+    """
+    logging_setup.configure(
+        level=str(config.get("log_level", logging_setup.DEFAULT_LEVEL)),
+        cleanup=bool(config.get("log_cleanup", True)),
+        retention_days=int(config.get("log_retention_days", logging_setup.DEFAULT_RETENTION_DAYS)),
+    )
 
 
 def load_reference() -> dict[str, Any]:
