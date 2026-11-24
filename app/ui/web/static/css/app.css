@@ -9,6 +9,9 @@
   /* 顶栏高度取「至少 48px，放不下就长高」，窗口拉窄时按钮换行而不是被裁掉 */
   grid-template-rows: minmax(48px, auto) minmax(0, 1fr);
   height: 100vh;
+  /* 属性栏收放时整块面板滑到窗口外，不能让它在右侧撑出滚动条 */
+  overflow: hidden;
+  transition: grid-template-columns 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .app.inspector-hidden {
@@ -441,12 +444,20 @@ body.saving {
   grid-row: 2;
   display: flex;
   flex-direction: column;
+  /* 宽度不跟着网格轨道收缩：收放时面板整体滑出去，内容不会先被挤成一团 */
+  width: 280px;
+  justify-self: end;
+  min-width: 0;
   min-height: 0;
   padding: 18px 16px;
   background: var(--panel);
   border-left: 1px solid var(--border);
   /* 内容自己滚，底部的页码栏要固定住 */
   overflow: hidden;
+  transition:
+    transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.16s ease,
+    visibility 0s linear 0s;
 }
 
 .inspector-body {
@@ -504,7 +515,14 @@ body.saving {
 }
 
 .app.inspector-hidden .inspector {
-  display: none;
+  transform: translateX(100%);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.16s ease,
+    visibility 0s linear 0.22s;
 }
 
 .inspector h2 {
@@ -1153,6 +1171,11 @@ select option {
   font-family: inherit;
   font-size: 12.5px;
   text-align: center;
+}
+
+/* 行高要输两位小数，48px 会把「1.15」挤成省略号 */
+.float-bar .num.line-height {
+  width: 82px;
 }
 
 .float-bar .num:focus {

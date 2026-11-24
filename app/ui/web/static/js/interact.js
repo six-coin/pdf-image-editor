@@ -19,7 +19,7 @@ import { scheduleRefresh } from './sync.js';
 import { isSplitActive } from './split.js';
 import { createBand } from './highlight.js';
 import { hideSnap, showSnap, snapOffset } from './guides.js';
-import { MODE_HIGHLIGHT, MODE_TEXT, currentMode } from './modes.js';
+import { MODE_HIGHLIGHT, MODE_TEXT, currentMode, setMode } from './modes.js';
 import { beginEdit, createTextAt, isEditing } from './text.js';
 
 const THRESHOLD = 3;
@@ -308,6 +308,9 @@ function onDoubleClick(event) {
   const obj = state.data.objects.find((item) => item.id === node.dataset.id);
   if (obj && obj.kind === 'text') {
     event.preventDefault();
+    // 双击文本框就是「开始改字」：顺手切到文本工具，左栏状态和接下来的
+    // 点击行为才和正在做的事一致（选择工具下点空白会去拖选框）。
+    setMode(MODE_TEXT);
     beginEdit(obj);
   }
 }
@@ -581,7 +584,12 @@ function moveItems(point) {
     if (!rect) continue;
 
     const maxLeft = rect.left + Math.max(0, rect.width - next.width);
-    const maxTop = rect.top + Math.max(0, rect.height - next.height);
+    // 文本框的高度由内容决定，可以高过页面：只把左上角夹在页内，底部允许溢出。
+    // 图片必须整个留在页内，否则会丢内容。
+    const maxTop =
+      item.obj.kind === 'text'
+        ? rect.top + rect.height
+        : rect.top + Math.max(0, rect.height - next.height);
     next.left = Math.min(Math.max(next.left, rect.left), maxLeft);
     next.top = Math.min(Math.max(next.top, rect.top), maxTop);
 
@@ -978,7 +986,9 @@ export function nudge(dx, dy) {
     // 和拖动一样夹在页内：后端只按边裁，微调出界会把长宽比裁坏。
     const info = state.data.pages.find((p) => p.index === obj.page);
     const x = info ? Math.min(Math.max(obj.x + dx, 0), Math.max(info.w - obj.w, 0)) : obj.x + dx;
-    const y = info ? Math.min(Math.max(obj.y + dy, 0), Math.max(info.h - obj.h, 0)) : obj.y + dy;
+    // 与拖动一致：文本框只夹左上角，底部可以超出页面；图片整个夹在页内。
+    const maxY = info ? (obj.kind === 'text' ? info.h : Math.max(info.h - obj.h, 0)) : Infinity;
+    const y = info ? Math.min(Math.max(obj.y + dy, 0), maxY) : obj.y + dy;
     payload.push({ id, page: obj.page, x, y, w: obj.w, h: obj.h });
   }
   if (!payload.length) return;

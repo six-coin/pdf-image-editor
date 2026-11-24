@@ -57,6 +57,33 @@ def test_trailing_newline_keeps_an_empty_line():
     assert lines[1].runs == ()
 
 
+def test_closing_punctuation_never_starts_a_line():
+    """「，」放不下时把前一个字一起带到下一行，而不是让标点起行。"""
+    width = 4 * 14 * PX
+    lines, _height = layout([Run("甲乙丙丁，戊")], width, 14, 1.2)
+    assert ["".join(run.text for run in line.runs) for line in lines] == ["甲乙丙", "丁，戊"]
+
+
+def test_opening_punctuation_never_ends_a_line():
+    """「（」不能孤零零留在行尾，断行点要退到它前面。"""
+    width = 3 * 14 * PX
+    lines, _height = layout([Run("甲乙（丙丁")], width, 14, 1.2)
+    assert ["".join(run.text for run in line.runs) for line in lines] == ["甲乙", "（丙丁"]
+
+
+def test_closing_quote_stays_with_the_previous_character():
+    """收尾引号不能起行：它和前面的字一起走，哪怕上一行会因此短一截。"""
+    width = 11 * 14 * PX
+    lines, _height = layout([Run("中文标点测试：“引号”、书")], width, 14, 1.2)
+    assert ["".join(run.text for run in line.runs) for line in lines][0] == "中文标点测试：“引"
+
+
+def test_wrapped_line_does_not_start_with_a_space():
+    lines, _height = layout([Run("alpha beta gamma delta epsilon")], 80.0, 14, 1.2)
+    for line in lines:
+        assert not "".join(run.text for run in line.runs).startswith(" ")
+
+
 def test_long_word_is_hard_split():
     lines, _height = layout([Run("abcdefghijklmnop")], 30.0, 14, 1.2)
     assert len(lines) > 1

@@ -11,7 +11,7 @@
 import { call, T } from './bridge.js';
 import { selectBox } from './controls.js';
 import { mountFloat, placeFloat } from './floatbar.js';
-import { apply, objectEl, pageEl } from './render.js';
+import { apply, objectEl, pageEl, updateLiveTextSize } from './render.js';
 import { pxPerPt, state } from './state.js';
 
 const ZWSP = '\u200b';
@@ -180,6 +180,7 @@ export async function beginEdit(obj) {
     editor,
     page: obj.page,
     baseFont,
+    height: obj.h,
     style: { size: obj.size, color: obj.color, line_height: obj.line_height },
   };
   // 「当前默认值」跟着这个框走：下一个新建的文本框就用这一套。
@@ -196,6 +197,7 @@ export async function beginEdit(obj) {
   caretToEnd(editor);
   syncTextBar();
   editor.addEventListener('keydown', onEditorKey);
+  editor.addEventListener('input', scheduleEditorHeight);
 }
 
 function applyEditorMetrics() {
@@ -205,6 +207,34 @@ function applyEditorMetrics() {
   editor.style.fontSize = `${style.size * 0.75 * k}px`;
   editor.style.lineHeight = `${style.line_height * style.size * 0.75 * k}px`;
   editor.style.color = paletteHex('text', style.color);
+  syncEditorHeight();
+}
+
+/**
+ * 让框的高度跟着编辑内容走。
+ *
+ * 编辑层是 contenteditable，浏览器自己排；框的高度却还停在上一次提交时的值，
+ * 多敲两行字就溢出到框外。这里临时把编辑层改成高度自适应，量一次内容高度，
+ * 再写回对象节点。行尾回车在浏览器里不占行盒，但后端把它算作一行，这里补上，
+ * 编辑时和保存后的高度才一致。
+ */
+function syncEditorHeight() {
+  if (!editing) return;
+  const { editor, node, style } = editing;
+  const k = pxPerPt();
+  const lineHeight = style.line_height * style.size * 0.75 * k;
+  const previousHeight = editor.style.height;
+  const previousBottom = editor.style.bottom;
+  editor.style.height = 'auto';
+  editor.style.bottom = 'auto';
+  let content = editor.scrollHeight;
+  editor.style.height = previousHeight;
+  editor.style.bottom = previousBottom;
+  if (editor.textContent.endsWith('\n')) content += lineHeight;
+  content = Math.max(lineHeight, content);
+  node.style.height = `${content}px`;
+  editing.height = content / k;
+  updateLiveTextSize(editing.id, editing.obj.w, editing.height);
   placeBar();
 }
 
@@ -237,6 +267,18 @@ function insertPlainText(text) {
   range.collapse(true);
   selection.removeAllRanges();
   selection.addRange(range);
+  scheduleEditorHeight();
+}
+
+let heightFrame = 0;
+
+/** 输入很密，按帧合并一次高度测量，别每个字符都强制回流。 */
+function scheduleEditorHeight() {
+  if (heightFrame) return;
+  heightFrame = window.requestAnimationFrame(() => {
+    heightFrame = 0;
+    syncEditorHeight();
+  });
 }
 
 /** 把 DOM 序列化成「文字 + 字体」的段。零宽占位符要剔掉。 */
@@ -303,6 +345,20 @@ function selectedText() {
   return obj && obj.kind === 'text' ? obj : null;
 }
 
+/** 光标/选区落在哪个字体段里。工具栏显示它，而不是永远显示第一段的字体。 */
+function currentFont() {
+  if (!editing) return defaults().font;
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount) return editing.baseFont;
+  const range = selection.getRangeAt(0);
+  if (!editing.editor.contains(range.commonAncestorContainer)) return editing.baseFont;
+  let node = range.startContainer;
+  if (node.nodeType === 3) node = node.parentElement;
+  const hit = node && node.closest ? node.closest('[data-font]') : null;
+  if (hit && editing.editor.contains(hit)) return hit.dataset.font;
+  return editing.baseFont;
+}
+
 /** 工具栏现在该跟着谁：编辑中的框优先，否则是唯一选中的文本框。 */
 function barTarget() {
   if (editing) {
@@ -310,7 +366,7 @@ function barTarget() {
       id: editing.id,
       obj: editing.obj,
       live: true,
-      font: editing.baseFont,
+      font: currentFont(),
       style: editing.style,
     };
   }
@@ -334,8 +390,10 @@ function hideBar() {
 
 function placeBar() {
   if (!bar || !bar.target) return;
-  // 位置按整个窗口算：挂在页面上时，元素靠近页面顶端就会把工具栏顶到窗口外。
-  placeFloat(bar.el, bar.target.obj);
+  // 编辑中框的高度是随内容实时变的，不能再用快照里的旧 h。
+  const obj = bar.target.obj;
+  const height = bar.target.live && editing ? editing.height : obj.h;
+  placeFloat(bar.el, { page: obj.page, x: obj.x, y: obj.y, w: obj.w, h: height });
 }
 
 function tapButton(label, title, onClick) {
@@ -387,22 +445,34 @@ function buildBar(target) {
     value: font.key,
     label: T(`font.${font.key}`),
   }));
+  // 工具条会跨多次快照复用；回调里不能再用 buildBar 时捕获的旧对象，
+  // 否则改完文字再改字体/字号，会把旧内容一起写回去。
+  const liveTarget = () => (bar && bar.id === target.id ? bar.target : target);
   const picker = selectBox(fonts, target.font, (value) => {
-    if (target.live) applyFont(value);
-    else applyFontToBox(target.obj, value);
+    const current = liveTarget();
+    if (!current.live) {
+      applyFontToBox(current.obj, value);
+      return;
+    }
+    // 选区不在编辑框里时 applyFont 会拒绝，下拉框要退回到光标真实的字体，
+    // 否则它会停在一个其实没生效的选项上。
+    if (!applyFont(value) && bar && bar.picker) bar.picker.setValue(currentFont());
   });
   picker.addEventListener('mousedown', (event) => event.stopPropagation());
   el.appendChild(picker);
 
   // 字号：一点一点调，整数。
-  const sizeInput = numberInput(target.style.size, MIN_SIZE, MAX_SIZE, 1, (value) =>
-    setSize(target, value === null ? target.style.size : value)
-  );
+  const sizeInput = numberInput(target.style.size, MIN_SIZE, MAX_SIZE, 1, (value) => {
+    const current = liveTarget();
+    return setSize(current, value === null ? current.style.size : value);
+  });
   const minus = tapButton('−', T('text.size'), () => {
-    sizeInput.value = String(setSize(target, target.style.size - 1));
+    const current = liveTarget();
+    sizeInput.value = String(setSize(current, current.style.size - 1));
   });
   const plus = tapButton('+', T('text.size'), () => {
-    sizeInput.value = String(setSize(target, target.style.size + 1));
+    const current = liveTarget();
+    sizeInput.value = String(setSize(current, current.style.size + 1));
   });
   const sizeBox = document.createElement('div');
   sizeBox.style.display = 'flex';
@@ -417,9 +487,13 @@ function buildBar(target) {
     MIN_LINE_HEIGHT,
     MAX_LINE_HEIGHT,
     0.05,
-    (value) => setLineHeight(target, value === null ? target.style.line_height : value)
+    (value) => {
+      const current = liveTarget();
+      return setLineHeight(current, value === null ? current.style.line_height : value);
+    }
   );
   lineInput.title = T('text.line_height');
+  lineInput.classList.add('line-height');
   el.appendChild(lineInput);
 
   const sep = document.createElement('span');
@@ -434,12 +508,12 @@ function buildBar(target) {
     swatch.dataset.color = color.key;
     swatch.title = T(`color.${color.key}`);
     swatch.addEventListener('mousedown', (event) => event.preventDefault());
-    swatch.addEventListener('click', () => setColor(target, color.key));
+    swatch.addEventListener('click', () => setColor(liveTarget(), color.key));
     el.appendChild(swatch);
   }
 
   mountFloat(el);
-  bar = { el, id: target.id, live: target.live, target };
+  bar = { el, id: target.id, live: target.live, target, picker, sizeInput, lineInput };
   placeBar();
 }
 
@@ -451,6 +525,17 @@ export function syncTextBar() {
   }
   if (bar && bar.id === target.id && bar.live === target.live) {
     bar.target = target;
+    if (bar.picker && bar.picker.dataset.value !== target.font) bar.picker.setValue(target.font);
+    // 撤销/重做或外部改动会换掉样式；输入框没在编辑时跟着回填，别停在旧值上。
+    if (bar.sizeInput && document.activeElement !== bar.sizeInput) {
+      bar.sizeInput.value = String(target.style.size);
+    }
+    if (bar.lineInput && document.activeElement !== bar.lineInput) {
+      bar.lineInput.value = String(Number(target.style.line_height.toFixed(2)));
+    }
+    bar.el.querySelectorAll('.swatch').forEach((node) => {
+      node.classList.toggle('active', node.dataset.color === target.style.color);
+    });
     placeBar();
     return;
   }
@@ -511,13 +596,13 @@ async function applyFontToBox(obj, key) {
   if (snapshot) apply(snapshot);
 }
 
-/** 给选区（或光标后面要敲的字）换字体。 */
+/** 给选区（或光标后面要敲的字）换字体。返回是否真的改了。 */
 function applyFont(key) {
-  if (!editing) return;
+  if (!editing) return false;
   const selection = window.getSelection();
-  if (!selection || !selection.rangeCount) return;
+  if (!selection || !selection.rangeCount) return false;
   const range = selection.getRangeAt(0);
-  if (!editing.editor.contains(range.commonAncestorContainer)) return;
+  if (!editing.editor.contains(range.commonAncestorContainer)) return false;
 
   if (range.collapsed) {
     // 光标塌着：塞一个零宽占位，后面敲的字就继承这个字体。
@@ -528,7 +613,7 @@ function applyFont(key) {
     next.collapse(true);
     selection.removeAllRanges();
     selection.addRange(next);
-    return;
+    return true;
   }
 
   const fragment = range.extractContents();
@@ -536,12 +621,19 @@ function applyFont(key) {
   wrapper.dataset.font = key;
   wrapper.style.fontFamily = cssFont(key);
   wrapper.appendChild(fragment);
+  // 选区里原有的 run 还带着旧字体的 data-font 与 font-family。只包一层新
+  // span 不够：serialize 取的是最内层的 data-font，里面的旧值会把新字体盖掉。
+  wrapper.querySelectorAll('span').forEach((node) => {
+    node.dataset.font = key;
+    node.style.fontFamily = cssFont(key);
+  });
   range.insertNode(wrapper);
 
   const next = document.createRange();
   next.selectNodeContents(wrapper);
   selection.removeAllRanges();
   selection.addRange(next);
+  return true;
 }
 
 /* ---------- 对外动作 ---------- */
@@ -596,6 +688,17 @@ export function bindText() {
 
   document.addEventListener('selection:changed', syncTextBar);
 
+  // 光标在混排文字里移动时，工具栏的字体要跟着走，不能一直停在第一段的字体上。
+  document.addEventListener('selectionchange', () => {
+    if (!editing || !bar || !bar.picker) return;
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (!editing.editor.contains(range.commonAncestorContainer)) return;
+    const font = currentFont();
+    if (bar.picker.dataset.value !== font) bar.picker.setValue(font);
+  });
+
   // 滚动、缩放窗口时工具栏要跟着对象走：它是 fixed 的，不会自己动。
   const viewport = document.getElementById('viewport');
   if (viewport) viewport.addEventListener('scroll', placeBar, { passive: true });
@@ -609,6 +712,9 @@ export function bindText() {
         const editor = node.querySelector('.text-editor');
         if (editor) editing.editor = editor;
       }
+      // 缩放会同时改页面和对象尺寸，编辑层的字号与行高必须跟着重算，
+      // 否则字还是旧的 px、框已经是新的 pt，看着就错位了。
+      applyEditorMetrics();
     }
     placeBar();
   });

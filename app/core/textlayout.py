@@ -7,8 +7,9 @@
 1px = 0.75pt），行高是字号的倍数。
 
 换行规则与浏览器在 ``white-space: pre-wrap`` + ``font-kerning: none`` 下的行为
-同构：中文逐字断、西文按词断、超长词硬断、空格不吃到行尾。两边都用同一份
-字体的 advance 宽度，所以断行点一致。
+同构：中文逐字断、西文按词断、超长词硬断、空格不吃到行尾；中文禁则也一致——
+收尾标点不单独起行，开头标点不留在行尾。两边都用同一份字体的 advance 宽度，
+所以断行点一致。
 """
 
 from __future__ import annotations
@@ -33,6 +34,14 @@ _BREAK_RANGES = (
     (0xFF00, 0xFF60),
     (0xFFE0, 0xFFE6),
 )
+
+# 不能出现在行首的收尾标点。浏览器按中文禁则把它们留在上一行：如果放不下，
+# 会把前一个字一起带下来，而不是让标点单独起一行。后端必须同构，否则编辑时
+# 看到的是「，」在行首、保存后却跑到上一行末尾。
+_NO_START = frozenset("，。、；：！？）》」』】〕.,!?;:%)]}»”’")
+
+# 不能出现在行尾的开头标点：断行时把它们推到下一行，别让「（」孤零零挂在行尾。
+_NO_END = frozenset("（《「『【〔([{«“‘")
 
 
 @dataclass(frozen=True)
@@ -125,6 +134,15 @@ def _merge(tokens: list[tuple[str, str]], size_pt: float) -> tuple[LaidRun, ...]
     return tuple(laid)
 
 
+def _can_break(previous: str, following: str) -> bool:
+    """两个 token 之间能不能断行（中文禁则的简化版）。"""
+    if following and following[0] in _NO_START:
+        return False
+    if previous and previous[-1] in _NO_END:
+        return False
+    return True
+
+
 def layout(
     runs: list[Run],
     width_pt: float,
@@ -147,13 +165,45 @@ def layout(
         lines.append([])
         current = 0.0
 
+    skip_spaces = False
     for text, key in _tokens(runs):
         if text == "\n":
             flush()
+            skip_spaces = False
             continue
+        # 自动换行后的前导空格不占位：浏览器把空格留在上一行行尾（悬挂），
+        # 下一行直接从第一个非空字符开始。显式回车后的空格是用户敲的，要保留。
+        if skip_spaces and text == " " and not lines[-1]:
+            continue
+        skip_spaces = False
         width = _width(text, key, size_pt)
         if current + width > limit and lines[-1]:
+            # 浏览器不是「放不下就立刻换行」，而是退回到本行最后一个允许的
+            # 断点：收尾标点不能起行、开头标点不能收尾，所以「号”」这种
+            # 小簇会整体挪到下一行。后端要按同一套断点回退，否则保存后的
+            # 换行和编辑时看到的不是一回事。
+            line = lines[-1]
+            cut = len(line)
+            # 先看「当前这个 token 直接换到下一行」行不行；不行才往回找断点。
+            if line and not _can_break(line[-1][0], text):
+                for index in range(len(line) - 1, 0, -1):
+                    if _can_break(line[index - 1][0], line[index][0]):
+                        cut = index
+                        break
+            carry = line[cut:]
+            if carry:
+                del line[cut:]
+                current -= sum(_width(item[0], item[1], size_pt) for item in carry)
             flush()
+            # 断点落在空格上时，空格属于上一行行尾，不带到下一行。
+            while carry and carry[0][0] == " ":
+                carry.pop(0)
+            for moved in carry:
+                lines[-1].append(moved)
+                current += _width(moved[0], moved[1], size_pt)
+            skip_spaces = True
+            if text == " ":
+                continue
         if width > limit:
             for piece in _hard_split(text, key, size_pt, limit):
                 piece_width = _width(piece, key, size_pt)

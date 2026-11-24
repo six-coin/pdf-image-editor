@@ -279,8 +279,10 @@ Switch the left rail to Text (the T icon) and click on the page: a text box land
 
 ### Editing
 
-- **Click** to select (and drag); **double-click** to edit — the caret is already in the box.
+- **Click** to select (and drag); **double-click** to edit — the caret is already in the box, and the left rail switches to the Text tool automatically.
 - `Enter` starts a new line; `Esc` or clicking outside ends editing and saves.
+- While editing, the box grows or shrinks with its content; a trailing Enter also counts as a line, matching the saved height.
+- Wrapping matches the saved result: Chinese breaks per character, closing punctuation (`, . ; : ! ?` and their fullwidth forms) never starts a line, opening punctuation (`( [ { «` and their fullwidth forms) never ends one; English breaks per word, overlong words are split.
 - Empty the box and click away and it is deleted — no invisible leftovers.
 - The size is always an integer (px); use `−` / `+` on the toolbar or type it in.
 - **Line height** is a multiple of the font size: 1.15 by default, adjustable between 0.8 and 3.
@@ -296,11 +298,13 @@ The toolbar is pinned to the top-left of the box and appears as soon as it is se
 | Line height | 0.8–3×, 1.15 by default |
 | Color | Blue (default) / red / green, taken from Edge's annotation palette |
 
-**Mixed fonts are allowed**: select part of the text and pick a font — only that run changes. One box can hold a SimSun paragraph followed by a FangSong one.
+**Mixed fonts are allowed**: select part of the text and pick a font — only that run changes. One box can hold a SimSun paragraph followed by a FangSong one. The font name on the toolbar follows the run under the caret instead of sticking to the first run.
 
 ### Width
 
 A text box has **two handles, left and right**, and they change the width only — the text is re-wrapped, never scaled. The height always follows the number of lines and cannot be dragged. The default width is 4 cm and can be changed in Settings.
+
+If the content is taller than the page, the box keeps extending downward instead of being clipped; dragging only clamps the top-left corner, so the bottom may overflow.
 
 ### The "current default"
 
@@ -569,6 +573,7 @@ Look at the line under the field in Settings: if it still says "Takes effect aft
 - **Only four pages are preloaded**: distant pages render when you get near them, so dragging the scrollbar quickly shows grey placeholders for a moment.
 - **No text boxes or highlights on rotated pages**: the page coordinate system no longer matches the canvas — the same reason rotated images are not editable.
 - **Text does not re-wrap while you drag the width**: the box re-wraps on release, so the text looks clipped for a moment mid-drag.
+- **Chinese text in Times New Roman uses a system fallback font**: Times has no Chinese glyphs, so such mixed runs may differ by a character or two after saving; the five Chinese fonts (YaHei / SimSun / FangSong / KaiTi / SimHei) match the saved result line for line.
 - **Text boxes and highlights are only editable where the marker is understood**: they are page content, so other readers show, select and print them, but they cannot be edited there like annotations.
 - **Overlays always sit above images on the same page**: they do not take part in image z-order (bring to front / send to back apply to images only).
 - **Merging flattens several layers into one**: the result takes the topmost selected layer; an unselected image that sat between the selected ones cannot keep its old relative position.

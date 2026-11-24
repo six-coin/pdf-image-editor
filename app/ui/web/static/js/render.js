@@ -380,6 +380,15 @@ export function selectionBounds() {
   return boundsOf(objects);
 }
 
+/** 编辑中的文本框高度变了：只改属性栏的尺寸一行，不重建整个面板。 */
+export function updateLiveTextSize(id, w, h) {
+  if (!state.data) return;
+  const selection = state.data.selection || [];
+  if (selection.length !== 1 || selection[0] !== id) return;
+  const cell = document.querySelector('#inspectorBody dd[data-live="size"]');
+  if (cell) cell.textContent = `${w.toFixed(1)} × ${h.toFixed(1)}`;
+}
+
 function boundsOf(objects) {
   let x0 = Infinity;
   let y0 = Infinity;
@@ -493,6 +502,9 @@ function renderInspector() {
       dd.textContent = value;
       table.append(dt, dd);
     }
+    // 文本框编辑时高度随内容变，属性栏的尺寸要能跟着改；其它行不需要。
+    const sizeCell = table.querySelectorAll('dd')[2];
+    if (sizeCell) sizeCell.dataset.live = 'size';
     body.appendChild(table);
     body.appendChild(actionRow(['delete']));
     return;
