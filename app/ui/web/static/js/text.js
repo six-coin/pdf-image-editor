@@ -11,7 +11,7 @@
 import { call, T } from './bridge.js';
 import { selectBox } from './controls.js';
 import { mountFloat, placeFloat } from './floatbar.js';
-import { apply, objectEl, pageEl, updateLiveTextSize } from './render.js';
+import { apply, applySelection, objectEl, pageEl, updateLiveTextSize } from './render.js';
 import { pxPerPt, state } from './state.js';
 
 const ZWSP = '\u200b';
@@ -47,7 +47,7 @@ function defaults() {
     size: data.text_size_px || 14,
     color: data.text_color || 'blue',
     line_height: data.text_line_height || 1.15,
-    width: ((data.text_width_mm || 40) * 72) / 25.4,
+    width: ((data.text_width_mm || 45) * 72) / 25.4,
   };
 }
 
@@ -323,6 +323,9 @@ export async function commitEdit() {
     current.style.color === current.obj.color &&
     current.style.line_height === current.obj.line_height;
   if (runs.length && sameRuns && sameStyle) {
+    // 内容没变，但编辑层已经拆了：必须把普通文本节点装回去，否则页面会停在
+    // 「看着还在编辑、其实 editing 已经是 null」的状态，缩放时字号也不跟着变。
+    restoreTextNode(current);
     syncTextBar();
     return;
   }
@@ -333,6 +336,13 @@ export async function commitEdit() {
     line_height: current.style.line_height,
   });
   if (snapshot) apply(snapshot);
+  else restoreTextNode(current);
+}
+
+/** 把编辑层换回按模型渲染的普通文本框。 */
+function restoreTextNode(current) {
+  if (!current.node.isConnected) return;
+  current.node.replaceWith(textNode(current.obj, pxPerPt()));
 }
 
 /* ---------- 浮动工具栏 ---------- */
@@ -642,6 +652,7 @@ export function resetTextDefaults() {
   currentDefault = null;
 }
 
+/** 新建一个文本框，落点由调用方给（文本模式下单击空白）。 */
 export async function createTextAt(pageIndex, x, y) {
   await commitEdit();
   const style = currentDefault || defaults();
@@ -654,19 +665,6 @@ export async function createTextAt(pageIndex, x, y) {
   if (obj) beginEdit(obj);
 }
 
-/** 新建一个文本框，落点用最后一次鼠标位置（不在页面上就取当前页左上角）。 */
-export async function createTextAtPointer() {
-  const pointer = state.view.pointer;
-  if (pointer && typeof pointer.page === 'number') {
-    await createTextAt(pointer.page, pointer.x, pointer.y);
-    return;
-  }
-  const { currentPage } = await import('./canvas.js');
-  const page = currentPage();
-  const info = state.data && state.data.pages[page];
-  await createTextAt(page, 40, info ? Math.min(60, info.h / 4) : 40);
-}
-
 export function bindText() {
   // 点了框外面就提交：比监听 blur 可靠——点工具条、拖滚动条都不该结束编辑。
   document.addEventListener(
@@ -675,13 +673,22 @@ export function bindText() {
       if (!editing) return;
       if (editing.node.contains(event.target)) return;
       if (bar && bar.el.contains(event.target)) return;
-      // 这一下只负责结束编辑。拦的只是画布上的那一下：否则「文本模式点空白建新框」
-      // 会跟着触发，点一下空白就多出一个空文本框。左栏、顶栏的按钮不在画布里，
-      // 不能被拦——否则编辑时点模式按钮会连切换都切不了。
-      if (event.target.closest && event.target.closest('#viewport')) {
+      // 属性栏里的删除等动作要依赖当前选择，不能先把选择清掉。
+      if (event.target.closest && event.target.closest('#inspector')) {
+        commitEdit();
+        return;
+      }
+      const inViewport = event.target.closest && event.target.closest('#viewport');
+      if (inViewport) {
+        // 拦的只是画布上的那一下：否则「文本模式点空白建新框」会跟着触发，
+        // 点一下空白就多出一个空文本框。左栏、顶栏的按钮不在画布里，不能被拦。
         event.stopPropagation();
       }
-      commitEdit();
+      // 点文本框以外：结束编辑并取消选中。不新建文本框，也不把手势留给画布。
+      commitEdit().then(() => {
+        applySelection([]);
+        call('select', []).then((snapshot) => snapshot && apply(snapshot));
+      });
     },
     true
   );

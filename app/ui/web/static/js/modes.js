@@ -22,7 +22,7 @@ export function onModeChange(handler) {
   return () => listeners.delete(handler);
 }
 
-export function setMode(next) {
+export function setMode(next, options = {}) {
   const value = MODES.includes(next) ? next : MODE_SELECT;
   const changed = value !== mode;
   mode = value;
@@ -39,7 +39,7 @@ export function setMode(next) {
   });
 
   if (changed) {
-    for (const handler of listeners) handler(value);
+    for (const handler of listeners) handler(value, options);
   }
 }
 

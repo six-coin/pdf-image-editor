@@ -68,11 +68,14 @@ DEFAULT_APP: dict[str, Any] = {
     "text_font": "msyh",
     "text_size_px": 14,
     "text_color": "blue",
-    "text_width_mm": 40.0,
+    "text_width_mm": 45.0,
     "text_line_height": 1.15,
     # 荧光带默认高度（px）与颜色。
     "highlight_height_px": 15,
     "highlight_color": "yellow",
+    # 设置结构版本：老配置没有这个键。版本 1 → 2 时把旧的 40mm 默认宽度
+    # 迁到 45mm；用户改过的其它值不动。
+    "settings_version": 2,
 }
 
 _THEMES = ("light", "dark")
@@ -220,6 +223,12 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     merged["text_width_mm"] = _number(
         raw.get("text_width_mm"), DEFAULT_APP["text_width_mm"], 10.0, 300.0
     )
+    # 版本 1 的默认宽度是 40mm。老配置里正好是 40 的，按旧默认迁到 45；
+    # 用户改过的其它值（50、60…）原样保留。
+    version = _integer(raw.get("settings_version"), 1, 1, 1000)
+    if version < 2 and _number(raw.get("text_width_mm"), -1.0, 10.0, 300.0) == 40.0:
+        merged["text_width_mm"] = 45.0
+    merged["settings_version"] = max(version, 2)
     merged["text_line_height"] = _number(
         raw.get("text_line_height"), DEFAULT_APP["text_line_height"], 0.8, 3.0
     )

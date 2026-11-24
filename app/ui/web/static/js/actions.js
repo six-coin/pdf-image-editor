@@ -2,6 +2,7 @@
 
 import { call, T, toast } from './bridge.js';
 import { askUnsaved, openModal } from './modal.js';
+import { currentMode } from './modes.js';
 import { apply, selectedIds } from './render.js';
 import { refresh } from './sync.js';
 import { state } from './state.js';
@@ -291,7 +292,8 @@ export async function redo() {
 }
 
 export async function selectAll() {
-  if (!state.data || state.view.busy) return;
+  // Ctrl+A 只在选择工具里有意义：文本/荧光笔工具下它该留给浏览器或什么都不做。
+  if (!state.data || state.view.busy || currentMode() !== 'select') return;
   // 多选只能同页：全选取当前视口所在的这一页，不跨页。
   const { currentPage } = await import('./canvas.js');
   const page = currentPage();
@@ -419,15 +421,6 @@ export async function preprocessPdf() {
     ],
   });
   if (open === 'open') await openFile(result.path);
-}
-
-/* ---------- 文本框 ---------- */
-
-/** 在最后一次鼠标位置新建一个文本框。 */
-export async function newText() {
-  if (!state.data || !state.data.doc.page_count || state.view.busy) return;
-  const { createTextAtPointer } = await import('./text.js');
-  await createTextAtPointer();
 }
 
 /* ---------- 界面 ---------- */

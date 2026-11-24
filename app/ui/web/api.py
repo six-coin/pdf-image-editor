@@ -1613,7 +1613,7 @@ class EditorApi:
                 "text_font": str(self._settings.get("text_font", "msyh")),
                 "text_size_px": int(self._settings.get("text_size_px", 14)),
                 "text_color": str(self._settings.get("text_color", "blue")),
-                "text_width_mm": float(self._settings.get("text_width_mm", 40.0)),
+                "text_width_mm": float(self._settings.get("text_width_mm", 45.0)),
                 "text_line_height": float(self._settings.get("text_line_height", 1.15)),
                 "highlight_height_px": int(self._settings.get("highlight_height_px", 15)),
                 "highlight_color": str(self._settings.get("highlight_color", "yellow")),

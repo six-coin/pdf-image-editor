@@ -11,7 +11,7 @@ import { bindHighlight } from './highlight.js';
 import { bindInteract } from './interact.js';
 import { renderMarkdown } from './markdown.js';
 import { askUnsaved, isOpen, openModal } from './modal.js';
-import { bindModes, setMode } from './modes.js';
+import { bindModes, onModeChange, setMode } from './modes.js';
 import { apply, applyStrings, applyTheme } from './render.js';
 import { state } from './state.js';
 import { openSettings } from './settings.js';
@@ -49,7 +49,6 @@ const ACTIONS = {
   'mode-select': () => setMode('select'),
   'mode-text': () => setMode('text'),
   'mode-highlight': () => setMode('highlight'),
-  'new-text': actions.newText,
   'split-all': splitAll,
   'split-cancel': cancelSplit,
   delete: actions.deleteSelection,
@@ -202,6 +201,13 @@ async function init() {
   bindInteract();
   bindSplit();
   bindModes();
+  // 换工具就清空选择：三个工具的手势语义不同，留着上一个工具的选中只会
+  // 让下一次点击做出意料之外的事。双击文本框是「开始编辑」，不算换工具，
+  // 用 keepSelection 跳过这一条。
+  onModeChange((_value, options) => {
+    if (options && options.keepSelection) return;
+    actions.clearSelection();
+  });
   bindText();
   bindHighlight();
   bindDropZone();

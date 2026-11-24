@@ -8,7 +8,7 @@ import { openExport } from './export.js';
 import { nudge, setSpaceHeld } from './interact.js';
 import { accelOf, lookup } from './keymap.js';
 import { isOpen as modalOpen } from './modal.js';
-import { MODE_HIGHLIGHT, MODE_SELECT, MODE_TEXT, setMode } from './modes.js';
+import { MODE_HIGHLIGHT, MODE_SELECT, MODE_TEXT, currentMode, setMode } from './modes.js';
 import { openSettings } from './settings.js';
 import { state } from './state.js';
 import {
@@ -37,10 +37,12 @@ const GLOBAL_RUNNERS = {
   zoom_fit: fitWidth,
   zoom_reset: resetZoom,
   split: startSplit,
-  new_text: actions.newText,
   mode_select: () => setMode(MODE_SELECT),
   mode_text: () => setMode(MODE_TEXT),
   mode_highlight: () => setMode(MODE_HIGHLIGHT),
+  clear_selection: () => {
+    if (currentMode() === MODE_SELECT) actions.clearSelection();
+  },
   front: () => actions.reorder('front'),
   back: () => actions.reorder('back'),
   external: actions.externalEdit,

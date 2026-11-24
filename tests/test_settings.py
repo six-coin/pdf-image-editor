@@ -225,10 +225,25 @@ def test_text_and_highlight_defaults(temp_config):
     assert config["text_font"] == "msyh"
     assert config["text_size_px"] == 14
     assert config["text_color"] == "blue"
-    assert config["text_width_mm"] == pytest.approx(40.0)
+    assert config["text_width_mm"] == pytest.approx(45.0)
     assert config["text_line_height"] == pytest.approx(1.15)
     assert config["highlight_height_px"] == 15
     assert config["highlight_color"] == "yellow"
+
+
+def test_legacy_text_width_migrates_to_45(temp_config):
+    """老配置没有 settings_version：旧的 40mm 默认迁到 45mm。"""
+    (temp_config / "app.json").write_text(json.dumps({"text_width_mm": 40.0}), encoding="utf-8")
+    config = settings.load_app()
+    assert config["text_width_mm"] == pytest.approx(45.0)
+    assert config["settings_version"] == 2
+
+
+def test_custom_text_width_survives_the_migration(temp_config):
+    (temp_config / "app.json").write_text(json.dumps({"text_width_mm": 55.0}), encoding="utf-8")
+    config = settings.load_app()
+    assert config["text_width_mm"] == pytest.approx(55.0)
+    assert config["settings_version"] == 2
 
 
 def test_bad_text_defaults_are_clamped(temp_config):

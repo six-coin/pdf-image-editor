@@ -148,7 +148,7 @@ Jumping is instant rather than a smooth scroll: in a 50-page document, going fro
 - **Multiple selection works within one page**: shift-clicking an image on another page replaces the selection with that image and says so
 - Drag a box over empty space to select every image it touches — any overlap counts
 - Click empty space without dragging to clear the selection
-- `Ctrl+A` selects every image on the **current page**
+- `Ctrl+A` selects every image on the **current page** (Select tool only); `Esc` clears the selection (Select tool only)
 
 ### Moving
 
@@ -275,12 +275,13 @@ Global shortcuts are suspended in split mode, so the two key maps can bind the s
 
 ## 9. Text boxes
 
-Switch the left rail to Text (the T icon) and click on the page: a text box lands with its **top-left corner at the click point**. You can also press `T` at any time to create one where the pointer last was.
+Switch the left rail to Text (the T icon) and click on the page: a text box lands with its **top-left corner at the click point**.
 
 ### Editing
 
 - **Click** to select (and drag); **double-click** to edit — the caret is already in the box, and the left rail switches to the Text tool automatically.
 - `Enter` starts a new line; `Esc` or clicking outside ends editing and saves.
+- **Clicking outside** ends editing and deselects the box; it does not create a new text box in the empty space.
 - While editing, the box grows or shrinks with its content; a trailing Enter also counts as a line, matching the saved height.
 - Wrapping matches the saved result: Chinese breaks per character, closing punctuation (`, . ; : ! ?` and their fullwidth forms) never starts a line, opening punctuation (`( [ { «` and their fullwidth forms) never ends one; English breaks per word, overlong words are split.
 - Empty the box and click away and it is deleted — no invisible leftovers.
@@ -302,7 +303,7 @@ The toolbar is pinned to the top-left of the box and appears as soon as it is se
 
 ### Width
 
-A text box has **two handles, left and right**, and they change the width only — the text is re-wrapped, never scaled. The height always follows the number of lines and cannot be dragged. The default width is 4 cm and can be changed in Settings.
+A text box has **two handles, left and right**, and they change the width only — the text is re-wrapped, never scaled. The height always follows the number of lines and cannot be dragged. The default width is 4.5 cm and can be changed in Settings.
 
 If the content is taller than the page, the box keeps extending downward instead of being clipped; dragging only clamps the top-left corner, so the bottom may overflow.
 
@@ -310,7 +311,7 @@ If the content is taller than the page, the box keeps extending downward instead
 
 Which style a new text box gets depends on the last text box you edited:
 
-- Before you have edited any box, the defaults from Settings apply (Microsoft YaHei / 14 px / blue / line height 1.15 / width 4 cm);
+- Before you have edited any box, the defaults from Settings apply (Microsoft YaHei / 14 px / blue / line height 1.15 / width 4.5 cm);
 - Once you have edited a box, the next new box inherits its style — the same behaviour as Edge.
 
 This rule never shows up in the UI: it is "the set you used last", not another setting. It resets when you open a new document.
@@ -435,7 +436,8 @@ When it finishes you are told where the file went and how many images were proce
 | `Ctrl+S` / `Ctrl+Shift+S` | Save / Save As |
 | `Ctrl+E` | Export pages |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
-| `Ctrl+A` | Select all on the current page |
+| `Ctrl+A` | Select all on the current page (Select tool only) |
+| `Esc` | Clear the selection (Select tool only) |
 | `Ctrl+V` | Paste image |
 | `Ctrl+0` / `Ctrl+=` / `Ctrl+-` / `Ctrl+1` | Fit width / zoom in / zoom out / 100% |
 | `Delete` | Delete selection |
@@ -444,10 +446,11 @@ When it finishes you are told where the file went and how many images were proce
 | `Ctrl+I` | Show / hide the inspector |
 | `Ctrl+,` | Settings |
 | `E` | Enter split mode |
-| `T` | Create a text box at the pointer |
 | `Z` / `X` / `C` | Switch to Select / Text / Highlighter mode |
 | Arrow keys (`Shift` faster, `Ctrl` finer) | Nudge position |
 | `Space` + drag / middle-drag | Pan the canvas |
+
+Switching tools clears the selection; `Ctrl+A` and `Esc` only work in the Select tool.
 
 **Split mode has its own key map**; global shortcuts are suspended:
 
@@ -478,7 +481,7 @@ Settings are grouped into blocks — General, Text boxes, Highlighter, Logs, Bac
 | Default font | Six families | Font for new text boxes |
 | Default size | 6–200 px | 14 by default; integers only |
 | Default color | Blue / red / green | Color for new text boxes, blue by default |
-| Default width | 10–300 mm | 40 (4 cm) by default |
+| Default width | 10–300 mm | 45 (4.5 cm) by default |
 | Default line height | 0.8–3× | 1.15 by default; a multiple of the font size |
 | Highlighter height | 4–200 px | 15 by default |
 | Highlighter color | Yellow / green / blue / red | Yellow by default |

@@ -525,7 +525,7 @@ export async function openSettings() {
     body.appendChild(
       field(
         'settings.text_width',
-        numberBox(defaults.text_width_mm ?? 40, 10, 300, 5, (value) =>
+        numberBox(defaults.text_width_mm ?? 45, 10, 300, 5, (value) =>
           writeSettings({ text_width_mm: value })
         )
       )

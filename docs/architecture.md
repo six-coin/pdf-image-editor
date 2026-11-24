@@ -501,7 +501,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
   "palette": { "text": [{"key": "blue", "hex": "#0078D4"}, …], "highlight": […] },
   "fonts": [{ "key": "msyh", "css": "Microsoft YaHei" }, …],
   "defaults": { "text_font": "msyh", "text_size_px": 14, "text_color": "blue",
-                "text_width_mm": 40, "text_line_height": 1.15,
+                "text_width_mm": 45, "text_line_height": 1.15,
                 "highlight_height_px": 15, "highlight_color": "yellow" },
   "undo_limit": 100,
   "log_level": "INFO", "log_cleanup": true, "log_retention_days": 30,
@@ -642,8 +642,9 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 | 画荧光带 | 荧光笔模式下横向拖动 | 松手才建对象，拖动中只有一个预览块 |
 | 建文本框 | 文本模式下单击空白 | 落点即左上角，随即进入编辑 |
 | 改文本框 | 任意模式下双击文本框 | 切到文本工具并进入编辑，光标落在框里 |
-
 文本框与荧光带的手柄规则：文本框只有左右两个（改宽度、文字不缩放），荧光带一个都没有。组缩放时两者只按 `sx/sy` 挪位置，宽高一律不动——拉大整组不等于把字也拉大。
+
+`pointerdown` 被 `preventDefault()` 之后浏览器不一定会再发 `dblclick`，所以「双击文本框」由 `interact.js` 自己数：同一对象、500ms 内、指针位移不超过 6px 的第二下就算双击。原生 `dblclick` 仍保留作兜底，`beginEdit` 是幂等的。
 
 - 拖动只改 `left/top`，不重排布局；松手一次性提交。
 - 移动阈值 3px，最小尺寸 4pt；组缩放还要保证组里最小的那张不低于 4pt。图片整组不出页面；文本框只夹左上角，底部允许溢出（高度由内容决定，可能高过页面）。
@@ -672,7 +673,9 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 - 组合键用 `event.code` 归一化（`KeyS` → `S`，`Digit1` → `1`），避开 Shift 改字符与键盘布局差异；
 - 只按修饰键不触发任何动作；
 - 同一作用域里重复的组合键由 `findConflicts` 检出，设置面板当场拦下；
-- 方向键微调不参与自定义键位，避免与全局表互相干扰。
+- 方向键微调不参与自定义键位，避免与全局表互相干扰；
+- `Ctrl+A` 与 `Esc` 只在选择工具下生效：前者在其它工具里直接返回，后者由编辑器/分割模式各自处理；
+- 换工具会清空选择（双击文本框进入编辑除外，用 `keepSelection` 跳过），否则上一个工具的选中会让下一次点击做出意外的事。
 
 ### 8.7 状态栏
 

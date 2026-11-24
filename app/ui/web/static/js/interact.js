@@ -19,14 +19,29 @@ import { scheduleRefresh } from './sync.js';
 import { isSplitActive } from './split.js';
 import { createBand } from './highlight.js';
 import { hideSnap, showSnap, snapOffset } from './guides.js';
-import { MODE_HIGHLIGHT, MODE_TEXT, currentMode, setMode } from './modes.js';
+import { MODE_HIGHLIGHT, MODE_SELECT, MODE_TEXT, currentMode, setMode } from './modes.js';
 import { beginEdit, createTextAt, isEditing } from './text.js';
 
 const THRESHOLD = 3;
 const MIN_SIZE = 4;
+const DOUBLE_CLICK_MS = 500;
+const DOUBLE_CLICK_SLOP = 6;
 
 let gesture = null;
 let spaceHeld = false;
+let lastClick = { id: null, time: 0, x: 0, y: 0 };
+
+/** 自己数双击：pointerdown 被 preventDefault 后浏览器不一定还会发 dblclick。 */
+function isDoubleClick(id, x, y) {
+  const now = performance.now();
+  const hit =
+    lastClick.id === id &&
+    now - lastClick.time < DOUBLE_CLICK_MS &&
+    Math.abs(x - lastClick.x) <= DOUBLE_CLICK_SLOP &&
+    Math.abs(y - lastClick.y) <= DOUBLE_CLICK_SLOP;
+  lastClick = { id, time: now, x, y };
+  return hit;
+}
 
 export function setSpaceHeld(value) {
   spaceHeld = Boolean(value);
@@ -278,27 +293,6 @@ export function bindInteract() {
   box.addEventListener('pointerup', onUp);
   box.addEventListener('pointercancel', onUp);
   box.addEventListener('dblclick', onDoubleClick);
-  box.addEventListener('pointermove', trackPointer, { passive: true });
-  box.addEventListener('pointerleave', () => {
-    state.view.pointer = null;
-  });
-}
-
-/** 记下鼠标停在页面的哪个位置：按 T 新建文本框时要用。 */
-function trackPointer(event) {
-  if (!state.data) return;
-  const page = event.target.closest && event.target.closest('.page');
-  if (!page) {
-    state.view.pointer = null;
-    return;
-  }
-  const rect = page.getBoundingClientRect();
-  const k = pxPerPt();
-  state.view.pointer = {
-    page: Number(page.dataset.page),
-    x: (event.clientX - rect.left) / k,
-    y: (event.clientY - rect.top) / k,
-  };
 }
 
 function onDoubleClick(event) {
@@ -310,7 +304,7 @@ function onDoubleClick(event) {
     event.preventDefault();
     // 双击文本框就是「开始改字」：顺手切到文本工具，左栏状态和接下来的
     // 点击行为才和正在做的事一致（选择工具下点空白会去拖选框）。
-    setMode(MODE_TEXT);
+    setMode(MODE_TEXT, { keepSelection: true });
     beginEdit(obj);
   }
 }
@@ -329,6 +323,22 @@ function onDown(event) {
   if (event.button !== 0) return;
 
   const mode = currentMode();
+  if (mode === MODE_SELECT) {
+    const node = event.target.closest('.obj');
+    const obj = node ? state.data.objects.find((o) => o.id === node.dataset.id) : null;
+    if (obj && obj.kind === 'text') {
+      if (isDoubleClick(obj.id, event.clientX, event.clientY)) {
+        event.preventDefault();
+        setMode(MODE_TEXT, { keepSelection: true });
+        beginEdit(obj);
+        return;
+      }
+    } else {
+      lastClick = { id: null, time: 0, x: 0, y: 0 };
+    }
+  } else {
+    lastClick = { id: null, time: 0, x: 0, y: 0 };
+  }
   if (mode === MODE_TEXT) {
     onTextModeDown(event);
     return;
