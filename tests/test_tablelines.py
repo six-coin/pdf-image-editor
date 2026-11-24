@@ -175,7 +175,8 @@ def test_text_away_from_lines_is_untouched():
     assert np.array_equal(before, after)
 
 
-def test_thickness_is_global_even_if_one_line_is_thicker():
+def test_thickness_is_forced_to_three_pixels():
+    """即使有一条 5px 的线，输出也统一 3px。"""
     image = _grid_image()
     _draw_h(image, 180, 60, 580, thickness=5, phase=0.4)
 

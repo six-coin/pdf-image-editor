@@ -216,12 +216,12 @@ Only the pixel content is replaced; position and size stay as they were.
 
 ### Straightening table lines
 
-Select a table image and click **Straighten table lines** in the inspector. The program finds the ruling lines, makes them exactly horizontal or vertical, and gives them one uniform width.
+Select a table image and click **Straighten table lines** in the inspector. The program finds the ruling lines, makes them exactly horizontal or vertical, and draws every line at a fixed 3 px.
 
 - **Long lines are accepted first**: borders spanning at least 75% of the image width/height seed the grid. Other segments are accepted only when **both ends land on an accepted line**, so short cell dividers longer than about three handwritten characters are handled, while a long handwritten stroke that does not touch a line at both ends is ignored.
-- **One width for the whole image**: the median of the detected line widths, rounded, with a 3 px minimum. A 2 px outer border becomes the same width as the inner lines.
+- **Fixed 3 px width**: the original width is not measured; a 2 px outer border and a 4 px inner line both become 3 px.
 - **Pure black core**: lines are drawn in `(0,0,0)` on the pixel grid, so the scanned dark grey is gone.
-- **No overshoot**: the drawn span is the detected span. Only at a junction does it reach about 1 px further, to the far edge of the crossing line, covering both anti-aliasing seams. Corners and T-junctions are solid, with no stub sticking out.
+- **Endpoints follow the junction type**: at a T-junction the stem stops at the crossbar's centreline, so it never pokes out past the crossbar; only at a corner does it reach the far pixel edge of the other line, filling the outer corner.
 - **Lines only, never text**: erasing is limited to each line's own narrow band.
 
 The result is a new image and can be undone with `Ctrl+Z`. If no table lines are found, the image is left untouched and a message says so.

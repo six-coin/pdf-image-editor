@@ -4,11 +4,12 @@
 PNG。只处理「长、细、近轴对齐」的表格线，不碰文字：
 
 1. 长游程分离横/竖线：只保留原游程，不做膨胀，端点才不会被撑出去。
-2. 游程连通域 + 种子生长：先认贯穿 75% 图宽/高的边框，再收两端都搭在
-   已认线上的短线；手写长横线两端不搭线，因此不会被当成表格线。
-3. 逐列墨迹重心拟合中心线；全图统一线宽取各线线宽的中位数并取整。
-4. 只擦每条线自己的窄带（逐列跟随原中心），重绘纯黑线芯、边缘抗锯齿。
-5. 交叉口用斜接：绘制端点延到对面线的外像素边，两条带子互相盖住抗锯齿边。
+2. 游程连通域 + 可靠线支撑：贯穿 75% 图宽/高的线直接收；其余线两端都搭在
+   可靠线（≥8% 图宽/高）上才收。手写长横线两端不搭线，不会被当成表格线。
+3. 逐列墨迹重心拟合中心线；线宽固定 3px，不做任何宽度统计。
+4. 只擦每条线自己的窄带（逐列跟随原中心），重绘纯黑线芯、按像素栅格对齐。
+5. 交叉口按 corner / T 型收放端点：corner 延到对面线的外像素边，
+   T 型只收到对面线的中心线，避免在横线外侧多出一截。
 
 倾斜超过约 0.5° 的图不在保证范围内：强行拉平会让线和文字错位。
 """
@@ -22,8 +23,7 @@ import numpy as np
 import pymupdf
 
 _BLACK = np.array([0.0, 0.0, 0.0], dtype=np.float32)
-_MIN_THICKNESS = 3
-_MAX_THICKNESS = 12
+_THICKNESS = 3
 _MAX_LINE_THICKNESS = 14
 _MAX_FIT_RMS = 1.5
 _MAX_FIT_DEVIATION = 5.0
@@ -34,7 +34,10 @@ _RELIABLE_RATIO = 0.08
 
 @dataclass(frozen=True)
 class TableLinesReport:
-    """一次框线处理的结果。"""
+    """一次框线处理的结果。
+
+    ``thickness`` 固定是 3（像素），保留在报告里只是给界面提示用。
+    """
 
     horizontal: int = 0
     vertical: int = 0
@@ -66,7 +69,7 @@ def straighten(data: bytes) -> tuple[bytes, TableLinesReport]:
     if float(np.median(gray)) > 200:
         threshold = max(threshold, 96)
     ink = gray <= threshold
-    # 量线宽只用线芯，不把抗锯齿边算进去；否则跑第二遍会越量越粗。
+    # 线芯掩膜：只用深色像素算重心，抗锯齿边不参与。
     core = gray <= min(threshold, 100)
 
     kernel = max(24, int(round(0.02 * max(width, height))))
@@ -79,8 +82,7 @@ def straighten(data: bytes) -> tuple[bytes, TableLinesReport]:
     if len(accepted_h) + len(accepted_v) < 3:
         return data, TableLinesReport(reason="no_lines")
 
-    thickness = int(round(np.median([c["thickness"] for c in accepted_h + accepted_v])))
-    thickness = max(_MIN_THICKNESS, min(_MAX_THICKNESS, thickness))
+    thickness = _THICKNESS
 
     # 擦除按「段」走（跟着原始抖动），绘制按「条」走（同一行/列被竖线切开的
     # 段合并成一条，避免在切口处差出一个像素的台阶）。
@@ -286,7 +288,6 @@ def _measure_h(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int) -> dict[str,
         "center": float(slope * ((x0 + x1) / 2.0) + intercept),
         "k": float(slope),
         "b": float(intercept),
-        "thickness": float(np.median(counts[valid])),
         "rms": float(np.sqrt((residual**2).mean())),
         "max": float(np.abs(residual).max()),
         "spread": float(np.std(counts[valid]) / max(1e-6, np.mean(counts[valid]))),
@@ -322,7 +323,6 @@ def _measure_v(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int) -> dict[str,
         "center": float(slope * ((y0 + y1) / 2.0) + intercept),
         "k": float(slope),
         "b": float(intercept),
-        "thickness": float(np.median(counts[valid])),
         "rms": float(np.sqrt((residual**2).mean())),
         "max": float(np.abs(residual).max()),
         "spread": float(np.std(counts[valid]) / max(1e-6, np.mean(counts[valid]))),
@@ -332,8 +332,7 @@ def _measure_v(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int) -> dict[str,
 
 def _good(item: dict[str, Any]) -> bool:
     return (
-        item["thickness"] <= _MAX_THICKNESS
-        and item["rms"] <= _MAX_FIT_RMS
+        item["rms"] <= _MAX_FIT_RMS
         and item["max"] <= _MAX_FIT_DEVIATION
         and item["spread"] <= _MAX_THICKNESS_SPREAD
     )
@@ -449,7 +448,6 @@ def _merge(items: list[dict[str, Any]], axis: str) -> list[dict[str, Any]]:
                     "y0": item["y0"],
                     "y1": item["y1"],
                     "center": item["center"],
-                    "thickness": item["thickness"],
                     "span": item["span"],
                     "_weight": float(item["span"]),
                 }
@@ -463,7 +461,6 @@ def _merge(items: list[dict[str, Any]], axis: str) -> list[dict[str, Any]]:
         target["x1"] = max(target["x1"], item["x1"])
         target["y0"] = min(target["y0"], item["y0"])
         target["y1"] = max(target["y1"], item["y1"])
-        target["thickness"] = max(target["thickness"], item["thickness"])
         target["span"] = (
             target["x1"] - target["x0"] + 1 if axis == "h" else target["y1"] - target["y0"] + 1
         )
@@ -517,10 +514,16 @@ def _snap(center: float, thickness: int) -> float:
     这样 W 条像素正好整行覆盖，不会因为亚像素位置看起来时粗时细，
     二次处理时也不会把线挪动半像素。
     """
-    value = round(center, 6)
+    # 3px 线量出来的是像素索引的均值（落在中间那一行），几何中心要再偏半格；
+    # 但 579.988 这种「刚好差一点到整数」的噪声如果直接 floor 会整整挪一格，
+    # 所以先判断它是不是已经落在某个整数行上。
     if thickness % 2:
-        return float(np.floor(value) + 0.5)
-    return float(round(value))
+        if abs(center - round(center)) < 0.2:
+            return float(round(center) + 0.5)
+        return float(np.floor(center) + 0.5)
+    if abs(center - round(center)) < 0.2:
+        return float(round(center))
+    return float(np.floor(center + 0.5))
 
 
 def _draw(
@@ -531,48 +534,74 @@ def _draw(
     width: int,
     height: int,
 ) -> None:
-    """画严格水平/竖直的线；交叉口用斜接补上抗锯齿缝。"""
+    """画严格水平/竖直的线；交叉口按 corner / T 型分别收放端点。"""
     for line in horizontals:
         line["center"] = _snap(line["center"], thickness)
     for line in verticals:
         line["center"] = _snap(line["center"], thickness)
 
-    tol = thickness / 2.0 + 1.5
+    # 交叉口分两种：
+    # - corner：两条线都在这里结束，各自延到对面线的外像素边，把外角填满；
+    # - T 型：一条线穿过、另一条在这里结束，结束的那条只收到对面线的中心线，
+    #   多补一格就会在横线外侧多出一截。
+    tol = thickness / 2.0 + 1.0
+
+    def ends_at(center: float, lo: int, hi: int) -> bool:
+        return abs(center - lo) <= tol or abs(center - hi) <= tol
+
     for line in horizontals:
         line["draw_x0"], line["draw_x1"] = line["x0"], line["x1"]
         for other in verticals:
             if not (other["y0"] - 2 <= line["center"] <= other["y1"] + 2):
                 continue
+            corner = ends_at(line["center"], other["y0"], other["y1"])
             if abs(other["center"] - line["x0"]) <= tol:
-                line["draw_x0"] = min(
-                    line["draw_x0"],
-                    int(np.floor(other["center"] - thickness / 2.0)),
-                )
+                if corner:
+                    line["draw_x0"] = min(
+                        line["draw_x0"],
+                        int(np.floor(other["center"] - thickness / 2.0)),
+                    )
+                else:
+                    line["draw_x0"] = int(round(other["center"]))
             if abs(other["center"] - line["x1"]) <= tol:
-                line["draw_x1"] = max(
-                    line["draw_x1"],
-                    int(np.floor(other["center"] + thickness / 2.0)),
-                )
+                if corner:
+                    line["draw_x1"] = max(
+                        line["draw_x1"],
+                        int(np.ceil(other["center"] + thickness / 2.0)) - 1,
+                    )
+                else:
+                    line["draw_x1"] = int(round(other["center"]))
         line["draw_x0"] = max(0, line["draw_x0"])
         line["draw_x1"] = min(width - 1, line["draw_x1"])
+        if line["draw_x0"] >= line["draw_x1"]:
+            line["draw_x0"], line["draw_x1"] = line["x0"], line["x1"]
 
     for line in verticals:
         line["draw_y0"], line["draw_y1"] = line["y0"], line["y1"]
         for other in horizontals:
             if not (other["x0"] - 2 <= line["center"] <= other["x1"] + 2):
                 continue
+            corner = ends_at(line["center"], other["x0"], other["x1"])
             if abs(other["center"] - line["y0"]) <= tol:
-                line["draw_y0"] = min(
-                    line["draw_y0"],
-                    int(np.floor(other["center"] - thickness / 2.0)),
-                )
+                if corner:
+                    line["draw_y0"] = min(
+                        line["draw_y0"],
+                        int(np.floor(other["center"] - thickness / 2.0)),
+                    )
+                else:
+                    line["draw_y0"] = int(round(other["center"]))
             if abs(other["center"] - line["y1"]) <= tol:
-                line["draw_y1"] = max(
-                    line["draw_y1"],
-                    int(np.floor(other["center"] + thickness / 2.0)),
-                )
+                if corner:
+                    line["draw_y1"] = max(
+                        line["draw_y1"],
+                        int(np.ceil(other["center"] + thickness / 2.0)) - 1,
+                    )
+                else:
+                    line["draw_y1"] = int(round(other["center"]))
         line["draw_y0"] = max(0, line["draw_y0"])
         line["draw_y1"] = min(height - 1, line["draw_y1"])
+        if line["draw_y0"] >= line["draw_y1"]:
+            line["draw_y0"], line["draw_y1"] = line["y0"], line["y1"]
 
     half = thickness / 2.0
     for line in horizontals:
