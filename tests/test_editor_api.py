@@ -176,6 +176,66 @@ def test_undo_redo_after_split(editor, opened):
     assert len(instance.redo()["objects"]) == 4
 
 
+def test_merge_images_combines_the_selection(editor, opened):
+    """两张图变一张：矩形取并集，像素取最高密度，选择落到结果上。"""
+    instance, _server = editor
+    opened(images=2)
+    images = [o for o in _objects(instance) if o["kind"] == "image"]
+    assert len(images) == 2
+
+    snapshot = instance.merge_images([o["id"] for o in images])
+
+    assert snapshot["ok"] is True
+    assert snapshot["count"] == 2
+    merged = [o for o in snapshot["objects"] if o["kind"] == "image"]
+    assert len(merged) == 1
+    assert snapshot["selection"] == [merged[0]["id"]]
+    assert merged[0]["x"] == pytest.approx(100)
+    assert merged[0]["w"] == pytest.approx(320)
+    # 第二张 60px / 200pt = 0.3 px/pt 是最高密度；并集 320×150pt → 96×45px
+    assert snapshot["report"]["width"] == 96
+    assert snapshot["report"]["height"] == 45
+
+    restored = instance.undo()
+    assert len([o for o in restored["objects"] if o["kind"] == "image"]) == 2
+    # 合并后的 id 已经不存在，撤销后要把它从选择里清掉
+    assert restored["selection"] == []
+
+
+def test_merge_images_rejects_mixed_selection(editor, opened):
+    instance, _server = editor
+    opened()
+    image = _objects(instance)[0]
+    created = instance.create_text(page=0, x=50, y=50)["created"]
+
+    snapshot = instance.merge_images([image["id"], created])
+
+    assert snapshot["ok"] is False
+    assert len([o for o in snapshot["objects"] if o["kind"] == "image"]) == 1
+    assert len([o for o in snapshot["objects"] if o["kind"] == "text"]) == 1
+
+
+def test_merged_image_is_saved_as_one_image(editor, opened):
+    """保存时原图按墓碑表擦掉，只插回合并后的那一张。"""
+    instance, _server = editor
+    path = opened(images=2)
+    ids = [o["id"] for o in _objects(instance) if o["kind"] == "image"]
+
+    assert instance.merge_images(ids)["ok"] is True
+    before = instance.get_state()
+    assert instance.save_document()["ok"] is True
+    after = instance.get_state()
+
+    # 张数对得上，保存后走的是「重定基线」而不是整份重建
+    assert after["doc"]["generation"] == before["doc"]["generation"]
+    assert len([o for o in after["objects"] if o["kind"] == "image"]) == 1
+
+    out = pymupdf.open(path)
+    assert len(out[0].get_image_info(xrefs=True)) == 1
+    assert "Hello text layer" in out[0].get_text()
+    out.close()
+
+
 def test_save_keeps_history_and_marks_saved(editor, opened):
     instance, _server = editor
     path = opened()

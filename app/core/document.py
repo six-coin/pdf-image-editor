@@ -119,11 +119,30 @@ class PdfDocument:
         if cached is not None:
             return cached
         try:
-            data = self.doc.extract_image(xref)["image"]
+            info = self.doc.extract_image(xref)
+            data = info["image"]
         except Exception:
             return None
+        smask = int(info.get("smask") or 0)
+        if smask > 0:
+            # extract_image 只给底图，软遮罩是另一个 xref。不合成的话透明区域
+            # 会显示成黑色，合并时还会被烤进结果里；合不上就退回底图，别丢图。
+            try:
+                data = self._with_soft_mask(data, smask)
+            except Exception:
+                pass
         self._raw_images[xref] = data
         return data
+
+    def _with_soft_mask(self, data: bytes, smask: int) -> bytes:
+        """把软遮罩并进底图，返回带 alpha 的 PNG。遮罩分辨率不同时先缩放。"""
+        base = pymupdf.Pixmap(data)
+        if base.alpha:
+            return data
+        mask = pymupdf.Pixmap(self.doc, smask)
+        if (mask.width, mask.height) != (base.width, base.height):
+            mask = pymupdf.Pixmap(mask, base.width, base.height)
+        return pymupdf.Pixmap(base, mask).tobytes("png")
 
     def _locked_count(self, page: pymupdf.Page) -> int:
         rotated = page.rotation % 360 != 0

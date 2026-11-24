@@ -28,6 +28,7 @@ Saving only swaps the images; everything else is left untouched.
 
 - Drag, scale from any corner with the ratio locked (`Alt` for free ratio), stretch a single edge
 - Multi-select (`Shift` to add, same page only): a group frame wraps the small boxes, drag it to scale them together
+- Merge a multi-selection into one image: the highest-resolution member sets the pixel density, layers are composited in order, transparency is kept
 - Drag a selection box over empty space to select everything it touches
 - Drag across pages: drop an image on another page and it belongs to that page
 - Split: drop a few cut lines on an image, then "Keep this cell / Extract this cell / Split into cells"
@@ -181,6 +182,26 @@ With two or more images selected, each keeps its own small outline and a group f
 - every image scales by the same factor, so relative positions and gaps scale with them;
 - the smallest image never drops below 4pt, and the group cannot be dragged outside the page;
 - dragging any image in the group moves the whole group.
+
+### Merging images
+
+Select two or more images on the same page and the inspector shows **Merge images**. The selected images become **one**, the small boxes and the group frame disappear, and the selection lands on the result.
+
+Merging flattens only the selected image objects into one bitmap; text, vectors and other images on the page are untouched.
+
+| Rule | Detail |
+|---|---|
+| Extent | The result covers the union of the selected rectangles; gaps between images stay transparent |
+| Resolution | Set by the **highest-resolution** member: pixel density = image pixel width ÷ displayed width in pt. The densest image has the smallest pixel footprint on the page |
+| Scaling | Every other image is enlarged to that density with **bicubic** interpolation. In normal use this only ever scales up |
+| Stacking | Composited bottom-to-top in z order, so upper images cover lower ones — exactly what the canvas shows |
+| Result layer | Takes the **highest z** among the selected images. Merging collapses several layers into one; an unselected image that sat between them can no longer keep its old relative position |
+| Transparency | The result keeps alpha: semi-transparent images blend normally, gaps stay transparent, and it looks right over any background |
+| Undo | One entry; `Ctrl+Z` restores everything at once |
+
+Limit: a merge is capped at 40 megapixels and 12,000 px per side. Beyond that it is scaled down proportionally and the status bar says so.
+
+**Images only**: if the selection contains a text box or a highlight, the button is not shown; the backend refuses too, since overlays have no resolution and should not be baked into a bitmap.
 
 ### Nudging
 
@@ -550,3 +571,4 @@ Look at the line under the field in Settings: if it still says "Takes effect aft
 - **Text does not re-wrap while you drag the width**: the box re-wraps on release, so the text looks clipped for a moment mid-drag.
 - **Text boxes and highlights are only editable where the marker is understood**: they are page content, so other readers show, select and print them, but they cannot be edited there like annotations.
 - **Overlays always sit above images on the same page**: they do not take part in image z-order (bring to front / send to back apply to images only).
+- **Merging flattens several layers into one**: the result takes the topmost selected layer; an unselected image that sat between the selected ones cannot keep its old relative position.

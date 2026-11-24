@@ -459,10 +459,16 @@ function renderInspector() {
   }
 
   if (selection.length > 1) {
+    const chosen = selectedObjects();
+    // 合并只对图片开放：文本框和荧光带是覆盖层，没有「分辨率」可言，
+    // 也不该被压进一张位图。混选时仍然只给删除。
+    const imagesOnly = chosen.length > 1 && chosen.every((item) => item.kind === 'image');
     const note = document.createElement('p');
     note.className = 'empty-hint';
-    note.textContent = T('inspector.multi');
-    body.append(note, actionRow(['delete']));
+    note.textContent = imagesOnly
+      ? T('inspector.multi_images', { count: chosen.length })
+      : T('inspector.multi');
+    body.append(note, actionRow(imagesOnly ? ['merge', 'delete'] : ['delete']));
     return;
   }
 
@@ -518,6 +524,7 @@ function renderInspector() {
 
 const ACTIONS = {
   table: ['inspector.table_lines', 'btn sm', 'table'],
+  merge: ['inspector.merge', 'btn sm', 'merge'],
   split: ['toolbar.split', 'btn sm', 'split'],
   front: ['toolbar.front', 'btn sm', 'front'],
   back: ['toolbar.back', 'btn sm', 'back'],

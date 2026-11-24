@@ -26,6 +26,7 @@ from loguru import logger
 from app import i18n, paths, settings
 from app import version as version_module
 from app.core import fonts as font_table
+from app.core import merge as merge_ops
 from app.core import palette, tablelines, textlayout
 from app.core import split as split_ops
 from app.core.document import PdfDocument
@@ -456,13 +457,24 @@ class EditorApi:
         with self._lock:
             if self._stack is not None:
                 self._stack.undo()
+                self._prune_selection()
             return self._snapshot()
 
     def redo(self) -> dict[str, Any]:
         with self._lock:
             if self._stack is not None:
                 self._stack.redo()
+                self._prune_selection()
             return self._snapshot()
+
+    def _prune_selection(self) -> None:
+        """撤销可能把选中的对象整个换掉（切分、合并），留下不存在的 id 只会
+        让属性栏空着。清掉它们，界面回到「没有选中」的干净状态。"""
+        self._state.selection = [
+            object_id
+            for object_id in self._state.selection
+            if self._state.find(object_id) is not None
+        ]
 
     # ---- 切分与打孔 ----
 
@@ -715,6 +727,115 @@ class EditorApi:
             original.image_id = image_id
             stack.push(StructureChanged(before, self._state.clone_objects(), "edit.fill"))
             return self._snapshot()
+
+    def merge_images(self, ids: list[str] | None = None) -> dict[str, Any]:
+        """把同一页上的多张图压成一张。
+
+        与 ``straighten_table`` 同一个套路：锁内冻结输入 → 锁外算像素 → 锁内确认
+        对象没变 → 压一条 ``StructureChanged``。合并要读几张原图、做双三次插值，
+        不能攥着文档锁不放；算完再验一次，期间被拖走或换了图就放弃。
+        """
+        with self._lock:
+            stack = self._stack
+            if stack is None:
+                return self._snapshot()
+            wanted = {str(item) for item in (ids or [])}
+            selected = [obj for obj in self._state.objects if obj.id in wanted]
+            targets = [obj for obj in selected if isinstance(obj, ImageObject)]
+            if len(selected) < 2:
+                return {
+                    **self._snapshot(),
+                    "ok": False,
+                    "message": i18n.t("error.merge_need_two"),
+                }
+            if len(targets) != len(selected):
+                return {
+                    **self._snapshot(),
+                    "ok": False,
+                    "message": i18n.t("error.merge_images_only"),
+                }
+            if len({obj.page for obj in targets}) != 1:
+                return {
+                    **self._snapshot(),
+                    "ok": False,
+                    "message": i18n.t("select.same_page"),
+                }
+            frozen = [(obj.id, obj.image_id, obj.rect, obj.page) for obj in targets]
+            clones = [obj.clone() for obj in targets]
+            store = self._store
+            generation = self._generation
+
+        try:
+            result = merge_ops.merge(clones, store)
+        except Exception as exc:
+            logger.warning("合并图片失败: {}", exc)
+            with self._lock:
+                snapshot = self._snapshot()
+            return {
+                **snapshot,
+                "ok": False,
+                "message": i18n.t("error.merge_failed", reason=str(exc)),
+            }
+
+        if result is None:
+            with self._lock:
+                snapshot = self._snapshot()
+            return {
+                **snapshot,
+                "ok": False,
+                "message": i18n.t("error.merge_failed", reason=i18n.t("error.image_invalid")),
+            }
+
+        image_id, rect, report = result
+        with self._lock:
+            stack = self._stack
+            current = {obj.id: obj for obj in self._state.objects if isinstance(obj, ImageObject)}
+            stale = (
+                stack is None
+                or self._generation != generation
+                or any(
+                    current.get(object_id) is None
+                    or current[object_id].image_id != source_image
+                    or current[object_id].rect != source_rect
+                    or current[object_id].page != source_page
+                    for object_id, source_image, source_rect, source_page in frozen
+                )
+            )
+            if stale:
+                return {
+                    **self._snapshot(),
+                    "ok": False,
+                    "message": i18n.t("status.merge_stale"),
+                }
+
+            before = self._state.clone_objects()
+            for object_id, _image, _rect, _page in frozen:
+                obj = current[object_id]
+                # 原图在文件里占的位置记进墓碑表：合并后它们不再有对象，
+                # 保存时仍要按这些坐标擦掉，否则旧图会从底下透出来。
+                origin = obj.src_page if obj.src_page is not None else obj.page
+                self._state.mark_removed(origin, obj.src_rect)
+
+            merged = ImageObject(
+                id=f"m-{uuid.uuid4().hex[:8]}",
+                page=current[frozen[0][0]].page,
+                rect=rect,
+                image_id=image_id,
+                # 结果取选中图里最靠上的那一层：合并把多层压成一层，
+                # 放在最上层与「最前面那张图」的观感一致。
+                z=max(current[object_id].z for object_id, _image, _rect, _page in frozen),
+            )
+            doomed = {object_id for object_id, _image, _rect, _page in frozen}
+            self._state.objects = [obj for obj in self._state.objects if obj.id not in doomed]
+            self._state.objects.append(merged)
+            self._state.selection = [merged.id]
+            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.merge"))
+            return {
+                **self._snapshot(),
+                "ok": True,
+                "count": len(frozen),
+                "report": report.to_dict(),
+            }
 
     def _reflow(self, obj: TextObject) -> Rect:
         """按当前内容重算文本框高度。宽度是用户定的，高度永远是算出来的。"""

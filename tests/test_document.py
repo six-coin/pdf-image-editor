@@ -60,6 +60,34 @@ def test_images_are_stored_once(pdf_factory, store):
     doc.close()
 
 
+def test_soft_mask_is_folded_into_the_stored_image(tmp_path, store):
+    """软遮罩是独立的 xref；抽取时要并成 alpha，否则透明区域会显示成黑色。"""
+    base = pymupdf.Pixmap(pymupdf.csRGB, 20, 20, b"\xff\x00\x00" * 400, False)
+    mask = pymupdf.Pixmap(pymupdf.csGRAY, 20, 20, bytes([0] * 200 + [255] * 200), False)
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_image(
+        pymupdf.Rect(100, 100, 200, 200),
+        stream=base.tobytes("png"),
+        mask=mask.tobytes("png"),
+    )
+    path = tmp_path / "mask.pdf"
+    doc.save(str(path))
+    doc.close()
+
+    handle = PdfDocument.open(path, store)
+    objects = handle.editable_images(0)
+    assert len(objects) == 1
+
+    pix = pymupdf.Pixmap(store.get(objects[0].image_id))
+    assert pix.alpha == 1
+    rows = pix.samples
+    stride = pix.stride
+    assert rows[5 * stride + 5 * 4 + 3] == 0  # 上半：遮罩 0
+    assert rows[15 * stride + 5 * 4 + 3] == 255  # 下半：遮罩 255
+    handle.close()
+
+
 def test_rotated_page_has_no_editable_images(tmp_path, store):
     path = tmp_path / "rotated.pdf"
     doc = pymupdf.open()

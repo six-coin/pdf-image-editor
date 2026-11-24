@@ -47,6 +47,7 @@ app/
 │  ├─ document.py             PDF 句柄、页信息、可编辑图片、覆盖层
 │  ├─ render.py               页面光栅化 + LRU 缓存
 │  ├─ split.py                切分与打孔（纯函数）
+│  ├─ merge.py                多张图合成一张（numpy 双三次、预乘 alpha）
 │  ├─ fonts.py                六种字体的路径表与懒加载缓存
 │  ├─ textlayout.py           换行、行高、基线（纯函数）
 │  ├─ palette.py              文字与荧光笔的调色板
@@ -206,9 +207,10 @@ app/
 | `core.units` | pt/mm 换算、页码范围解析 | 不认识 PDF 也不认识界面 |
 | `core.geometry` | 夹取、手柄缩放（角等比 / 边单向）、命中测试、切分矩阵 | 不碰 PyMuPDF 页面 |
 | `core.imagestore` | 内容寻址存取、缩略图、垃圾回收 | 不知道图属于谁 |
-| `core.document` | 打开 / 关闭、页信息、抽取可编辑图片 | 不渲染、不保存 |
+| `core.document` | 打开 / 关闭、页信息、抽取可编辑图片（软遮罩并进 alpha） | 不渲染、不保存 |
 | `core.render` | 页面光栅化 + 涂白 + LRU 缓存；渲染时临时摘掉本项目覆盖层 | 不决定显示在哪一页 |
 | `core.split` | 五个纯函数：切分、保留、打孔、涂白、像素裁切 | 不碰撤销栈 |
+| `core.merge` | 并集画布、最高像素密度、双三次放大、按 z 序预乘合成 | 不碰撤销栈、不知道结果放在哪一层 |
 | `core.fonts` | 六种字体的路径、懒加载与缓存 | 不排版、不画 |
 | `core.textlayout` | 换行、行高、基线；输出「第几行、每个字段从哪开始」 | 不碰 PDF、不知道字号是 px 还是 pt |
 | `core.palette` | 文字三色与荧光四色的键表 | 不认识 PDF |
@@ -432,6 +434,35 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 没有识别到线时返回 `applied=False, reason="no_lines"`，图片不变。整页倾斜 >0.5°
 不在保证范围内。
 
+### 6.15 图片合并
+
+多选同一页的两张以上图片，属性栏「合并图片」→ `api.merge_images`。与表格框线
+同一个套路：**锁内冻结输入 → 锁外算像素 → 锁内确认对象没变 → 压一条
+`StructureChanged`**。合并要读几张原图、做插值，不能攥着文档锁不放。
+
+算法在 `core/merge.py`，纯 numpy：
+
+1. **分辨率取最高**：每张图的密度 = `max(像素宽 / rect.w, 像素高 / rect.h)`，即
+   每 pt 有多少像素。取最大值作为画布密度——它对应「每个像素在页面上占的面积
+   最小」的那张。并集矩形 × 密度 = 画布像素尺寸。
+2. **其余图放大**：每张图按同一密度换算目标矩形，用 Keys 双三次核（a = -0.5）
+   放大。只有画布上限（4000 万像素 / 边长 12000）触发时才会整体缩小。
+3. **按 z 序叠**：对象按 z 升序逐张合成，先画在下。合成在**预乘 alpha** 空间里
+   做（PyMuPDF 的带 alpha 位图本来就是预乘的），公式 `src + dst × (1 − src_a)`；
+   透明区域保留，不会出现彩边。
+4. **相邻边严丝合缝**：目标边由页面坐标直接换算，而不是「起点 + 宽」，共边的
+   两张图不会差出 1px 的缝或叠。
+5. **分条计算**：画布只留一份 uint8 RGBA，插值与叠加按 128 行一条推进，工作
+   内存与条高成正比；最后整张编码成 PNG 进 `ImageStore`。
+
+结果对象取选中图里**最大的 z**：合并把多层压成一层，放在最上层与「最前面那张
+图」的观感一致。被合并的原图位置全部记进墓碑表，保存时按 `removed` 擦掉，再
+插入这一张——模型里少 N 张、文件里多 1 张，`_rebase_after_save` 的张数对得上。
+
+合并用的是 `ImageStore` 里的字节，也就是画布上显示的那张位图。抽取时 PDF 的软遮罩
+（smask，独立 xref）已经并进 alpha（`document._with_soft_mask`），所以透明区域在
+合并结果里原样保留。
+
 ## 7. 前后端契约
 
 ### 7.1 快照
@@ -485,6 +516,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 | 选择 | `select` |
 | 编辑 | `commit_transform` `delete_objects` `reorder_objects` `undo` `redo` |
 | 切分 | `split_object` `keep_cell` `punch_cell` `fill_cell` |
+| 合并 | `merge_images` |
 | 文本 | `create_text` `update_text`（清空即删除） |
 | 荧光笔 | `create_highlight` `update_highlight` |
 | 表格线 | `straighten_table` |

@@ -249,6 +249,37 @@ export async function reorder(mode) {
   if (snapshot) apply(snapshot);
 }
 
+let merging = false;
+
+/** 把多选中的图片压成一张：分辨率取最高那张，按上下层关系合成。 */
+export async function mergeImages() {
+  const ids = selectedIds();
+  if (ids.length < 2 || !state.data || state.view.busy || merging) return;
+  merging = true;
+  const busy = toast(T('status.merging'), true, { sticky: true, busy: true });
+  let snapshot = null;
+  try {
+    snapshot = await call('merge_images', ids);
+  } finally {
+    merging = false;
+    if (busy) busy.close();
+  }
+  if (!snapshot) return;
+  apply(snapshot);
+  if (snapshot.ok === false) {
+    toast(snapshot.message || T('error.unexpected'), false);
+    return;
+  }
+  const report = snapshot.report || {};
+  toast(
+    T(report.scaled ? 'status.merge_scaled' : 'status.merge_done', {
+      count: snapshot.count || ids.length,
+      width: report.width ?? 0,
+      height: report.height ?? 0,
+    })
+  );
+}
+
 export async function undo() {
   const snapshot = await call('undo');
   if (snapshot) apply(snapshot);

@@ -55,6 +55,7 @@ const ACTIONS = {
   delete: actions.deleteSelection,
   front: () => actions.reorder('front'),
   back: () => actions.reorder('back'),
+  merge: actions.mergeImages,
   paste: actions.pasteImage,
   external: actions.externalEdit,
   table: actions.straightenTable,
