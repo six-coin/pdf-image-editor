@@ -28,7 +28,7 @@ Saving only swaps the images; everything else is left untouched.
 
 - Drag, scale from any corner with the ratio locked (`Alt` for free ratio), stretch a single edge
 - Multi-select (`Shift` to add, same page only): a group frame wraps the small boxes, drag it to scale them together
-- Merge a multi-selection into one image: the highest-resolution member sets the pixel density, layers are composited in order, transparency is kept
+- Merge a multi-selection into one image: the highest-resolution member sets the pixel density, layers are composited in order, and transparent areas are flattened onto white — the result is opaque
 - Drag a selection box over empty space to select everything it touches
 - Drag across pages: drop an image on another page and it belongs to that page
 - Split: drop a few cut lines on an image, then "Keep this cell / Extract this cell / Split into cells"
@@ -187,17 +187,19 @@ With two or more images selected, each keeps its own small outline and a group f
 
 Select two or more images on the same page and the inspector shows **Merge images**. The selected images become **one**, the small boxes and the group frame disappear, and the selection lands on the result.
 
-Merging flattens only the selected image objects into one bitmap; text, vectors and other images on the page are untouched.
+Merging flattens only the selected image objects into one bitmap; text, vectors and images outside the selection are untouched. Gaps inside the selection become white and may cover what is underneath.
 
 | Rule | Detail |
 |---|---|
-| Extent | The result covers the union of the selected rectangles; gaps between images stay transparent |
+| Extent | The result covers the union of the selected rectangles; gaps between images are filled with solid white |
 | Resolution | Set by the **highest-resolution** member: pixel density = image pixel width ÷ displayed width in pt. The densest image has the smallest pixel footprint on the page |
 | Scaling | Every other image is enlarged to that density with **bicubic** interpolation. In normal use this only ever scales up |
 | Stacking | Composited bottom-to-top in z order, so upper images cover lower ones — exactly what the canvas shows |
 | Result layer | Takes the **highest z** among the selected images. Merging collapses several layers into one; an unselected image that sat between them can no longer keep its old relative position |
-| Transparency | The result keeps alpha: semi-transparent images blend normally, gaps stay transparent, and it looks right over any background |
+| Transparency | A **solid white** base is laid down first, then images are composited over it by alpha; semi-transparent images blend normally, while gaps and transparent pixels show white. The result has **no alpha channel** and looks the same over any background |
 | Undo | One entry; `Ctrl+Z` restores everything at once |
+
+The result is an **opaque rectangular bitmap**: gaps and transparent pixels inside the union are solid white and will cover whatever is underneath.
 
 Limit: a merge is capped at 40 megapixels and 12,000 px per side. Beyond that it is scaled down proportionally and the status bar says so.
 

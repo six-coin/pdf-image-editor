@@ -1,4 +1,4 @@
-"""图片合并：分辨率、层级、透明与插值。"""
+"""图片合并：分辨率、层级、白底与插值。"""
 
 from __future__ import annotations
 
@@ -81,14 +81,40 @@ def test_layers_follow_z_order(store):
     assert tuple(pixels[75, 75]) == (0, 0, 255, 255)
 
 
-def test_union_gap_stays_transparent(store):
+def test_union_gap_is_white(store):
+    """并集空隙没有图，露出纯白实心底，不是透明。"""
     left = _object(store, "left", Rect(0, 0, 10, 10), 10, 10, 10, (0, 0, 255))
     right = _object(store, "right", Rect(20, 0, 10, 10), 11, 10, 10, (0, 255, 0))
 
     image_id, _rect, _report = merge([left, right], store)
     pixels = _pixels(store, image_id)
 
-    assert tuple(pixels[5, 15]) == (0, 0, 0, 0)
+    assert tuple(pixels[5, 15]) == (255, 255, 255, 255)
+
+
+def test_result_has_no_alpha_channel(store):
+    """最终产物一定是不透明 RGB，不能把 alpha 带到页面上。"""
+    left = _object(store, "left", Rect(0, 0, 10, 10), 10, 10, 10, (255, 0, 0), alpha=128)
+    right = _object(store, "right", Rect(0, 0, 10, 10), 11, 10, 10, (0, 0, 255))
+
+    image_id, _rect, _report = merge([left, right], store)
+    pix = pymupdf.Pixmap(store.get(image_id))
+
+    assert not pix.alpha
+    assert pix.n == 3
+
+
+def test_transparent_pixels_show_the_white_base(store):
+    """半透明黑压在纯白底上：结果应是中灰，而不是带 alpha 的黑。"""
+    half_black = _object(store, "half", Rect(0, 0, 10, 10), 10, 10, 10, (0, 0, 0), alpha=128)
+    opaque = _object(store, "opaque", Rect(20, 0, 10, 10), 11, 10, 10, (255, 0, 0))
+
+    image_id, _rect, _report = merge([half_black, opaque], store)
+    pixels = _pixels(store, image_id)
+
+    assert tuple(pixels[5, 5]) == pytest.approx((127, 127, 127, 255), abs=2)
+    assert tuple(pixels[5, 25]) == (255, 0, 0, 255)
+    assert tuple(pixels[5, 15]) == (255, 255, 255, 255)
 
 
 def test_alpha_is_composited(store):

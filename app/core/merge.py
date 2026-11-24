@@ -9,8 +9,8 @@
    密度最大的那张，每个像素在页面上占的面积最小；并集画布按这个密度取像素，
    其余图用双三次插值放大——只会放大，不会缩小（画布上限触发时除外）。
 2. **按 z 序叠**：从下往上逐张合成，先画的在下、后画的在上。
-3. **在预乘 alpha 空间里算**：PyMuPDF 的带 alpha 位图本身就是预乘的，插值与
-   叠加都在这个空间里做，透明区域能原样保留，也不会在边缘出现彩边。
+3. **白底叠加**：画布先铺一层纯白不透明底，再把每张图按预乘 alpha 的
+   source-over 叠上去。透明像素和并集空隙露出白底，最终结果没有 alpha 通道。
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ import pymupdf
 from app.core.imagestore import ImageStore
 from app.models import ImageObject, Rect
 
-# 画布上限：合并本身不限制选多少张，但一张四千万像素的 RGBA 已经要 160 MB，
-# 再大就会把内存吃光。超过时整体等比降低密度，报告里 ``scaled=True``。
+# 画布上限：合并本身不限制选多少张，但一张四千万像素的 RGBA 源图已经要
+# 160 MB，再大就会把内存吃光。超过时整体等比降低密度，报告里 ``scaled=True``。
 MAX_PIXELS = 40_000_000
 MAX_SIDE = 12_000
 # 合成按横条推进：画布只留一份 uint8，工作内存与条高成正比。
@@ -213,10 +213,11 @@ def merge(objects: list[ImageObject], store: ImageStore) -> tuple[str, Rect, Mer
     if not layers:
         return None
 
-    canvas = np.zeros((height, width, 4), np.uint8)
+    # 纯白实心底：结果必须是不透明的 RGB，透明像素和空隙都落到这层白上。
+    canvas = np.full((height, width, 3), 255, np.uint8)
     for band_start in range(0, height, _BAND_ROWS):
         band_end = min(height, band_start + _BAND_ROWS)
-        band = np.zeros((band_end - band_start, width, 4), np.float32)
+        band = np.full((band_end - band_start, width, 3), 255.0, np.float32)
         for source, x0, y0, dest_w, dest_h in layers:
             top = max(band_start, y0)
             bottom = min(band_end, y0 + dest_h)
@@ -225,15 +226,12 @@ def merge(objects: list[ImageObject], store: ImageStore) -> tuple[str, Rect, Mer
             piece = _resize_band(source, dest_w, dest_h, top - y0, bottom - y0)
             alpha = piece[..., 3:4] * (1.0 / 255.0)
             target = band[top - band_start : bottom - band_start, x0 : x0 + dest_w]
-            # 预乘 alpha 的 source-over：src + dst × (1 − src_a)。
+            # 预乘 alpha 的 source-over，目标是纯白不透明底：
+            # src + dst × (1 − src_a)。结果仍是 straight RGB，不需要 alpha 通道。
             target[..., :3] = piece[..., :3] + target[..., :3] * (1.0 - alpha)
-            target[..., 3:4] = piece[..., 3:4] + target[..., 3:4] * (1.0 - alpha)
         np.clip(band, 0.0, 255.0, out=band)
         canvas[band_start:band_end] = np.rint(band).astype(np.uint8)
 
-    # 全不透明时省掉 alpha 通道：文件更小，缩略图也能走 JPEG。
-    if int(canvas[..., 3].min()) == 255:
-        pix = pymupdf.Pixmap(pymupdf.csRGB, width, height, canvas[..., :3].tobytes(), False)
-    else:
-        pix = pymupdf.Pixmap(pymupdf.csRGB, width, height, canvas.tobytes(), True)
+    # 最终产物恒为不透明 RGB：PNG 不带 alpha，后续无论压到什么底色上都一致。
+    pix = pymupdf.Pixmap(pymupdf.csRGB, width, height, canvas.tobytes(), False)
     return store.put(pix.tobytes("png")), union, MergeReport(width, height, density, factor != 1.0)
