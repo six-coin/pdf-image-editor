@@ -63,6 +63,28 @@ function toggle(checked, onChange) {
   return label;
 }
 
+/** 逗号分隔的多值输入框：写 "10, 50" 就是两条参考线。 */
+function mmBox(values, onCommit) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.spellcheck = false;
+  input.value = (Array.isArray(values) ? values : []).join(', ');
+  const commit = async () => {
+    const snapshot = await onCommit(input.value);
+    if (!snapshot) return;
+    const list = (snapshot.reference || {})[input.dataset.key] || [];
+    input.value = list.join(', ');
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    commit();
+    input.blur();
+  });
+  input.addEventListener('blur', commit);
+  return input;
+}
+
 function languageLabel(code) {
   // 语言名由后端下发（每种语言用自己的文字写），不按当前界面语言翻译。
   const names = (state.data && state.data.language_names) || {};
@@ -408,13 +430,98 @@ export async function openSettings() {
       cell.className = 'margin-cell';
       const text = document.createElement('span');
       text.textContent = T(`settings.${key}`);
-      const input = numberBox(margins[`${key}_mm`] ?? 0, 0, 300, 1, (value) =>
+      const input = mmBox(margins[`${key}_mm`] || [], (value) =>
         writeReference({ [`${key}_mm`]: value })
       );
+      input.dataset.key = `${key}_mm`;
       cell.append(text, input);
       marginGrid.appendChild(cell);
     }
-    body.appendChild(field('settings.margins', marginGrid));
+    const marginField = field('settings.margins', marginGrid);
+    const hint = document.createElement('p');
+    hint.className = 'about-hint';
+    hint.textContent = T('settings.margins_hint');
+    marginField.appendChild(hint);
+    body.appendChild(marginField);
+
+    body.appendChild(section('settings.text'));
+
+    const defaults = data.defaults || {};
+    const fontOptions = ((data.fonts || [])).map((font) => ({
+      value: font.key,
+      label: T(`font.${font.key}`),
+    }));
+    const fontPicker = selectBox(fontOptions, defaults.text_font, (value) =>
+      writeSettings({ text_font: value })
+    );
+    fontPicker.style.width = '100%';
+    body.appendChild(field('settings.text_font', fontPicker));
+
+    body.appendChild(
+      field(
+        'settings.text_size',
+        numberBox(defaults.text_size_px ?? 14, 6, 200, 1, (value) =>
+          writeSettings({ text_size_px: value })
+        )
+      )
+    );
+
+    body.appendChild(
+      field(
+        'settings.text_color',
+        segmented(
+          (data.palette.text || []).map((item) => ({
+            value: item.key,
+            label: T(`color.${item.key}`),
+          })),
+          defaults.text_color,
+          (value) => writeSettings({ text_color: value })
+        )
+      )
+    );
+
+    body.appendChild(
+      field(
+        'settings.text_width',
+        numberBox(defaults.text_width_mm ?? 40, 10, 300, 5, (value) =>
+          writeSettings({ text_width_mm: value })
+        )
+      )
+    );
+
+    body.appendChild(
+      field(
+        'settings.text_line_height',
+        numberBox(defaults.text_line_height ?? 1.15, 0.8, 3, 0.05, (value) =>
+          writeSettings({ text_line_height: value })
+        )
+      )
+    );
+
+    body.appendChild(section('settings.highlight'));
+
+    body.appendChild(
+      field(
+        'settings.highlight_height',
+        numberBox(defaults.highlight_height_px ?? 15, 4, 200, 1, (value) =>
+          writeSettings({ highlight_height_px: value })
+        )
+      )
+    );
+
+    body.appendChild(
+      field(
+        'settings.highlight_color',
+        segmented(
+          (data.palette.highlight || []).map((item) => ({
+            value: item.key,
+            label: T(`color.${item.key}`),
+          })),
+          defaults.highlight_color,
+          (value) => writeSettings({ highlight_color: value })
+        )
+      )
+    );
 
     body.appendChild(section('settings.logs'));
 

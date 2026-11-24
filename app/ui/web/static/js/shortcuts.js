@@ -12,6 +12,7 @@ import { openSettings } from './settings.js';
 import { state } from './state.js';
 import {
   cancelSplit,
+  fillCell,
   isSplitActive,
   keepCell,
   punchCell,
@@ -35,6 +36,7 @@ const GLOBAL_RUNNERS = {
   zoom_fit: fitWidth,
   zoom_reset: resetZoom,
   split: startSplit,
+  new_text: actions.newText,
   front: () => actions.reorder('front'),
   back: () => actions.reorder('back'),
   external: actions.externalEdit,
@@ -45,6 +47,7 @@ const GLOBAL_RUNNERS = {
 const SPLIT_RUNNERS = {
   split_keep: keepCell,
   split_punch: punchCell,
+  split_fill: fillCell,
   split_all: splitAll,
   split_undo: undoCut,
   split_cancel: cancelSplit,

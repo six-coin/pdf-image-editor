@@ -4,14 +4,15 @@
 
 .app {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  /* 左边是常驻的工具条，右边是属性栏；中间给画布。 */
+  grid-template-columns: 46px minmax(0, 1fr) 280px;
   /* 顶栏高度取「至少 48px，放不下就长高」，窗口拉窄时按钮换行而不是被裁掉 */
   grid-template-rows: minmax(48px, auto) minmax(0, 1fr);
   height: 100vh;
 }
 
 .app.inspector-hidden {
-  grid-template-columns: minmax(0, 1fr) 0;
+  grid-template-columns: 46px minmax(0, 1fr) 0;
 }
 
 /* ---------- 顶栏 ---------- */
@@ -123,6 +124,8 @@
 
 /* ---------- 画布 ---------- */
 .viewport {
+  grid-column: 2;
+  grid-row: 2;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -406,6 +409,8 @@ body.saving {
 
 /* ---------- 属性面板 ---------- */
 .inspector {
+  grid-column: 3;
+  grid-row: 2;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -955,4 +960,218 @@ select option {
 .drop-hint-card span {
   color: var(--text-soft);
   font-size: 12.5px;
+}
+
+/* ---------- 左侧工具条 ----------
+   常驻、不能关：模式是画布上「按下去会发生什么」的唯一开关，藏起来等于让人猜。 */
+
+.rail {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+}
+
+.rail-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-soft);
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
+}
+
+.rail-btn svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.rail-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-strong);
+}
+
+.rail-btn.active {
+  border-color: var(--blue-border);
+  background: var(--blue-soft);
+  color: var(--blue-text);
+}
+
+.rail-btn:disabled {
+  color: var(--placeholder);
+  cursor: default;
+  background: none;
+}
+
+/* ---------- 文本框 ---------- */
+
+/* 每一行一个绝对定位的块：行内每个字段再按 x 绝对定位。
+   这样屏幕与 PDF 用的是同一份排版数据，不会出现「屏幕换行、PDF 不换」。 */
+.text-line {
+  position: absolute;
+  left: 0;
+  white-space: pre;
+  pointer-events: none;
+}
+
+.text-line span {
+  position: absolute;
+  top: 0;
+  white-space: pre;
+}
+
+.obj.text-box {
+  /* 提交态按算出来的高度裁掉：拖窄的时候文字不会溢到框外。
+     编辑态放开，让正在敲的内容看得见。 */
+  overflow: hidden;
+}
+
+.obj.text-box.editing {
+  overflow: visible;
+}
+
+.obj.text-box.selected {
+  outline: 1px solid var(--obj-outline);
+}
+
+/* 编辑态：同一个盒子换成可编辑层，宽度不变，靠 CSS 自己换行。 */
+.text-editor {
+  position: absolute;
+  inset: 0;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  /* 关掉字距调整与连字：后端按「纯 advance 累加」换行，两边必须同构。 */
+  font-kerning: none;
+  font-variant-ligatures: none;
+  text-rendering: geometricPrecision;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.obj.text-box.editing {
+  outline: 1px dashed var(--obj-outline-soft);
+}
+
+/* ---------- 荧光带 ---------- */
+
+/* 正片叠底：压在白纸上显色，压在深色上几乎看不出——和 Edge 的荧光笔一致。
+   will-change 会生成层叠上下文、把 mix-blend-mode 关在盒子里，这里必须关掉。 */
+.obj.hl-band {
+  will-change: auto;
+  mix-blend-mode: multiply;
+  pointer-events: auto;
+}
+
+.obj.hl-band.selected {
+  outline: 1px solid var(--obj-outline);
+}
+
+/* ---------- 浮动工具栏 ---------- */
+
+.float-bar {
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  box-shadow: 0 10px 24px var(--shadow);
+  white-space: nowrap;
+}
+
+.float-bar .select {
+  min-width: 104px;
+}
+
+.float-bar .num {
+  width: 48px;
+  height: 28px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  text-align: center;
+}
+
+.float-bar .num:focus {
+  border-color: var(--blue);
+  outline: none;
+}
+
+.float-bar .step {
+  width: 24px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text-soft);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.float-bar .step:hover {
+  border-color: var(--border-strong);
+  color: var(--text-strong);
+}
+
+.float-bar .sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+}
+
+.float-bar .swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.float-bar .swatch.active {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--blue);
+}
+
+.float-bar .field-label {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* 荧光笔模式下光标就是一个虚线竖长方体：告诉用户「现在落笔是画带子」。 */
+.viewport.mode-highlight {
+  cursor:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='34' viewBox='0 0 18 34'><rect x='3.5' y='2.5' width='11' height='29' rx='2' fill='%23fff' fill-opacity='0.35' stroke='%23111827' stroke-width='1.2' stroke-dasharray='3 2.5'/></svg>")
+      9 17,
+    crosshair;
+}
+
+.viewport.mode-text {
+  cursor: text;
 }

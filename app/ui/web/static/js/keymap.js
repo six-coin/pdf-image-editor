@@ -20,6 +20,7 @@ const GLOBAL_DEFS = [
   ['zoom_fit', 'Ctrl+0', 'toolbar.fit_width'],
   ['zoom_reset', 'Ctrl+1', 'toolbar.zoom_reset'],
   ['split', 'E', 'toolbar.split'],
+  ['new_text', 'T', 'mode.text'],
   ['front', 'Ctrl+U', 'toolbar.front'],
   ['back', 'Ctrl+L', 'toolbar.back'],
   ['external', 'Ctrl+Shift+E', 'inspector.external'],
@@ -30,6 +31,7 @@ const GLOBAL_DEFS = [
 const SPLIT_DEFS = [
   ['split_keep', '1', 'split.keep'],
   ['split_punch', '2', 'split.extract'],
+  ['split_fill', '3', 'split.fill'],
   ['split_all', 'R', 'split.all'],
   ['split_undo', 'Ctrl+Z', 'cmd.undo_cut'],
   ['split_cancel', 'Esc', 'dialog.cancel'],

@@ -25,6 +25,8 @@ from loguru import logger
 
 from app import i18n, paths, settings
 from app import version as version_module
+from app.core import fonts as font_table
+from app.core import palette, textlayout
 from app.core import split as split_ops
 from app.core.document import PdfDocument
 from app.core.geometry import MIN_SIZE, clamp_rect_to_page
@@ -35,7 +37,15 @@ from app.core.save import sweep_backups
 from app.core.undo import ImageReplaced, ObjectsChanged, StructureChanged, UndoStack
 from app.core.units import parse_page_range
 from app.errors import AppError
-from app.models import DocumentState, ImageObject, PageInfo, Rect
+from app.models import (
+    DocumentState,
+    HighlightObject,
+    ImageObject,
+    PageInfo,
+    Rect,
+    TextObject,
+    TextRun,
+)
 from app.system import clipboard, opener, preprocess
 from app.system import theme as theme_tool
 from app.system.asset_server import AssetServer
@@ -43,6 +53,10 @@ from app.system.asset_server import AssetServer
 PREVIEW_PX = 320
 CANVAS_PX = 1600
 _TASK_HISTORY = 20
+# 文本框最窄能拖到多少。再窄就只剩一条线，字全被挤到下一行。
+MIN_TEXT_WIDTH = 24.0
+MM_TO_PT = 72.0 / 25.4
+PX_TO_PT = 72.0 / 96.0
 
 
 class EditorApi:
@@ -247,6 +261,8 @@ class EditorApi:
             if page_index not in self._loaded_pages:
                 for obj in doc.editable_images(page_index):
                     self._state.objects.append(obj)
+                for obj in doc.overlay_objects(page_index):
+                    self._state.objects.append(obj)
                 self._loaded_pages.add(page_index)
 
             if self._cache is not None:
@@ -321,12 +337,20 @@ class EditorApi:
                     page = requested
 
                 page_w, page_h = doc.page_pt_size(page)
-                rect = clamp_rect_to_page(Rect(x, y, w, h), page_w, page_h)
-                if rect.w < MIN_SIZE or rect.h < MIN_SIZE:
-                    continue
-
                 updated = obj.clone()
                 updated.page = page
+                if isinstance(updated, TextObject):
+                    # 文本框只认宽度：高度永远由排版算，前端拖不出「拉高」。
+                    rect = self._text_rect(updated, x, y, w, page_w, page_h)
+                elif isinstance(updated, HighlightObject):
+                    # 荧光带只能挪位置，宽高保持模型里的值。
+                    rect = clamp_rect_to_page(
+                        Rect(x, y, updated.rect.w, updated.rect.h), page_w, page_h
+                    )
+                else:
+                    rect = clamp_rect_to_page(Rect(x, y, w, h), page_w, page_h)
+                    if rect.w < MIN_SIZE or rect.h < MIN_SIZE:
+                        continue
                 updated.rect = rect
                 if updated.page == obj.page and updated.rect == obj.rect:
                     # 没有实际变化（比如宽图竖着拖，长边没动）：别塞一条空撤销记录。
@@ -381,6 +405,8 @@ class EditorApi:
         for index in sorted(wanted - self._loaded_pages):
             for obj in doc.editable_images(index):
                 self._state.objects.append(obj)
+            for obj in doc.overlay_objects(index):
+                self._state.objects.append(obj)
             self._loaded_pages.add(index)
 
     def delete_objects(self, ids: list[str] | None = None) -> dict[str, Any]:
@@ -395,6 +421,8 @@ class EditorApi:
 
             before = self._state.clone_objects()
             for obj in targets:
+                if not isinstance(obj, ImageObject):
+                    continue
                 # 对象没了，但它在原文件里还占着位置，保存时仍要 redaction。
                 origin = obj.src_page if obj.src_page is not None else obj.page
                 self._state.mark_removed(origin, obj.src_rect)
@@ -443,6 +471,8 @@ class EditorApi:
         with self._lock:
             if self._stack is None:
                 return self._snapshot()
+            if not isinstance(self._state.find(str(object_id)), ImageObject):
+                return self._snapshot()
             pieces = split_ops.build_split(
                 self._state.objects, str(object_id), _floats(cuts_x), _floats(cuts_y), self._store
             )
@@ -458,6 +488,8 @@ class EditorApi:
     ) -> dict[str, Any]:
         with self._lock:
             if self._stack is None:
+                return self._snapshot()
+            if not isinstance(self._state.find(str(object_id)), ImageObject):
                 return self._snapshot()
             pieces = split_ops.keep_cell(
                 self._state.objects,
@@ -482,6 +514,8 @@ class EditorApi:
             stack = self._stack
             if stack is None:
                 return self._snapshot()
+            if not isinstance(self._state.find(str(object_id)), ImageObject):
+                return self._snapshot()
             result = split_ops.punch_cell(
                 self._state.objects,
                 str(object_id),
@@ -503,6 +537,199 @@ class EditorApi:
             self._state.selection = [piece.id]
             stack.push(StructureChanged(before, self._state.clone_objects(), "edit.punch"))
             return self._snapshot()
+
+    # ---- 文本框与荧光笔 ----
+
+    def create_text(
+        self,
+        page: int = 0,
+        x: float = 0.0,
+        y: float = 0.0,
+        style: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """在落点新建一个文本框。样式由前端给（「当前默认值」只活在前端）。"""
+        with self._lock:
+            doc = self._doc
+            stack = self._stack
+            if doc is None or stack is None:
+                return self._snapshot()
+            index = _page_index(page, doc.page_count)
+            if doc.page(index).rotation % 360 != 0:
+                # 旋转页的坐标系与画布对不上，和「旋转页的图片不可编辑」同一个理由。
+                return self._snapshot()
+            page_w, page_h = doc.page_pt_size(index)
+            style = style if isinstance(style, dict) else {}
+
+            font_key = font_table.normalize(style.get("font", self._settings["text_font"]))
+            size_px = _int_between(style.get("size"), self._settings["text_size_px"], 6, 200)
+            color = palette.normalize_text(style.get("color", self._settings["text_color"]))
+            line_height = _float_between(
+                style.get("line_height"), self._settings["text_line_height"], 0.8, 3.0
+            )
+            width = _float_between(
+                style.get("width"),
+                float(self._settings["text_width_mm"]) * MM_TO_PT,
+                MIN_TEXT_WIDTH,
+                max(page_w, MIN_TEXT_WIDTH),
+            )
+            left = min(max(_float_of(x), 0.0), max(page_w - width, 0.0))
+            top = min(max(_float_of(y), 0.0), page_h)
+
+            obj = TextObject(
+                id=f"t-{uuid.uuid4().hex[:8]}",
+                page=index,
+                rect=Rect(left, top, width, 0.0),
+                runs=[TextRun("", font_key)],
+                size_px=size_px,
+                line_height=line_height,
+                color=color,
+                z=self._state.next_z(index),
+            )
+            obj.rect = self._reflow(obj)
+
+            before = self._state.clone_objects()
+            self._state.objects.append(obj)
+            self._state.selection = [obj.id]
+            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.text"))
+            # 告诉前端「建的是哪一个」：旋转页之类被拒的情况下没有这个键，
+            # 前端据此判断该不该进编辑态。
+            return {**self._snapshot(), "created": obj.id}
+
+    def update_text(
+        self,
+        object_id: str,
+        runs: list[Any] | None = None,
+        style: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """改内容或样式。内容被清空就等于删掉这个文本框。"""
+        with self._lock:
+            stack = self._stack
+            obj = self._state.find(str(object_id))
+            if stack is None or not isinstance(obj, TextObject):
+                return self._snapshot()
+
+            before = self._state.clone_objects()
+            if runs is not None:
+                parsed = [TextRun.from_any(item) for item in runs]
+                parsed = [run for run in parsed if run.text]
+                if not parsed or not "".join(run.text for run in parsed).strip():
+                    self._state.drop([obj.id])
+                    stack.push(StructureChanged(before, self._state.clone_objects(), "edit.text"))
+                    return self._snapshot()
+                obj.runs = [TextRun(run.text, font_table.normalize(run.font)) for run in parsed]
+            if isinstance(style, dict):
+                if "size" in style:
+                    obj.size_px = _int_between(style.get("size"), obj.size_px, 6, 200)
+                if "color" in style:
+                    obj.color = palette.normalize_text(style.get("color"))
+                if "line_height" in style:
+                    obj.line_height = _float_between(
+                        style.get("line_height"), obj.line_height, 0.8, 3.0
+                    )
+            obj.rect = self._reflow(obj)
+            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.text"))
+            return self._snapshot()
+
+    def create_highlight(
+        self,
+        page: int = 0,
+        x: float = 0.0,
+        y: float = 0.0,
+        w: float = 0.0,
+        color: str | None = None,
+        height_px: int | None = None,
+    ) -> dict[str, Any]:
+        """横着拉一条荧光带。高度取设置里的默认值，宽由拖拽决定。"""
+        with self._lock:
+            doc = self._doc
+            stack = self._stack
+            if doc is None or stack is None:
+                return self._snapshot()
+            index = _page_index(page, doc.page_count)
+            if doc.page(index).rotation % 360 != 0:
+                return self._snapshot()
+            page_w, page_h = doc.page_pt_size(index)
+
+            height = (
+                _int_between(height_px, self._settings["highlight_height_px"], 4, 200) * PX_TO_PT
+            )
+            width = max(_float_of(w), 4.0)
+            left = min(max(_float_of(x), 0.0), max(page_w - width, 0.0))
+            top = min(max(_float_of(y), 0.0), max(page_h - height, 0.0))
+
+            obj = HighlightObject(
+                id=f"h-{uuid.uuid4().hex[:8]}",
+                page=index,
+                rect=Rect(left, top, width, height),
+                color=palette.normalize_highlight(
+                    color if color is not None else self._settings["highlight_color"]
+                ),
+                z=self._state.next_z(index),
+            )
+            before = self._state.clone_objects()
+            self._state.objects.append(obj)
+            self._state.selection = [obj.id]
+            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.highlight"))
+            return {**self._snapshot(), "created": obj.id}
+
+    def update_highlight(self, object_id: str, color: str | None = None) -> dict[str, Any]:
+        with self._lock:
+            stack = self._stack
+            obj = self._state.find(str(object_id))
+            if stack is None or not isinstance(obj, HighlightObject):
+                return self._snapshot()
+            before = self._state.clone_objects()
+            obj.color = palette.normalize_highlight(color)
+            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.highlight"))
+            return self._snapshot()
+
+    def fill_cell(
+        self,
+        object_id: str,
+        cuts_x: list[float] | None = None,
+        cuts_y: list[float] | None = None,
+        row: int = 0,
+        col: int = 0,
+    ) -> dict[str, Any]:
+        """把选中的格子涂白：不产出小块，只删掉这一格的内容。"""
+        with self._lock:
+            stack = self._stack
+            if stack is None:
+                return self._snapshot()
+            original = self._state.find(str(object_id))
+            if not isinstance(original, ImageObject):
+                return self._snapshot()
+            image_id = split_ops.fill_cell(
+                self._state.objects,
+                str(object_id),
+                _floats(cuts_x),
+                _floats(cuts_y),
+                int(row),
+                int(col),
+                self._store,
+            )
+            if image_id is None:
+                return self._snapshot()
+            before = self._state.clone_objects()
+            original.image_id = image_id
+            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.fill"))
+            return self._snapshot()
+
+    def _reflow(self, obj: TextObject) -> Rect:
+        """按当前内容重算文本框高度。宽度是用户定的，高度永远是算出来的。"""
+        _lines, height = textlayout.layout(obj.runs, obj.rect.w, obj.size_px, obj.line_height)
+        return Rect(obj.rect.x, obj.rect.y, obj.rect.w, max(float(height), 1.0))
+
+    def _text_rect(
+        self, obj: TextObject, x: float, y: float, width: float, page_w: float, page_h: float
+    ) -> Rect:
+        """文本框只接受位置与宽度：高度一律按内容重算。"""
+        limit = max(page_w, MIN_TEXT_WIDTH)
+        new_width = min(max(float(width), MIN_TEXT_WIDTH), limit)
+        left = min(max(float(x), 0.0), max(page_w - new_width, 0.0))
+        top = min(max(float(y), 0.0), page_h)
+        obj.rect = Rect(left, top, new_width, obj.rect.h)
+        return self._reflow(obj)
 
     def _swap_pieces(
         self, object_id: str, pieces: list[ImageObject] | None, label: str
@@ -620,7 +847,8 @@ class EditorApi:
         try:
             by_page: dict[int, list[ImageObject]] = {}
             for obj in self._state.objects:
-                by_page.setdefault(obj.page, []).append(obj)
+                if isinstance(obj, ImageObject):
+                    by_page.setdefault(obj.page, []).append(obj)
 
             # 只处理已经装载过的页：没装载过的页没有对象，这里也不该替它抽图。
             pages = sorted(set(self._loaded_pages) | set(by_page))
@@ -795,7 +1023,7 @@ class EditorApi:
         """把图片落到临时文件并用系统默认程序打开。"""
         with self._lock:
             obj = self._state.find(str(object_id))
-            if obj is None:
+            if not isinstance(obj, ImageObject):
                 return {"ok": False, "message": i18n.t("error.invalid_argument", name="id")}
             data = self._store.get(obj.image_id)
 
@@ -831,7 +1059,7 @@ class EditorApi:
         with self._lock:
             obj = self._state.find(str(object_id))
             stack = self._stack
-            if obj is None or stack is None:
+            if not isinstance(obj, ImageObject) or stack is None:
                 return self._snapshot()
             stack.push(ImageReplaced(obj.id, obj.image_id, self._store.put(data), "edit.image"))
             snapshot = self._snapshot()
@@ -1106,7 +1334,26 @@ class EditorApi:
 
     # ---- 内部 ----
 
-    def _payload(self, obj: ImageObject) -> dict[str, Any]:
+    def _payload(self, obj: Any) -> dict[str, Any]:
+        if isinstance(obj, TextObject):
+            data = obj.to_dict()
+            lines, height = textlayout.layout(obj.runs, obj.rect.w, obj.size_px, obj.line_height)
+            # 屏幕与 PDF 用同一份排版：前端按这里下发的行/字段位置画，不再自己换行。
+            data["h"] = height
+            data["lines"] = [
+                {
+                    "baseline": line.baseline,
+                    "runs": [[run.text, run.font, run.x, run.width] for run in line.runs],
+                }
+                for line in lines
+            ]
+            data["hex"] = palette.TEXT_COLORS[obj.color]
+            return data
+        if isinstance(obj, HighlightObject):
+            data = obj.to_dict()
+            data["hex"] = palette.HIGHLIGHT_COLORS[obj.color]
+            return data
+
         data = obj.to_dict()
         if self._server is not None:
             data["thumb"] = self._server.image_url(obj.image_id, PREVIEW_PX)
@@ -1157,6 +1404,19 @@ class EditorApi:
             "eight_handles": bool(self._settings.get("eight_handles", True)),
             "keybindings": dict(self._settings.get("keybindings") or {}),
             "reference": dict(self._reference),
+            "palette": palette.palette_payload(),
+            "fonts": [
+                {"key": key, "css": font_table.css_name(key)} for key in font_table.families()
+            ],
+            "defaults": {
+                "text_font": str(self._settings.get("text_font", "msyh")),
+                "text_size_px": int(self._settings.get("text_size_px", 14)),
+                "text_color": str(self._settings.get("text_color", "blue")),
+                "text_width_mm": float(self._settings.get("text_width_mm", 40.0)),
+                "text_line_height": float(self._settings.get("text_line_height", 1.15)),
+                "highlight_height_px": int(self._settings.get("highlight_height_px", 15)),
+                "highlight_color": str(self._settings.get("highlight_color", "yellow")),
+            },
             "undo_limit": int(self._settings.get("undo_limit", 100)),
             "log_level": str(self._settings.get("log_level", "INFO")),
             "log_cleanup": bool(self._settings.get("log_cleanup", True)),
@@ -1259,3 +1519,31 @@ def _floats(values: Any) -> list[float]:
         if math.isfinite(value) and 0.0 < value < 1.0:
             result.append(value)
     return result
+
+
+def _float_of(value: Any, default: float = 0.0) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return number if math.isfinite(number) else default
+
+
+def _float_between(value: Any, default: float, low: float, high: float) -> float:
+    if value is None:
+        return float(default)
+    return min(max(_float_of(value, float(default)), low), high)
+
+
+def _int_between(value: Any, default: int, low: int, high: int) -> int:
+    if value is None:
+        return int(default)
+    return int(min(max(_float_of(value, float(default)), float(low)), float(high)))
+
+
+def _page_index(value: Any, count: int) -> int:
+    try:
+        index = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return index if 0 <= index < count else 0

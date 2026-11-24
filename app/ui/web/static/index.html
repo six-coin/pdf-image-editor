@@ -115,6 +115,32 @@
     </button>
   </header>
 
+  <nav class="rail" id="rail" role="toolbar" data-i18n-aria="mode.title">
+    <button class="rail-btn active" data-act="mode-select" data-mode="select"
+            title="选择" data-i18n-title="mode.select" data-i18n-aria="mode.select"
+            aria-pressed="true">
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M4.5 3.2l10.2 6.1-4.4 1.1-1.6 4.3z"></path>
+      </svg>
+    </button>
+    <button class="rail-btn" data-act="mode-text" data-mode="text"
+            title="文本" data-i18n-title="mode.text" data-i18n-aria="mode.text"
+            aria-pressed="false">
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M3.6 4.4h12.8M10 4.4v11.2M7.2 15.6h5.6"></path>
+      </svg>
+    </button>
+    <button class="rail-btn" data-act="mode-highlight" data-mode="highlight"
+            title="荧光笔" data-i18n-title="mode.highlight" data-i18n-aria="mode.highlight"
+            aria-pressed="false">
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M6.4 13.6l7.2-7.2 2.4 2.4-7.2 7.2z"></path>
+        <path d="M6.4 13.6l-2.2 3.2 3.2-1z"></path>
+        <path d="M3.4 18.4h13.2"></path>
+      </svg>
+    </button>
+  </nav>
+
   <main class="viewport" id="viewport" role="region" data-i18n-aria="app.title">
     <div class="empty" id="empty">
       <h2 data-i18n="empty.title">还没有打开文件</h2>
@@ -148,6 +174,9 @@
   </button>
   <button class="btn sm" id="splitPunch" data-act="punch-cell" disabled>
     <span data-i18n="split.extract">提取此格</span><kbd></kbd>
+  </button>
+  <button class="btn sm" id="splitFill" data-act="fill-cell" disabled>
+    <span data-i18n="split.fill">涂白此格</span><kbd></kbd>
   </button>
   <button class="btn sm" id="splitAll" data-act="split-all" disabled>
     <span data-i18n="split.all">按格切分</span><kbd></kbd>

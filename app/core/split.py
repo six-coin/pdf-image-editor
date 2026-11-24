@@ -161,3 +161,30 @@ def punch_cell(
     # 洞是直接挖在原图像素上的，不叠白色矩形：叠层在缩放时会被插值成半透明。
     hole = fill_white(pix, sx0, sy0, sw, sh)
     return store.put(hole.tobytes("png")), piece
+
+
+def fill_cell(
+    objects: list[ImageObject],
+    object_id: str,
+    cuts_x: list[float],
+    cuts_y: list[float],
+    row: int,
+    col: int,
+    store: ImageStore,
+) -> str | None:
+    """把 (row, col) 涂白，不产出小块——「这一格不要了」。
+
+    与 ``punch_cell`` 的区别只在最后一步：那个会把抠出来的部分独立成对象，
+    这个直接扔掉。返回涂白后的 image_id。
+    """
+    obj = _find(objects, object_id)
+    if obj is None or not obj.rect.is_valid():
+        return None
+    matrix = _matrix_for(obj, cuts_x, cuts_y)
+    target = [c for c in matrix if c[0] == row and c[1] == col]
+    if not target:
+        return None
+    pix = pymupdf.Pixmap(store.get(obj.image_id))
+    sx0, sy0, sw, sh = _pixel_rect(obj, target[0][2], pix)
+    hole = fill_white(pix, sx0, sy0, sw, sh)
+    return store.put(hole.tobytes("png"))

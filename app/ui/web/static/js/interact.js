@@ -17,6 +17,9 @@ import {
 import { pxPerPt, state } from './state.js';
 import { scheduleRefresh } from './sync.js';
 import { isSplitActive } from './split.js';
+import { createBand } from './highlight.js';
+import { MODE_HIGHLIGHT, MODE_TEXT, currentMode } from './modes.js';
+import { beginEdit, createTextAt, isEditing } from './text.js';
 
 const THRESHOLD = 3;
 const MIN_SIZE = 4;
@@ -272,11 +275,46 @@ export function bindInteract() {
   box.addEventListener('pointermove', onMove);
   box.addEventListener('pointerup', onUp);
   box.addEventListener('pointercancel', onUp);
+  box.addEventListener('dblclick', onDoubleClick);
+  box.addEventListener('pointermove', trackPointer, { passive: true });
+  box.addEventListener('pointerleave', () => {
+    state.view.pointer = null;
+  });
+}
+
+/** 记下鼠标停在页面的哪个位置：按 T 新建文本框时要用。 */
+function trackPointer(event) {
+  if (!state.data) return;
+  const page = event.target.closest && event.target.closest('.page');
+  if (!page) {
+    state.view.pointer = null;
+    return;
+  }
+  const rect = page.getBoundingClientRect();
+  const k = pxPerPt();
+  state.view.pointer = {
+    page: Number(page.dataset.page),
+    x: (event.clientX - rect.left) / k,
+    y: (event.clientY - rect.top) / k,
+  };
+}
+
+function onDoubleClick(event) {
+  if (!state.data || state.view.busy || isSplitActive()) return;
+  const node = event.target.closest('.obj');
+  if (!node) return;
+  const obj = state.data.objects.find((item) => item.id === node.dataset.id);
+  if (obj && obj.kind === 'text') {
+    event.preventDefault();
+    beginEdit(obj);
+  }
 }
 
 function onDown(event) {
   if (!state.data || !state.data.doc.page_count) return;
   if (state.view.busy || isSplitActive()) return;
+  // 正在编辑的文本框自己处理指针（放光标、拖选区），不能当成手势。
+  if (isEditing() && event.target.closest('.text-editor')) return;
 
   if (event.button === 1 || (event.button === 0 && spaceHeld)) {
     event.preventDefault();
@@ -284,6 +322,16 @@ function onDown(event) {
     return;
   }
   if (event.button !== 0) return;
+
+  const mode = currentMode();
+  if (mode === MODE_TEXT) {
+    onTextModeDown(event);
+    return;
+  }
+  if (mode === MODE_HIGHLIGHT) {
+    startBand(event);
+    return;
+  }
 
   const groupGrip = event.target.closest('.group-box .grip');
   if (groupGrip) {
@@ -307,6 +355,65 @@ function onDown(event) {
   if (startMarquee(event)) return;
   applySelection([]);
   commitSelection([]);
+}
+
+/** 文本模式：点已有的框就进去编辑，点空白就新建一个。 */
+function onTextModeDown(event) {
+  const hit = pagePointAt(event.clientX, event.clientY);
+  if (!hit) return;
+  const node = event.target.closest('.obj');
+  const obj = node ? state.data.objects.find((item) => item.id === node.dataset.id) : null;
+  if (obj && obj.kind === 'text') {
+    event.preventDefault();
+    beginEdit(obj);
+    return;
+  }
+  event.preventDefault();
+  createTextAt(hit.index, hit.x, hit.y);
+}
+
+/** 荧光笔模式：按下横向拖出一条带子。 */
+function startBand(event) {
+  const hit = pagePointAt(event.clientX, event.clientY);
+  if (!hit) return;
+  const el = document.createElement('div');
+  el.className = 'obj hl-band';
+  el.style.pointerEvents = 'none';
+  pageEl(hit.index).appendChild(el);
+
+  beginGesture({
+    kind: 'band',
+    pointerId: event.pointerId,
+    page: hit.index,
+    origin: { x: Math.min(Math.max(hit.x, 0), hit.info.w), y: Math.min(Math.max(hit.y, 0), hit.info.h) },
+    el,
+    width: 0,
+    left: hit.x,
+    start: scenePoint(event.clientX, event.clientY),
+    moved: false,
+  });
+  capture(event);
+  event.preventDefault();
+}
+
+function moveBand(event) {
+  const point = pointInPage(event.clientX, event.clientY, gesture.page);
+  if (!point) return;
+  const info = state.data.pages.find((p) => p.index === gesture.page);
+  if (!info) return;
+  const k = pxPerPt();
+  const x = Math.min(Math.max(point.x, 0), info.w);
+  const left = Math.min(gesture.origin.x, x);
+  const width = Math.abs(x - gesture.origin.x);
+  const height = ((state.data.defaults && state.data.defaults.highlight_height_px) || 15) * 0.75;
+  gesture.left = left;
+  gesture.width = width;
+  gesture.el.style.left = `${left * k}px`;
+  gesture.el.style.top = `${gesture.origin.y * k}px`;
+  gesture.el.style.width = `${width * k}px`;
+  gesture.el.style.height = `${height * k}px`;
+  gesture.el.style.background =
+    (((state.data.palette || {}).highlight || [])[0] || {}).hex || '#FFF066';
 }
 
 function capture(event) {
@@ -494,6 +601,7 @@ function startGroupResize(event, corner) {
   if (!bounds) return;
   const items = selectedObjects().map((obj) => ({
     id: obj.id,
+    kind: obj.kind,
     el: objectEl(obj.id),
     before: { x: obj.x, y: obj.y, w: obj.w, h: obj.h, page: obj.page },
   }));
@@ -527,9 +635,11 @@ function resizeGroup(point, freeRatio) {
   const scaled = scaleFromCorner(bounds, corner, dx, dy, keepRatio);
 
   // 组里最小的那张不能小于 MIN_SIZE，否则会被后端拒掉、整组变形。
+  // 文本框与荧光带不参与缩放，不拿它们来卡下限。
   let minSx = 0;
   let minSy = 0;
   for (const item of gesture.items) {
+    if (item.kind !== 'image') continue;
     minSx = Math.max(minSx, MIN_SIZE / item.before.w);
     minSy = Math.max(minSy, MIN_SIZE / item.before.h);
   }
@@ -549,10 +659,13 @@ function resizeGroup(point, freeRatio) {
   for (const item of gesture.items) {
     const before = item.before;
     if (!item.el) continue;
+    // 文本框与荧光带只跟着挪位置，尺寸一律不动——拉大整组不等于把字也拉大。
+    const sw = item.kind === 'image' ? next.sx : 1;
+    const sh = item.kind === 'image' ? next.sy : 1;
     item.el.style.left = `${(next.anchorX + (before.x - next.anchorX) * next.sx) * k}px`;
     item.el.style.top = `${(next.anchorY + (before.y - next.anchorY) * next.sy) * k}px`;
-    item.el.style.width = `${before.w * next.sx * k}px`;
-    item.el.style.height = `${before.h * next.sy * k}px`;
+    item.el.style.width = `${before.w * sw * k}px`;
+    item.el.style.height = `${before.h * sh * k}px`;
   }
 
   const box = document.getElementById('groupBox');
@@ -572,8 +685,8 @@ function commitGroupResize(current) {
     page: item.before.page,
     x: next.anchorX + (item.before.x - next.anchorX) * next.sx,
     y: next.anchorY + (item.before.y - next.anchorY) * next.sy,
-    w: item.before.w * next.sx,
-    h: item.before.h * next.sy,
+    w: item.kind === 'image' ? item.before.w * next.sx : item.before.w,
+    h: item.kind === 'image' ? item.before.h * next.sy : item.before.h,
   }));
   call('commit_transform', payload).then((snapshot) => snapshot && apply(snapshot));
 }
@@ -690,7 +803,8 @@ function onMove(event) {
     gesture.moved = true;
   }
 
-  if (gesture.kind === 'move') moveItems(point);
+  if (gesture.kind === 'band') moveBand(event);
+  else if (gesture.kind === 'move') moveItems(point);
   else if (gesture.kind === 'resize') resizeItem(point, event.altKey);
   else if (gesture.kind === 'group') resizeGroup(point, event.altKey);
   else if (gesture.kind === 'marquee') updateMarquee(event);
@@ -717,6 +831,14 @@ function onUp(event) {
       return;
     }
     commitSelection(current.preview || []);
+    return;
+  }
+
+  if (current.kind === 'band') {
+    current.el.remove();
+    if (current.width >= 4) {
+      createBand(current.page, current.left, current.origin.y, current.width);
+    }
     return;
   }
 

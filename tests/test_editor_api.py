@@ -458,8 +458,8 @@ def test_reference_settings_persist(editor, opened):
     instance, _server = editor
     opened()
     snapshot = instance.update_reference({"left_mm": 20, "right_mm": 15})
-    assert snapshot["reference"]["left_mm"] == pytest.approx(20)
-    assert snapshot["reference"]["right_mm"] == pytest.approx(15)
+    assert snapshot["reference"]["left_mm"] == [pytest.approx(20)]
+    assert snapshot["reference"]["right_mm"] == [pytest.approx(15)]
 
 
 def test_show_guides_toggle(editor, opened):
@@ -690,7 +690,7 @@ def test_reset_settings_restores_defaults(editor, opened):
     assert snapshot["ok"] is True
     assert snapshot["theme"] == "light"
     assert snapshot["undo_limit"] == 100
-    assert snapshot["reference"]["left_mm"] == pytest.approx(10.0)
+    assert snapshot["reference"]["left_mm"] == [pytest.approx(10.0)]
     assert snapshot["keybindings"] == {}
 
 

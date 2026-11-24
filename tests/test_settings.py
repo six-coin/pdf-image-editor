@@ -74,12 +74,37 @@ def test_reference_defaults_and_clamp(temp_config):
     assert config["right_mm"] == settings.DEFAULT_REFERENCE["right_mm"]
     settings.save_reference({"left_mm": -10, "top_mm": "abc"})
     reloaded = settings.load_reference()
-    assert reloaded["left_mm"] == 0.0
+    assert reloaded["left_mm"] == [0.0]
     assert reloaded["top_mm"] == settings.DEFAULT_REFERENCE["top_mm"]
     # 边距必须落在 app.json 里，不能另开一个文件
     stored = json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
-    assert stored["reference"]["left_mm"] == 0.0
+    assert stored["reference"]["left_mm"] == [0.0]
     assert not (temp_config / "reference.json").exists()
+
+
+def test_reference_accepts_a_comma_list(temp_config):
+    """一条边上可以有多条参考线：输入是逗号分隔，存下来是升序去重的列表。"""
+    settings.save_reference({"right_mm": "50, 10, 10", "left_mm": [30, 5]})
+    reloaded = settings.load_reference()
+    assert reloaded["right_mm"] == [10.0, 50.0]
+    assert reloaded["left_mm"] == [5.0, 30.0]
+
+
+def test_reference_old_scalar_becomes_a_list(temp_config):
+    """老配置里是一个数字，读进来要包成单元素列表，不能丢。"""
+    (temp_config / "app.json").write_text(
+        json.dumps({"reference": {"right_mm": 50, "left_mm": 12.5}}), encoding="utf-8"
+    )
+    config = settings.load_reference()
+    assert config["right_mm"] == [50.0]
+    assert config["left_mm"] == [12.5]
+
+
+def test_reference_rejects_garbage(temp_config):
+    settings.save_reference({"bottom_mm": "abc, ,", "top_mm": [None, "x", 20]})
+    reloaded = settings.load_reference()
+    assert reloaded["bottom_mm"] == settings.DEFAULT_REFERENCE["bottom_mm"]
+    assert reloaded["top_mm"] == [20.0]
 
 
 def test_legacy_reference_is_migrated(temp_config):
@@ -91,10 +116,10 @@ def test_legacy_reference_is_migrated(temp_config):
     }
     (temp_config / "reference_line.json").write_text(json.dumps(legacy), encoding="utf-8")
     config = settings.load_reference()
-    assert config["left_mm"] == pytest.approx(10.0)
-    assert config["right_mm"] == pytest.approx(50.0)
+    assert config["left_mm"] == [pytest.approx(10.0)]
+    assert config["right_mm"] == [pytest.approx(50.0)]
     stored = json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
-    assert stored["reference"]["right_mm"] == pytest.approx(50.0)
+    assert stored["reference"]["right_mm"] == [pytest.approx(50.0)]
     assert not (temp_config / "reference_line.json").exists()
 
 
@@ -104,10 +129,10 @@ def test_reference_json_is_merged_into_app_json(temp_config):
 
     config = settings.load_app()
 
-    assert config["reference"]["left_mm"] == pytest.approx(33)
+    assert config["reference"]["left_mm"] == [pytest.approx(33)]
     assert not (temp_config / "reference.json").exists()
     stored = json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
-    assert stored["reference"]["left_mm"] == pytest.approx(33)
+    assert stored["reference"]["left_mm"] == [pytest.approx(33)]
 
 
 def test_save_mode_is_dropped(temp_config):
@@ -184,3 +209,45 @@ def test_preview_language_does_not_write_config(editor):
 
     assert result["language"] == "en-US"
     assert paths.APP_CONFIG_PATH.read_bytes() == before
+
+
+def test_font_and_color_keys_match_core_tables():
+    """settings 是基础层，不 import core，所以键表在这里再列了一遍——两边必须一致。"""
+    from app.core import fonts, palette
+
+    assert set(settings.FONT_KEYS) == set(fonts.families())
+    assert set(settings.TEXT_COLOR_KEYS) == set(palette.TEXT_COLORS)
+    assert set(settings.HIGHLIGHT_COLOR_KEYS) == set(palette.HIGHLIGHT_COLORS)
+
+
+def test_text_and_highlight_defaults(temp_config):
+    config = settings.load_app()
+    assert config["text_font"] == "msyh"
+    assert config["text_size_px"] == 14
+    assert config["text_color"] == "blue"
+    assert config["text_width_mm"] == pytest.approx(40.0)
+    assert config["text_line_height"] == pytest.approx(1.15)
+    assert config["highlight_height_px"] == 15
+    assert config["highlight_color"] == "yellow"
+
+
+def test_bad_text_defaults_are_clamped(temp_config):
+    settings.save_app(
+        {
+            "text_font": "comic",
+            "text_size_px": 9999,
+            "text_color": "pink",
+            "text_width_mm": -5,
+            "text_line_height": 99,
+            "highlight_height_px": 0,
+            "highlight_color": "cyan",
+        }
+    )
+    config = settings.load_app()
+    assert config["text_font"] == "msyh"
+    assert config["text_size_px"] == 200
+    assert config["text_color"] == "blue"
+    assert config["text_width_mm"] == pytest.approx(10.0)
+    assert config["text_line_height"] == pytest.approx(3.0)
+    assert config["highlight_height_px"] == 4
+    assert config["highlight_color"] == "yellow"

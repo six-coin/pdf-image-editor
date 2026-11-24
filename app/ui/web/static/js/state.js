@@ -18,6 +18,8 @@ export const state = {
     gesture: false,
     // 保存进行中：画布与快捷键一律不响应，避免改动落到正在重建的文档上。
     busy: false,
+    // 最后一次鼠标停在页面上的位置（页号 + 页内 pt）。按 T 新建文本框要用。
+    pointer: null,
   },
   // 最近一次落地快照的版本号；更小的 rev 一律丢弃。
   rev: -1,

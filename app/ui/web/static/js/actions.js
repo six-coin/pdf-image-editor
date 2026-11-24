@@ -163,6 +163,9 @@ function setSaving(on) {
 
 async function commitSave(path) {
   if (state.view.busy) return;
+  // 正在编辑的文本框先落地：保存会重建 DOM，编辑框会跟着一起没。
+  const { commitEdit } = await import('./text.js');
+  await commitEdit();
   setSaving(true);
   let result = null;
   try {
@@ -362,6 +365,15 @@ export async function preprocessPdf() {
     ],
   });
   if (open === 'open') await openFile(result.path);
+}
+
+/* ---------- 文本框 ---------- */
+
+/** 在最后一次鼠标位置新建一个文本框。 */
+export async function newText() {
+  if (!state.data || !state.data.doc.page_count || state.view.busy) return;
+  const { createTextAtPointer } = await import('./text.js');
+  await createTextAtPointer();
 }
 
 /* ---------- 界面 ---------- */

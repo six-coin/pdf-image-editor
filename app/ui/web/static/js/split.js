@@ -232,6 +232,7 @@ function updateBar() {
   })}`;
   $('splitKeep').disabled = !split.hover;
   $('splitPunch').disabled = !split.hover;
+  $('splitFill').disabled = !split.hover;
   $('splitAll').disabled = total === 0;
 }
 
@@ -333,6 +334,13 @@ export function punchCell() {
   if (!split.active || !split.hover) return;
   const [cutsX, cutsY] = cutArgs();
   applyEdit('punch_cell', [split.objectId, cutsX, cutsY, split.hover.row, split.hover.col]);
+}
+
+/** 「3」：只把这一格涂白，不产出小块。 */
+export function fillCell() {
+  if (!split.active || !split.hover) return;
+  const [cutsX, cutsY] = cutArgs();
+  applyEdit('fill_cell', [split.objectId, cutsX, cutsY, split.hover.row, split.hover.col]);
 }
 
 /** 撤销最后一刀——按落笔顺序，不区分横竖。 */

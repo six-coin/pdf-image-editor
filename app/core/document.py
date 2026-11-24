@@ -12,9 +12,10 @@ from pathlib import Path
 
 import pymupdf
 
+from app.core import overlay
 from app.core.imagestore import ImageStore
 from app.errors import PdfError
-from app.models import ImageObject, PageInfo, Rect
+from app.models import HighlightObject, ImageObject, PageInfo, Rect, TextObject
 
 _AXIS_EPS = 1e-6
 
@@ -164,3 +165,14 @@ class PdfDocument:
             )
             z += 1
         return objects
+
+    def overlay_objects(self, index: int) -> list[TextObject | HighlightObject]:
+        """读出这一页由本项目画上去的文本框与荧光带。
+
+        旋转页不做覆盖层（与「旋转页的图片不可编辑」同一个理由：坐标对不上），
+        这里也一并跳过，免得读出一堆位置错乱的对象。
+        """
+        page = self.page(index)
+        if page.rotation % 360 != 0:
+            return []
+        return overlay.objects_for_page(page, overlay.read(self.doc, page))

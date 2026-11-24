@@ -2,8 +2,10 @@
    前端不维护业务数据，快照变了就整体重绘；只有纯视图状态留在这边。 */
 
 import { T } from './bridge.js';
+import { bandNode } from './highlight.js';
 import { accelFor, setBindings } from './keymap.js';
 import { objectsOf, pxPerPt, state } from './state.js';
+import { textNode, updateTextMetrics } from './text.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -59,10 +61,19 @@ export function applyTheme(theme) {
 
 /* ---------- 主入口 ---------- */
 
-// 图片 id 必须参与签名：外部编辑回填只换内容、不动几何，漏了它就重绘不出来。
+// 签名决定要不要重建 DOM。图片要带 image（外部编辑只换内容、不动几何），
+// 文本框要带文字与样式（改一个字也得重排），荧光带只认几何与颜色。
 function signature(objects) {
   return objects
-    .map((o) => `${o.id}:${o.image}:${o.x},${o.y},${o.w},${o.h},${o.z},${o.page}`)
+    .map((o) => {
+      const box = `${o.x},${o.y},${o.w},${o.h},${o.z},${o.page}`;
+      if (o.kind === 'text') {
+        const runs = (o.runs || []).map((run) => run.join('\u0001')).join('\u0002');
+        return `t${o.id}:${box}:${o.size}:${o.line_height}:${o.color}:${runs}`;
+      }
+      if (o.kind === 'highlight') return `h${o.id}:${box}:${o.color}`;
+      return `i${o.id}:${o.image}:${box}`;
+    })
     .join('|');
 }
 
@@ -104,6 +115,7 @@ export function apply(data) {
   renderInspector();
   applyShortcutHints();
   renderGroupBox();
+  document.dispatchEvent(new CustomEvent('selection:changed'));
 }
 
 function applyChrome() {
@@ -269,6 +281,8 @@ export function positionObjects() {
     el.style.top = `${obj.y * k}px`;
     el.style.width = `${obj.w * k}px`;
     el.style.height = `${obj.h * k}px`;
+    // 文本框的行内尺寸是写死的 px，缩放时要跟着重算，否则文字不跟着放大。
+    if (obj.kind === 'text') updateTextMetrics(el, obj, k);
   }
 }
 
@@ -303,6 +317,9 @@ export function renderObjects(onlyIndex = null) {
 }
 
 function objectNode(obj, k) {
+  if (obj.kind === 'text') return textNode(obj, k);
+  if (obj.kind === 'highlight') return bandNode(obj, k);
+
   const node = document.createElement('div');
   node.className = 'obj';
   node.dataset.id = obj.id;
@@ -455,6 +472,26 @@ function renderInspector() {
     return;
   }
 
+  if (obj.kind === 'text' || obj.kind === 'highlight') {
+    const rows = [
+      [T('inspector.page'), String(obj.page + 1)],
+      [T('inspector.position'), `${obj.x.toFixed(1)}, ${obj.y.toFixed(1)}`],
+      [T('inspector.size'), `${obj.w.toFixed(1)} × ${obj.h.toFixed(1)}`],
+    ];
+    const table = document.createElement('dl');
+    table.className = 'kv';
+    for (const [key, value] of rows) {
+      const dt = document.createElement('dt');
+      dt.textContent = key;
+      const dd = document.createElement('dd');
+      dd.textContent = value;
+      table.append(dt, dd);
+    }
+    body.appendChild(table);
+    body.appendChild(actionRow(['delete']));
+    return;
+  }
+
   const thumb = document.createElement('img');
   thumb.className = 'thumb';
   thumb.src = obj.thumb;
@@ -491,6 +528,7 @@ const ACTIONS = {
 const SPLIT_ACTIONS = {
   'keep-cell': 'split_keep',
   'punch-cell': 'split_punch',
+  'fill-cell': 'split_fill',
   'split-all': 'split_all',
   'split-cancel': 'split_cancel',
 };

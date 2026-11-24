@@ -7,14 +7,17 @@ import { selectBox } from './controls.js';
 import { bindDropZone } from './drop.js';
 import { openExport } from './export.js';
 import { bindGuides } from './guides.js';
+import { bindHighlight } from './highlight.js';
 import { bindInteract } from './interact.js';
 import { renderMarkdown } from './markdown.js';
 import { askUnsaved, isOpen, openModal } from './modal.js';
+import { bindModes, setMode } from './modes.js';
 import { apply, applyStrings, applyTheme } from './render.js';
 import { state } from './state.js';
 import { openSettings } from './settings.js';
 import { bindShortcuts } from './shortcuts.js';
-import { bindSplit, cancelSplit, keepCell, punchCell, splitAll, startSplit } from './split.js';
+import { bindSplit, cancelSplit, fillCell, keepCell, punchCell, splitAll, startSplit } from './split.js';
+import { bindText } from './text.js';
 
 const ACTIONS = {
   open: actions.openPdf,
@@ -42,6 +45,11 @@ const ACTIONS = {
   split: startSplit,
   'keep-cell': keepCell,
   'punch-cell': punchCell,
+  'fill-cell': fillCell,
+  'mode-select': () => setMode('select'),
+  'mode-text': () => setMode('text'),
+  'mode-highlight': () => setMode('highlight'),
+  'new-text': actions.newText,
   'split-all': splitAll,
   'split-cancel': cancelSplit,
   delete: actions.deleteSelection,
@@ -191,6 +199,9 @@ async function init() {
   bindCanvas();
   bindInteract();
   bindSplit();
+  bindModes();
+  bindText();
+  bindHighlight();
   bindDropZone();
   bindGuides();
   bindShortcuts();

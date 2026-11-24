@@ -23,6 +23,7 @@ from typing import Any
 
 import pymupdf
 
+from app.core import overlay
 from app.core.geometry import clamp_rect_to_page
 from app.core.imagestore import ImageStore
 from app.errors import SaveError
@@ -159,10 +160,16 @@ def _apply_preserve(
 ) -> None:
     for index in range(doc.page_count):
         page = doc[index]
-        objects = [o for o in state.objects if o.page == index]
+        # 覆盖层必须在 redaction 之前撤掉：apply_redactions 会把整页内容流合并成
+        # 一条，标记流混进去之后就再也认不出来了。
+        overlay.clear(doc, page)
+        objects = [o for o in state.objects if o.page == index and isinstance(o, ImageObject)]
         # 原图未必还在这一页（跨页拖动过），按 src_page 找它的原位。
         sources = [
-            o for o in state.objects if (o.src_page if o.src_page is not None else o.page) == index
+            o
+            for o in state.objects
+            if isinstance(o, ImageObject)
+            and (o.src_page if o.src_page is not None else o.page) == index
         ]
         targets = _redact_targets(sources, state.removed.get(index))
         if targets:
@@ -181,6 +188,11 @@ def _apply_preserve(
             finally:
                 _restore_annotations(doc, page, saved_annots, report, index)
         _insert_objects(page, objects, store, report, index)
+        try:
+            overlay.draw(doc, page, state.overlays_on(index))
+        except Exception as exc:
+            # 文本/荧光笔画不上去不能把整次保存拖垮：图已经处理完了。
+            report.warnings.append({"page": index, "code": "overlay_failed", "detail": str(exc)})
 
 
 def save(

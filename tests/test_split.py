@@ -5,7 +5,7 @@ from __future__ import annotations
 import pymupdf
 import pytest
 
-from app.core.split import build_split, keep_cell, punch_cell
+from app.core.split import build_split, fill_cell, keep_cell, punch_cell
 from app.models import ImageObject, Rect
 
 
@@ -112,3 +112,23 @@ def test_punch_fills_only_the_cell(store):
 def test_punch_cell_out_of_range_returns_none(store):
     obj = _object(store)
     assert punch_cell([obj], "o1", [0.5], [0.5], 9, 9, store) is None
+
+
+def test_fill_cell_only_whitens_the_cell(store):
+    """「3」与「2」的区别：只涂白，不产出那一小块。"""
+    obj = _object(store)
+    before = obj.image_id
+    image_id = fill_cell([obj], "o1", [0.5], [0.5], 0, 0, store)
+    assert image_id is not None
+    assert image_id != before
+    hole = pymupdf.Pixmap(store.get(image_id))
+    assert hole.pixel(10, 10) == (255, 255, 255)
+    assert hole.pixel(80, 70) == (10, 20, 30)
+    # 尺寸不变：涂白是在原图像素上挖的，不是叠一个白矩形。
+    assert (hole.width, hole.height) == (100, 80)
+
+
+def test_fill_cell_out_of_range_returns_none(store):
+    obj = _object(store)
+    assert fill_cell([obj], "o1", [0.5], [0.5], 9, 9, store) is None
+    assert fill_cell([obj], "nope", [0.5], [0.5], 0, 0, store) is None

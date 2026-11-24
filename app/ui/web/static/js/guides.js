@@ -1,10 +1,16 @@
-/* 参考线：按页边距画四条线。
+/* 参考线：每一边都可以有多条，位置是从那条边往里的毫米数。
    用独立的 canvas，避免和选框、分割线抢同一块画布。 */
 
 import { pageEl } from './render.js';
 import { pxPerPt, state } from './state.js';
 
 const MM_TO_PT = 72 / 25.4;
+
+/** 一边上的参考线位置。老配置里是标量，这里一并兜住。 */
+function values(raw) {
+  if (Array.isArray(raw)) return raw.filter((value) => Number.isFinite(value));
+  return Number.isFinite(raw) ? [raw] : [];
+}
 
 export function drawGuides() {
   if (!state.data) return;
@@ -35,24 +41,34 @@ export function drawGuides() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (!visible) continue;
 
-    const left = (reference.left_mm || 0) * MM_TO_PT;
-    const top = (reference.top_mm || 0) * MM_TO_PT;
-    const right = info.w - (reference.right_mm || 0) * MM_TO_PT;
-    const bottom = info.h - (reference.bottom_mm || 0) * MM_TO_PT;
-    if (right <= left || bottom <= top) continue;
-
     ctx.setTransform(dpr * k, 0, 0, dpr * k, 0, 0);
     ctx.strokeStyle = color;
     ctx.lineWidth = 1 / k;
     ctx.beginPath();
-    ctx.moveTo(left, 0);
-    ctx.lineTo(left, info.h);
-    ctx.moveTo(right, 0);
-    ctx.lineTo(right, info.h);
-    ctx.moveTo(0, top);
-    ctx.lineTo(info.w, top);
-    ctx.moveTo(0, bottom);
-    ctx.lineTo(info.w, bottom);
+    for (const mm of values(reference.left_mm)) {
+      const x = mm * MM_TO_PT;
+      if (x <= 0 || x >= info.w) continue;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, info.h);
+    }
+    for (const mm of values(reference.right_mm)) {
+      const x = info.w - mm * MM_TO_PT;
+      if (x <= 0 || x >= info.w) continue;
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, info.h);
+    }
+    for (const mm of values(reference.top_mm)) {
+      const y = mm * MM_TO_PT;
+      if (y <= 0 || y >= info.h) continue;
+      ctx.moveTo(0, y);
+      ctx.lineTo(info.w, y);
+    }
+    for (const mm of values(reference.bottom_mm)) {
+      const y = info.h - mm * MM_TO_PT;
+      if (y <= 0 || y >= info.h) continue;
+      ctx.moveTo(0, y);
+      ctx.lineTo(info.w, y);
+    }
     ctx.stroke();
   }
 }

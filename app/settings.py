@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -18,11 +19,17 @@ from app.errors import ConfigError
 from app.system import theme as theme_tool
 
 DEFAULT_REFERENCE: dict[str, Any] = {
-    "left_mm": 10.0,
-    "top_mm": 10.0,
-    "right_mm": 50.0,
-    "bottom_mm": 10.0,
+    "left_mm": [10.0],
+    "top_mm": [10.0],
+    "right_mm": [10.0, 50.0],
+    "bottom_mm": [10.0],
 }
+
+# 字体键与颜色键在这里再列一遍：settings 是基础层，不该反过来 import core。
+# 两边是否一致由 tests/test_settings.py 守。
+FONT_KEYS = ("msyh", "simsun", "simfang", "simkai", "simhei", "times")
+TEXT_COLOR_KEYS = ("blue", "red", "green")
+HIGHLIGHT_COLOR_KEYS = ("yellow", "green", "blue", "red")
 
 DEFAULT_APP: dict[str, Any] = {
     "language": "zh-CN",
@@ -42,11 +49,23 @@ DEFAULT_APP: dict[str, Any] = {
     "log_retention_days": logging_setup.DEFAULT_RETENTION_DAYS,
     # 就地保存的备份保留天数。备份放在数据目录的 backup/ 里，启动时清掉过期的。
     "backup_retention_days": 30,
-    # 参考线边距。放在这里而不是单独一个文件：一处配置一条读写路径，少一处能不同步。
-    "reference": dict(DEFAULT_REFERENCE),
+    # 参考线边距。每边可以有任意多条，存成列表。放在这里而不是单独一个文件：
+    # 一处配置一条读写路径，少一处能不同步。
+    "reference": {key: list(value) for key, value in DEFAULT_REFERENCE.items()},
+    # 新建文本框的默认样式。字号单位是 px（与 Edge 的批注一致，1px = 0.75pt）。
+    "text_font": "msyh",
+    "text_size_px": 14,
+    "text_color": "blue",
+    "text_width_mm": 40.0,
+    "text_line_height": 1.15,
+    # 荧光带默认高度（px）与颜色。
+    "highlight_height_px": 15,
+    "highlight_color": "yellow",
 }
 
 _THEMES = ("light", "dark")
+# 一条边上最多几条参考线。手抖打一串逗号也不该把画布刷成栅栏。
+MAX_GUIDES = 12
 
 
 def default_app() -> dict[str, Any]:
@@ -58,7 +77,7 @@ def default_app() -> dict[str, Any]:
     config = dict(DEFAULT_APP)
     config["language"] = i18n.initial_language()
     config["theme"] = theme_tool.system_theme()
-    config["reference"] = dict(DEFAULT_REFERENCE)
+    config["reference"] = {key: list(value) for key, value in DEFAULT_REFERENCE.items()}
     return config
 
 
@@ -180,6 +199,23 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     merged["backup_retention_days"] = _integer(
         raw.get("backup_retention_days"), DEFAULT_APP["backup_retention_days"], 1, 3650
     )
+    merged["text_font"] = _choice(raw.get("text_font"), DEFAULT_APP["text_font"], FONT_KEYS)
+    merged["text_size_px"] = _integer(raw.get("text_size_px"), DEFAULT_APP["text_size_px"], 6, 200)
+    merged["text_color"] = _choice(
+        raw.get("text_color"), DEFAULT_APP["text_color"], TEXT_COLOR_KEYS
+    )
+    merged["text_width_mm"] = _number(
+        raw.get("text_width_mm"), DEFAULT_APP["text_width_mm"], 10.0, 300.0
+    )
+    merged["text_line_height"] = _number(
+        raw.get("text_line_height"), DEFAULT_APP["text_line_height"], 0.8, 3.0
+    )
+    merged["highlight_height_px"] = _integer(
+        raw.get("highlight_height_px"), DEFAULT_APP["highlight_height_px"], 4, 200
+    )
+    merged["highlight_color"] = _choice(
+        raw.get("highlight_color"), DEFAULT_APP["highlight_color"], HIGHLIGHT_COLOR_KEYS
+    )
     reference = raw.get("reference")
     merged["reference"] = _normalize_reference(reference if isinstance(reference, dict) else {})
     # save_mode 是早期版本的单选保存方式，读到就丢掉，不再写回文件。
@@ -190,8 +226,39 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
 def _normalize_reference(raw: dict[str, Any]) -> dict[str, Any]:
     merged = dict(raw)
     for key, default in DEFAULT_REFERENCE.items():
-        merged[key] = _number(raw.get(key), default, 0.0, 300.0)
+        merged[key] = _mm_values(raw.get(key), default)
     return merged
+
+
+def _mm_values(value: Any, default: list[float]) -> list[float]:
+    """一条边上的参考线位置。
+
+    接受标量（老版本）、逗号分隔的字符串（手改文件）、列表（当前格式），
+    统一成「升序、去重、夹在 0–300」的毫米列表。解析不出任何数字就退回默认值。
+    """
+    if isinstance(value, bool) or value is None:
+        items: list[Any] = []
+    elif isinstance(value, (int, float)):
+        items = [value]
+    elif isinstance(value, str):
+        items = [part for part in re.split(r"[,，;；\s]+", value) if part.strip()]
+    elif isinstance(value, (list, tuple)):
+        items = list(value)
+    else:
+        items = []
+
+    cleaned: list[float] = []
+    for item in items:
+        number = _number(item, -1.0, 0.0, 300.0)
+        if number < 0:
+            continue
+        rounded = round(number, 2)
+        if rounded not in cleaned:
+            cleaned.append(rounded)
+    if not cleaned:
+        return list(default)
+    cleaned.sort()
+    return cleaned[:MAX_GUIDES]
 
 
 def _migrate_legacy_reference() -> dict[str, Any] | None:
@@ -205,7 +272,9 @@ def _migrate_legacy_reference() -> dict[str, Any] | None:
     migrated: dict[str, Any] = {}
     for old_key, new_key in _LEGACY_MARGIN_KEYS.items():
         if old_key in raw:
-            migrated[new_key] = _number(raw[old_key], DEFAULT_REFERENCE[new_key], 0.0, 300.0) * 10
+            migrated[new_key] = (
+                _number(raw[old_key], DEFAULT_REFERENCE[new_key][0], 0.0, 300.0) * 10
+            )
     return migrated or None
 
 
