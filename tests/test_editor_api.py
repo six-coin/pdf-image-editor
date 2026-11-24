@@ -7,6 +7,7 @@ import stat
 import time
 from pathlib import Path
 
+import numpy as np
 import pymupdf
 import pytest
 
@@ -843,3 +844,55 @@ def test_offer_drop_hands_the_path_to_the_page(editor):
     assert len(window.scripts) == 1
     assert "dropPath" in window.scripts[0]
     assert "a b.pdf" in window.scripts[0]
+
+
+def test_straighten_table_reports_no_lines_on_a_plain_image(editor, opened):
+    """没有表格线时不动图片，只返回提示。"""
+    instance, _server = editor
+    opened()
+    snapshot = instance.get_state()
+    obj = next(item for item in snapshot["objects"] if item["kind"] == "image")
+
+    result = instance.straighten_table(obj["id"])
+    assert result["ok"] is False
+    assert result["message"]
+    after = next(item for item in result["objects"] if item["id"] == obj["id"])
+    assert after["image"] == obj["image"]
+
+
+def test_straighten_table_applies_and_undoes(editor, wait, tmp_path):
+    """真实图片走一遍：报告条数、换图、撤销回原图。"""
+    image = np.full((420, 640, 3), 255, dtype=np.uint8)
+    for y in (60, 180, 300):
+        image[y - 1 : y + 2, 60:581] = 0
+    for x in (60, 320, 580):
+        image[60:301, x - 1 : x + 2] = 0
+    pix = pymupdf.Pixmap(pymupdf.csRGB, 640, 420, np.ascontiguousarray(image).tobytes(), False)
+
+    source = tmp_path / "table.pdf"
+    doc = pymupdf.open()
+    page = doc.new_page(width=640, height=420)
+    page.insert_image(pymupdf.Rect(0, 0, 640, 420), stream=pix.tobytes("png"))
+    doc.save(source)
+    doc.close()
+
+    instance, _server = editor
+    started = instance.open_path(str(source), force=True)
+    assert wait(instance, started["task"])["state"] == "ready"
+    instance.load_page(0, 96)
+
+    snapshot = instance.get_state()
+    obj = next(item for item in snapshot["objects"] if item["kind"] == "image")
+    before = obj["image"]
+
+    result = instance.straighten_table(obj["id"])
+    assert result["ok"] is True
+    assert result["report"]["horizontal"] == 3
+    assert result["report"]["vertical"] == 3
+    assert result["report"]["thickness"] == 3
+    after = next(item for item in result["objects"] if item["id"] == obj["id"])
+    assert after["image"] != before
+
+    undone = instance.undo()
+    restored = next(item for item in undone["objects"] if item["id"] == obj["id"])
+    assert restored["image"] == before

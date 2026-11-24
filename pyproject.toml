@@ -8,6 +8,7 @@ dependencies = [
     "pywebview>=5.0",
     "pymupdf>=2.1",
     "loguru>=0.7",
+    "numpy>=1.26",
 ]
 
 [dependency-groups]

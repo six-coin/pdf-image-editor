@@ -51,6 +51,7 @@ app/
 │  ├─ textlayout.py           换行、行高、基线（纯函数）
 │  ├─ palette.py              文字与荧光笔的调色板
 │  ├─ overlay.py              文本框与荧光笔的落盘、读回、回收
+│  ├─ tablelines.py           表格框线检测、拉直、重绘（numpy）
 │  ├─ undo.py                 命令栈
 │  └─ save.py                 保存 + 保存报告
 ├─ system/                    唯一直接接触 Windows 的地方
@@ -109,7 +110,7 @@ app/
 
 `settings.py` 会读 `i18n.available()` 来校验语言代码，这是基础层内部的一次调用，不构成反向依赖。
 
-`pymupdf` 要求 **2.x**：1.x 有已知安全问题，且 2.x 把 `keep_proportion` 的行为统一到了所有图片格式（见 6.8）。2.1 会带入 `numpy` / `onnxruntime` 等依赖，本项目不使用它们，只是上游的硬依赖。
+`pymupdf` 要求 **2.x**：1.x 有已知安全问题，且 2.x 把 `keep_proportion` 的行为统一到了所有图片格式（见 6.8）。2.1 会带入 `numpy` / `onnxruntime` 等依赖；`numpy` 现在由表格框线处理直接使用，已在 `pyproject.toml` 里显式声明。
 
 ## 4. 数据模型
 
@@ -212,6 +213,7 @@ app/
 | `core.textlayout` | 换行、行高、基线；输出「第几行、每个字段从哪开始」 | 不碰 PDF、不知道字号是 px 还是 pt |
 | `core.palette` | 文字三色与荧光四色的键表 | 不认识 PDF |
 | `core.overlay` | 草稿页绘制、`/BM /Multiply`、子集化、嫁接、标记读写 | 不决定存到哪、不认识撤销栈 |
+| `core.tablelines` | 长游程分离、种子生长、统一线宽、纯黑重绘、斜接 | 不碰撤销栈、不知道图片在页面哪 |
 | `core.undo` | 命令栈、宏、dirty 判定 | 不知道命令的业务含义 |
 | `core.save` | redaction + 重插 + 原子落盘 + 校验 | 不决定保存到哪 |
 | `system.asset_server` | 把位图、缩略图、静态文件喂给 WebView2 | 不是业务服务端 |
@@ -404,9 +406,31 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 
 入口在顶栏的「预处理」：先弹说明框，里面两条路——「处理当前打开的文档」（要求没有未保存修改，因为处理的是磁盘版本）或「处理其他文档」（另选文件）；确认后再选目标文件。跑完会问要不要立刻打开结果，打开走的是和「打开」同一条路径，所以未保存修改照样会被拦下。
 
-不用 numpy / Pillow（numpy 只是 PyMuPDF 2.x 的传递依赖，本项目不直接调用）：`bytes.translate` 是 C 实现，逐字节查表比逐像素循环快两个数量级；灰度转换交给 `pymupdf.Pixmap(csGRAY, pix)`。带 alpha 的图跳过——压成二值会把透明区域变成黑块。
+预处理本身不用 numpy / Pillow：`bytes.translate` 是 C 实现，逐字节查表比逐像素循环快两个数量级；灰度转换交给 `pymupdf.Pixmap(csGRAY, pix)`。表格框线处理（6.14）才直接用 numpy。带 alpha 的图跳过——压成二值会把透明区域变成黑块。
 
 落盘同样是「临时文件 + `os.replace`」，目标与源相同时直接拒绝：源文件正被自己打开着，写回去只会得到半个坏文件。任务在线程池里跑，通过 `progress` 回调更新任务进度。
+
+### 6.14 表格框线拉直
+
+选中一张图，属性栏「表格框线处理」→ `api.straighten_table`：锁内取字节 → 锁外算 →
+锁内确认 `image_id` 没被换掉 → 压一条 `ImageReplaced`。算法在 `core/tablelines.py`，
+纯 numpy：
+
+1. 灰度 + Otsu 二值化；白底时给阈值一个下限，避免细黑线把阈值压到 0。
+2. 长游程过滤（核长 = max(24, 2% 图宽/高)），**只保留原游程、不做膨胀**，端点才不会被撑出去。
+3. 游程连通域 + 逐列/逐行墨迹重心拟合中心线；线宽用线芯（≤100）的逐列像素数中位数，
+   不把抗锯齿边算进去。
+4. 认线：贯穿 75% 图宽/高的线直接收；其余线只有两端都搭在「可靠线」（≥8% 且几何合格）
+   上才收。手写长横线两端不搭线，不会被误检。
+5. 同一条线被竖线切开的段按「中心差 ≤2px、间隙 ≤8px」合并，绘制时用同一个中心，
+   切口不会差出一个像素的台阶。
+6. 全图统一线宽 = 各线线宽中位数、四舍五入、夹 3–12px。
+7. 擦除只擦每条线自己的窄带（逐列跟随原始中心，带宽 = 线宽 + 4px），文字不受影响。
+8. 重绘：线心对到像素栅格（奇数宽对半像素），纯黑 `(0,0,0)`，端点用检测到的
+   x0/x1；交叉口向对面线的外像素边补约 1px（斜接），把两条线各自的抗锯齿缝盖住。
+
+没有识别到线时返回 `applied=False, reason="no_lines"`，图片不变。整页倾斜 >0.5°
+不在保证范围内。
 
 ## 7. 前后端契约
 
@@ -463,6 +487,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 | 切分 | `split_object` `keep_cell` `punch_cell` `fill_cell` |
 | 文本 | `create_text` `update_text`（清空即删除） |
 | 荧光笔 | `create_highlight` `update_highlight` |
+| 表格线 | `straighten_table` |
 | 保存导出 | `save_document` `browse_save` `export_pages` |
 | 剪贴板 / 外部 | `paste_image` `edit_external` `replace_image` |
 | 其它 | `preprocess_pdf` `update_reference` `update_settings` `set_language` `reset_settings` |
@@ -700,6 +725,7 @@ tests/
 ├─ test_split.py            切分 / 保留 / 打孔 / 涂白
 ├─ test_textlayout.py       换行、行高、基线
 ├─ test_overlay.py          文本框与荧光笔的落盘、读回、回收
+├─ test_tablelines.py       表格框线检测、拉直、交叉口
 ├─ test_undo.py             栈行为、宏、dirty
 ├─ test_save.py             文字保留、批注保留、长宽比、备份命名与清理、失败回滚
 ├─ test_editor_api.py       接口层：快照、越界、任务、保存后重定基线

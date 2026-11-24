@@ -309,6 +309,29 @@ export async function externalEdit() {
   if (result) apply(result);
 }
 
+/** 表格框线处理：识别图片里的框线并拉成水平/竖直。 */
+export async function straightenTable() {
+  const ids = selectedIds();
+  if (ids.length !== 1 || !state.data || state.view.busy) return;
+  const snapshot = await call('straighten_table', ids[0]);
+  if (!snapshot) return;
+  apply(snapshot);
+  if (snapshot.ok === false) {
+    toast(snapshot.message || T('error.unexpected'), false);
+    return;
+  }
+  if (snapshot.report) {
+    toast(
+      T('status.table_lines_done', {
+        horizontal: snapshot.report.horizontal,
+        vertical: snapshot.report.vertical,
+        thickness: snapshot.report.thickness,
+      }),
+      true
+    );
+  }
+}
+
 /* ---------- 预处理 ---------- */
 
 /**

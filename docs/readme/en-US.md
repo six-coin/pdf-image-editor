@@ -214,6 +214,20 @@ Select one image and press `Ctrl+Shift+E`: the program writes it to a temporary 
 
 Only the pixel content is replaced; position and size stay as they were.
 
+### Straightening table lines
+
+Select a table image and click **Straighten table lines** in the inspector. The program finds the ruling lines, makes them exactly horizontal or vertical, and gives them one uniform width.
+
+- **Long lines are accepted first**: borders spanning at least 75% of the image width/height seed the grid. Other segments are accepted only when **both ends land on an accepted line**, so short cell dividers longer than about three handwritten characters are handled, while a long handwritten stroke that does not touch a line at both ends is ignored.
+- **One width for the whole image**: the median of the detected line widths, rounded, with a 3 px minimum. A 2 px outer border becomes the same width as the inner lines.
+- **Pure black core**: lines are drawn in `(0,0,0)` on the pixel grid, so the scanned dark grey is gone.
+- **No overshoot**: the drawn span is the detected span. Only at a junction does it reach about 1 px further, to the far edge of the crossing line, covering both anti-aliasing seams. Corners and T-junctions are solid, with no stub sticking out.
+- **Lines only, never text**: erasing is limited to each line's own narrow band.
+
+The result is a new image and can be undone with `Ctrl+Z`. If no table lines are found, the image is left untouched and a message says so.
+
+**Not covered**: pages skewed by more than about 0.5°, perspective distortion, dashed or broken lines (they are not bridged), and vector ruling lines that are PDF drawings rather than pixels of the selected image.
+
 ### Undo / redo
 
 `Ctrl+Z` / `Ctrl+Y`. The undo stack stores geometry and image ids only — no pixel copies — so it can go deep (100 by default, adjustable from 10 to 500 in Settings).

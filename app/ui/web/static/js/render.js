@@ -513,10 +513,11 @@ function renderInspector() {
     list.append(dt, dd);
   }
   body.appendChild(list);
-  body.appendChild(actionRow(['split', 'front', 'back', 'external', 'delete']));
+  body.appendChild(actionRow(['table', 'split', 'front', 'back', 'external', 'delete']));
 }
 
 const ACTIONS = {
+  table: ['inspector.table_lines', 'btn sm', 'table'],
   split: ['toolbar.split', 'btn sm', 'split'],
   front: ['toolbar.front', 'btn sm', 'front'],
   back: ['toolbar.back', 'btn sm', 'back'],

@@ -596,6 +596,11 @@ body.saving {
   border-top: 1px solid var(--border);
 }
 
+/* 「表格框线处理」独占一行：它改的是图片内容，和切分/层级不是一类操作。 */
+.inspector-actions [data-act="table"] {
+  flex: 1 0 100%;
+}
+
 /* ---------- 弹窗里的表单 ---------- */
 .settings,
 .export-form {

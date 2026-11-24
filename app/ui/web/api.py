@@ -26,7 +26,7 @@ from loguru import logger
 from app import i18n, paths, settings
 from app import version as version_module
 from app.core import fonts as font_table
-from app.core import palette, textlayout
+from app.core import palette, tablelines, textlayout
 from app.core import split as split_ops
 from app.core.document import PdfDocument
 from app.core.geometry import MIN_SIZE, clamp_rect_to_page
@@ -1067,6 +1067,68 @@ class EditorApi:
 
         _cleanup_session(source)
         return snapshot
+
+    def straighten_table(self, object_id: str) -> dict[str, Any]:
+        """把选中图片里的表格框线拉直。
+
+        检测与重绘还没接进来，但接口形状先固定：锁内取字节 → 锁外计算 →
+        锁内确认这张图没被换掉 → 压一条 ``ImageReplaced``。这样下一轮只改
+        ``tablelines.straighten``，前端和撤销都不用再动。
+        """
+        with self._lock:
+            obj = self._state.find(str(object_id))
+            if not isinstance(obj, ImageObject):
+                return {"ok": False, "message": i18n.t("error.invalid_argument", name="id")}
+            data = self._store.get(obj.image_id)
+
+        try:
+            new_data, report = tablelines.straighten(data)
+        except Exception as exc:
+            logger.warning("表格框线处理失败: {}", exc)
+            with self._lock:
+                snapshot = self._snapshot()
+            return {
+                **snapshot,
+                "ok": False,
+                "message": i18n.t("error.table_lines_failed", reason=str(exc)),
+            }
+
+        if not report.applied:
+            with self._lock:
+                snapshot = self._snapshot()
+            key = (
+                "status.table_lines_none"
+                if report.reason == "no_lines"
+                else "status.table_lines_pending"
+            )
+            return {
+                **snapshot,
+                "ok": False,
+                "message": i18n.t(key),
+            }
+
+        with self._lock:
+            current = self._state.find(str(object_id))
+            stack = self._stack
+            if (
+                not isinstance(current, ImageObject)
+                or stack is None
+                or current.image_id != obj.image_id
+            ):
+                return {
+                    **self._snapshot(),
+                    "ok": False,
+                    "message": i18n.t("status.table_lines_stale"),
+                }
+            stack.push(
+                ImageReplaced(
+                    current.id,
+                    current.image_id,
+                    self._store.put(new_data),
+                    "edit.table_lines",
+                )
+            )
+            return {**self._snapshot(), "ok": True, "report": report.to_dict()}
 
     # ---- 预处理 ----
 

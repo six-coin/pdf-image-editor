@@ -57,6 +57,7 @@ const ACTIONS = {
   back: () => actions.reorder('back'),
   paste: actions.pasteImage,
   external: actions.externalEdit,
+  table: actions.straightenTable,
 };
 
 /* ---------- 关闭握手 ---------- */
