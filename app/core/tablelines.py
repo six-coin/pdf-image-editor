@@ -541,13 +541,15 @@ def _draw(
         line["center"] = _snap(line["center"], thickness)
 
     # 交叉口分两种：
-    # - corner：两条线都在这里结束，各自延到对面线的外像素边，把外角填满；
-    # - T 型：一条线穿过、另一条在这里结束，结束的那条只收到对面线的中心线，
-    #   多补一格就会在横线外侧多出一截。
-    tol = thickness / 2.0 + 1.0
+    # - corner：两条线都在这里结束，端点直接对到对面线的外像素边；
+    # - T 型：一条线穿过、另一条在这里结束，结束的那条只收到对面线的中心线。
+    # 判定放宽到 9px：扫描件里线头多出几像素很常见，只要在这个范围内都当作
+    # 同一个交叉口，按规则把多余的线头收掉。
+    join_tol = 9.0
+    end_tol = thickness / 2.0 + 1.0
 
     def ends_at(center: float, lo: int, hi: int) -> bool:
-        return abs(center - lo) <= tol or abs(center - hi) <= tol
+        return abs(center - lo) <= end_tol or abs(center - hi) <= end_tol
 
     for line in horizontals:
         line["draw_x0"], line["draw_x1"] = line["x0"], line["x1"]
@@ -555,20 +557,14 @@ def _draw(
             if not (other["y0"] - 2 <= line["center"] <= other["y1"] + 2):
                 continue
             corner = ends_at(line["center"], other["y0"], other["y1"])
-            if abs(other["center"] - line["x0"]) <= tol:
+            if abs(other["center"] - line["x0"]) <= join_tol:
                 if corner:
-                    line["draw_x0"] = min(
-                        line["draw_x0"],
-                        int(np.floor(other["center"] - thickness / 2.0)),
-                    )
+                    line["draw_x0"] = int(np.floor(other["center"] - thickness / 2.0))
                 else:
                     line["draw_x0"] = int(round(other["center"]))
-            if abs(other["center"] - line["x1"]) <= tol:
+            if abs(other["center"] - line["x1"]) <= join_tol:
                 if corner:
-                    line["draw_x1"] = max(
-                        line["draw_x1"],
-                        int(np.ceil(other["center"] + thickness / 2.0)) - 1,
-                    )
+                    line["draw_x1"] = int(np.ceil(other["center"] + thickness / 2.0)) - 1
                 else:
                     line["draw_x1"] = int(round(other["center"]))
         line["draw_x0"] = max(0, line["draw_x0"])
@@ -582,20 +578,14 @@ def _draw(
             if not (other["x0"] - 2 <= line["center"] <= other["x1"] + 2):
                 continue
             corner = ends_at(line["center"], other["x0"], other["x1"])
-            if abs(other["center"] - line["y0"]) <= tol:
+            if abs(other["center"] - line["y0"]) <= join_tol:
                 if corner:
-                    line["draw_y0"] = min(
-                        line["draw_y0"],
-                        int(np.floor(other["center"] - thickness / 2.0)),
-                    )
+                    line["draw_y0"] = int(np.floor(other["center"] - thickness / 2.0))
                 else:
                     line["draw_y0"] = int(round(other["center"]))
-            if abs(other["center"] - line["y1"]) <= tol:
+            if abs(other["center"] - line["y1"]) <= join_tol:
                 if corner:
-                    line["draw_y1"] = max(
-                        line["draw_y1"],
-                        int(np.ceil(other["center"] + thickness / 2.0)) - 1,
-                    )
+                    line["draw_y1"] = int(np.ceil(other["center"] + thickness / 2.0)) - 1
                 else:
                     line["draw_y1"] = int(round(other["center"]))
         line["draw_y0"] = max(0, line["draw_y0"])

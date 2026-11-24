@@ -221,7 +221,7 @@ Select a table image and click **Straighten table lines** in the inspector. The 
 - **Long lines are accepted first**: borders spanning at least 75% of the image width/height seed the grid. Other segments are accepted only when **both ends land on an accepted line**, so short cell dividers longer than about three handwritten characters are handled, while a long handwritten stroke that does not touch a line at both ends is ignored.
 - **Fixed 3 px width**: the original width is not measured; a 2 px outer border and a 4 px inner line both become 3 px.
 - **Pure black core**: lines are drawn in `(0,0,0)` on the pixel grid, so the scanned dark grey is gone.
-- **Endpoints follow the junction type**: at a T-junction the stem stops at the crossbar's centreline, so it never pokes out past the crossbar; only at a corner does it reach the far pixel edge of the other line, filling the outer corner.
+- **Endpoints follow the junction type**: at a T-junction the stem stops at the crossbar's centreline (up to 9 px of overshoot still counts as the same junction), so it never pokes out past the crossbar; only at a corner does it reach the far pixel edge of the other line, filling the outer corner.
 - **Lines only, never text**: erasing is limited to each line's own narrow band.
 
 The result is a new image and can be undone with `Ctrl+Z`. If no table lines are found, the image is left untouched and a message says so.

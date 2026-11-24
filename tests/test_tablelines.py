@@ -213,3 +213,12 @@ def test_straightening_twice_is_stable():
     first_dark = _gray(_decode(first)) < 128
     second_dark = _gray(_decode(second)) < 128
     assert np.array_equal(first_dark, second_dark)
+
+
+def test_long_stub_at_a_t_junction_is_trimmed():
+    """线头多出 6px 也算同一个 T 型口，收回到横线边缘。"""
+    image = _grid_image()
+    _draw_v(image, 320, 180, 306, phase=2.0, wobble=0.0)
+    gray = _gray(_decode(tablelines.straighten(_encode(image))[0]))
+    for y in range(303, 307):
+        assert int(gray[y, 320]) == 255
