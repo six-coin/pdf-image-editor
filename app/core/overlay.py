@@ -19,6 +19,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 import pymupdf
 
@@ -81,6 +83,36 @@ def _own_streams(doc: pymupdf.Document, page: pymupdf.Page) -> list[tuple[int, s
     return found
 
 
+def _set_contents(doc: pymupdf.Document, page: pymupdf.Page, xrefs: list[int]) -> None:
+    if xrefs:
+        doc.xref_set_key(page.xref, "Contents", "[" + " ".join(f"{x} 0 R" for x in xrefs) + "]")
+    else:
+        doc.xref_set_key(page.xref, "Contents", "null")
+
+
+@contextmanager
+def hidden(doc: pymupdf.Document, page: pymupdf.Page) -> Iterator[None]:
+    """渲染背景时临时摘掉本项目的覆盖层。
+
+    覆盖层是真正的页面内容，前端又会用 DOM 按模型再画一遍。如果背景图也把它
+    画进去，文字就等于被「烘焙」在背景上：移动文本框时原位留下一个擦不掉的
+    残影，重开文件还会看到两份叠在一起。
+
+    只从 ``/Contents`` 里摘掉，不删 XObject 与字体：退出上下文立刻原样挂回去，
+    保存、导出、读回都不受影响。
+    """
+    own = {xref for xref, _name in _own_streams(doc, page)}
+    if not own:
+        yield
+        return
+    contents = page.get_contents()
+    _set_contents(doc, page, [xref for xref in contents if xref not in own])
+    try:
+        yield
+    finally:
+        _set_contents(doc, page, contents)
+
+
 def clear(doc: pymupdf.Document, page: pymupdf.Page) -> bool:
     """撤掉上一版的覆盖层。
 
@@ -91,11 +123,7 @@ def clear(doc: pymupdf.Document, page: pymupdf.Page) -> bool:
     if not own:
         return False
     doomed = {xref for xref, _name in own}
-    rest = [xref for xref in page.get_contents() if xref not in doomed]
-    if rest:
-        doc.xref_set_key(page.xref, "Contents", "[" + " ".join(f"{x} 0 R" for x in rest) + "]")
-    else:
-        doc.xref_set_key(page.xref, "Contents", "null")
+    _set_contents(doc, page, [xref for xref in page.get_contents() if xref not in doomed])
     for _xref, name in own:
         if name:
             doc.xref_set_key(page.xref, f"Resources/XObject/{name}", "null")

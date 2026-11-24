@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import io
+
 import pymupdf
 import pytest
 
@@ -281,3 +283,80 @@ def test_text_can_be_undone(editor, opened):
 
     instance.undo()
     assert _text_object(instance.get_state())["runs"] == [["", "msyh"]]
+
+
+def test_background_render_excludes_our_text(editor, opened, wait, tmp_path):
+    """背景图必须画成「没有我们覆盖层」的样子。
+
+    覆盖层已经由前端用 DOM 画了一遍；背景再画一遍，文字就等于被烘焙进背景，
+    移动文本框时原位会留下一个擦不掉的残影。
+    """
+    instance, _server = editor
+    opened()
+    instance.load_page(0, 96)
+    snapshot = instance.create_text(0, 60, 400, {"size": 28})
+    obj = _text_object(snapshot)
+    instance.update_text(obj["id"], [["背景不该有", "simhei"]])
+
+    target = tmp_path / "clean-background.pdf"
+    _save(instance, target)
+    # 重新打开：这时文件里已经有我们的覆盖层，正好检验渲染会不会把它算进背景。
+    _open(instance, wait, target)
+    instance.load_page(0, 96)
+
+    png = instance.render_page(0, 96)
+    # 直接解 PNG 的像素：先当图片文档再 get_pixmap 会按图片 DPI 重采样，
+    # 坐标和渲染时的像素对不上。
+    pix = pymupdf.Pixmap(io.BytesIO(png))
+    scale = 96 / 72
+    x0 = max(0, int(60 * scale) - 2)
+    y0 = max(0, int(400 * scale) - 2)
+    x1 = min(pix.width, int(170 * scale) + 2)
+    y1 = min(pix.height, int(432 * scale) + 2)
+    dark = [
+        (x, y) for y in range(y0, y1) for x in range(x0, x1) if pix.pixel(x, y) != (255, 255, 255)
+    ]
+    assert dark == []
+
+    # 背景不画，不等于文件里没有：文字仍然是可以抽取的页面内容。
+    doc = pymupdf.open(target)
+    try:
+        assert "背景不该有" in doc[0].get_text()
+    finally:
+        doc.close()
+
+
+def test_hidden_detaches_the_overlay_only_while_rendering():
+    """渲染背景时只摘内容流，退出后原样挂回；覆盖层不能因此丢掉。"""
+    from app.models import Rect, TextObject, TextRun
+
+    doc = pymupdf.open()
+    try:
+        page = doc.new_page(width=200, height=120)
+        obj = TextObject(
+            id="t-test",
+            page=0,
+            rect=Rect(20, 20, 120, 24),
+            runs=[TextRun("检查", "simhei")],
+            size_px=28,
+        )
+        assert overlay.draw(doc, page, [obj]) is True
+        before = page.get_contents()
+        assert before  # 至少有一条属于我们的覆盖层流
+
+        with overlay.hidden(doc, page):
+            assert page.get_contents() == before[:-1]
+            pix = page.get_pixmap(dpi=72)
+            assert not any(
+                pix.pixel(x, y) != (255, 255, 255) for x in range(20, 140) for y in range(20, 50)
+            )
+
+        assert page.get_contents() == before
+        # 挂回来之后字又在了，JSON 也还读得出来。
+        pix = page.get_pixmap(dpi=72)
+        assert any(
+            pix.pixel(x, y) != (255, 255, 255) for x in range(20, 140) for y in range(20, 50)
+        )
+        assert overlay.read(doc, page)
+    finally:
+        doc.close()

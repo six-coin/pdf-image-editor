@@ -286,6 +286,8 @@ Text boxes are saved as **real text** — not images, not PDF annotations:
 
 The program leaves a marker on the first line of its own content stream, so reopening the file still recognises "this box was made here" and keeps it editable. Text that came with the PDF has no such marker and stays baked into the background, exactly as before.
 
+The **background image** in the editor never contains these boxes — the UI draws them separately, so moving one leaves no ghost behind. Printing, exporting and opening the file in another reader still show the text on the page.
+
 ## 10. Highlighter
 
 Switch the left rail to Highlighter (the marker icon). The cursor turns into a dashed vertical rectangle; press and **drag horizontally** to lay down a band.

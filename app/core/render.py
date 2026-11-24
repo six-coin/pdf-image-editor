@@ -1,7 +1,8 @@
 """页面光栅化与缓存。
 
-背景图永远是"原文档去掉可编辑图片"的样子，与用户后来怎么拖、怎么删无关，
-所以缓存键只需要 ``(页号, dpi)``。原图位置 ``src_rect`` 在打开时就固定了。
+背景图永远是"原文档去掉可编辑图片、去掉本项目覆盖层"的样子，与用户后来怎么
+拖、怎么删无关，所以缓存键只需要 ``(页号, dpi)``。原图位置 ``src_rect`` 在打开
+时就固定了；覆盖层由前端用 DOM 画，渲染时临时摘掉。
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from collections import OrderedDict
 
 import pymupdf
 
+from app.core import overlay
 from app.core.document import PdfDocument
 from app.models import ImageObject, Rect
 
@@ -46,9 +48,14 @@ def _whiteout(pix: pymupdf.Pixmap, rects: list[Rect], scale: float) -> pymupdf.P
 
 
 def page_png(page: pymupdf.Page, editable: list[ImageObject], dpi: int = DEFAULT_DPI) -> bytes:
-    """渲染一页为 PNG，并把可编辑图片原来的位置涂白。"""
+    """渲染一页为 PNG，并把可编辑图片原来的位置涂白。
+
+    文本框与荧光带由前端用 DOM 画，背景里必须把它们摘掉——否则每次保存之后，
+    文字都会在背景上「烘焙」一份，移动时原位留下残影。
+    """
     scale = max(1, int(dpi)) / 72.0
-    pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+    with overlay.hidden(page.parent, page):
+        pix = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
     rects = [o.src_rect for o in editable if o.src_rect is not None]
     pix = _whiteout(pix, rects, scale)
     return pix.tobytes("png")
