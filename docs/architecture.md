@@ -44,9 +44,13 @@ app/
 │  ├─ units.py                pt/mm 换算、页码范围解析
 │  ├─ geometry.py             夹取、手柄缩放、命中、切分矩阵
 │  ├─ imagestore.py           内容寻址的图片仓库
-│  ├─ document.py             PDF 句柄、页信息、可编辑图片
+│  ├─ document.py             PDF 句柄、页信息、可编辑图片、覆盖层
 │  ├─ render.py               页面光栅化 + LRU 缓存
 │  ├─ split.py                切分与打孔（纯函数）
+│  ├─ fonts.py                六种字体的路径表与懒加载缓存
+│  ├─ textlayout.py           换行、行高、基线（纯函数）
+│  ├─ palette.py              文字与荧光笔的调色板
+│  ├─ overlay.py              文本框与荧光笔的落盘、读回、回收
 │  ├─ undo.py                 命令栈
 │  └─ save.py                 保存 + 保存报告
 ├─ system/                    唯一直接接触 Windows 的地方
@@ -157,15 +161,31 @@ app/
 |---|---|
 | `path` | 当前文件 |
 | `pages` | `PageInfo` 列表 |
-| `objects` | 所有 `ImageObject` |
+| `objects` | 所有画布对象：`ImageObject` / `TextObject` / `HighlightObject` |
 | `selection` | 选中的 id 列表 |
 | `removed` | 墓碑表：`{页号: [被删掉的原图位置]}` |
+
+`objects` 是**一个**列表，靠 `kind`（`image` / `text` / `highlight`）区分。多选、一起拖动、撤销、z 序因此全部复用同一套代码；`overlays_on(page)` 取某页的文本框与荧光带，`images_on(page)` 取图片。
 
 **墓碑表**是保存正确性的关键：对象删了，但它在 PDF 里还占着位置，不记下来就擦不掉，保存完它又回来了。
 
 `upsert` 按 id 覆盖（幂等，重复调用结果相同），`replace_all` 整份替换，`renormalize(page)` 把某页的 z 重排成 10、11、12…，`drop` 同时清理选择集。
 
-### 4.6 z 序
+### 4.6 `TextObject` / `HighlightObject`
+
+| 字段 | 含义 |
+|---|---|
+| `id` | `t-1a2b3c4d` / `h-1a2b3c4d` |
+| `rect` | 文本框：`w` 是用户能拖的宽度、`h` 由排版算出；荧光带：`w/h` 都定死 |
+| `runs` | 只有文本有：`[{text, font}]`，一段一种字体，可以混排 |
+| `size_px` | 字号（px，整数）。落盘时 ×0.75 变 pt |
+| `line_height` | 行高是字号的倍数（默认 1.15） |
+| `color` | 调色板的键，不是色值 |
+| `z` | 同页叠放顺序 |
+
+**尺寸规则**：文本框只接受宽度（`commit_transform` 里忽略客户端给的高度，一律重排），荧光带连宽度都不接受。组缩放时两者只按 `sx/sy` 变换位置，尺寸不动。
+
+### 4.7 z 序
 
 - 同一页内按 `z` 升序叠放，DOM 顺序即视觉顺序。
 - 新建对象取 `next_z(page)`（当前最大值 + 1）。
@@ -187,7 +207,11 @@ app/
 | `core.imagestore` | 内容寻址存取、缩略图、垃圾回收 | 不知道图属于谁 |
 | `core.document` | 打开 / 关闭、页信息、抽取可编辑图片 | 不渲染、不保存 |
 | `core.render` | 页面光栅化 + 涂白 + LRU 缓存 | 不决定显示在哪一页 |
-| `core.split` | 四个纯函数：切分、保留、打孔、像素裁切 | 不碰撤销栈 |
+| `core.split` | 五个纯函数：切分、保留、打孔、涂白、像素裁切 | 不碰撤销栈 |
+| `core.fonts` | 六种字体的路径、懒加载与缓存 | 不排版、不画 |
+| `core.textlayout` | 换行、行高、基线；输出「第几行、每个字段从哪开始」 | 不碰 PDF、不知道字号是 px 还是 pt |
+| `core.palette` | 文字三色与荧光四色的键表 | 不认识 PDF |
+| `core.overlay` | 草稿页绘制、`/BM /Multiply`、子集化、嫁接、标记读写 | 不决定存到哪、不认识撤销栈 |
 | `core.undo` | 命令栈、宏、dirty 判定 | 不知道命令的业务含义 |
 | `core.save` | redaction + 重插 + 原子落盘 + 校验 | 不决定保存到哪 |
 | `system.asset_server` | 把位图、缩略图、静态文件喂给 WebView2 | 不是业务服务端 |
@@ -271,6 +295,7 @@ pointerup    → 一次性 commit_transform(items, selection)
 | `build_split` | 所有格子各成一个对象 |
 | `keep_cell` | 只留 `(row, col)` 那一格 |
 | `punch_cell` | 原图挖一个白洞，抠出来的格子独立成对象 |
+| `fill_cell` | 原图挖一个白洞，**不**产出小块（切分模式里的「3」） |
 
 格子一律用 `(row, col)` 显式指定，行列号是**去重之后**的真实网格坐标——不存在「第 4 格就是中心」这种硬编码索引。
 
@@ -280,7 +305,33 @@ pointerup    → 一次性 commit_transform(items, selection)
 - 洞是直接挖在原图像素上的，不叠白色矩形——叠层在缩放时会被插值成半透明；
 - 切分线是纯视图状态，按落笔顺序存在前端数组里，撤销就是弹最后一条。
 
-### 6.7 撤销栈
+### 6.7 文本框与荧光笔的落盘
+
+两者都不画成 PDF 批注，而是画进**页面内容流**：打印、复制文字、任何阅读器都按普通内容处理，不依赖各家对批注外观流的支持。
+
+```
+每页：
+  1. overlay.clear(page)         撤掉上一版（摘内容流 + 只删标记点名的那一个 XObject）
+  2. redaction + insert_image    现有图片流程
+  3. overlay.draw(page, items)
+       草稿文档（mediabox 尺寸）
+         → 荧光带：裸操作符 + /ExtGState <</BM /Multiply>>
+         → 文字：TextWriter，一种颜色一个，混排字体在同一条流里
+         → scratch.subset_fonts()      只子集化我们自己的字体
+       page.show_pdf_page(mediabox, scratch, 0)   → 一个 Form XObject
+       内容流首行写标记 `% sixcoin-overlay v1 <xobj名>`
+       该页对象 JSON 写进 XObject 的 /SixCoin 流
+```
+
+三条必须守住的：
+
+1. **顺序**：`apply_redactions()` 会把整页内容流合并成一条，所以覆盖层只能在它之后写；上一版必须在它之前撤。
+2. **回收**：撤旧时只删标记里点名的那一个 XObject。遍历删整个 `/Resources/XObject` 会把页面上的图片（`fzImg0`）一起删掉，下一次保存就报 `cannot find XObject resource`。
+3. **字体**：子集化只发生在草稿文档里。主文档一次 `subset_fonts()` 都不能调——那会把原文档所有字体一起子集化，违背「其余内容一个字节都不动」。
+
+标记是唯一的身份凭据：`garbage=4` 会重编号对象，xref 存不住。重新打开时按内容流首行认出自己，再从 `/SixCoin` 还原对象；别的 PDF 里的文字没有这个标记，自然就是「烘焙在背景里、不可编辑」。
+
+### 6.8 撤销栈
 
 只有三类命令：
 
@@ -296,7 +347,7 @@ pointerup    → 一次性 commit_transform(items, selection)
 - `apply` 必须幂等：按 id 覆盖，不是追加。
 - 栈上限默认 100（设置里 10–500）。挤出栈外的记录会让「已保存位置」失效，此时 `dirty` 永远为真——这是有意的：回不到存档点，就该提醒用户保存。
 
-### 6.8 保存
+### 6.9 保存
 
 ```
 api.save_document(path?)
@@ -317,9 +368,9 @@ api.save_document(path?)
 
 `insert_image` 也必须显式写 `keep_proportion=False`。默认值 `True` 会按图片原始比例把图居中塞进目标矩形，中心与短边不变，看起来就是「用户调过的长宽比被还原了」。PyMuPDF 2.x 起这条对所有格式一致生效（1.x 只对 JPEG 生效，PNG 重新编码时会被忽略），所以样本里必须带上 JPEG 才能覆盖到。
 
-单页失败不拖累其他页，只记一条警告，最后汇总成一份报告（见使用手册第 9 节）。
+单页失败不拖累其他页，只记一条警告，最后汇总成一份报告（见使用手册第 11 节）。
 
-### 6.9 保存后的基线重建
+### 6.10 保存后的基线重建
 
 保存完不能整份重建——那样界面会闪一下，撤销栈也会清空。所以先试「就地重定基线」：
 
@@ -330,13 +381,13 @@ api.save_document(path?)
 
 墓碑表必须清空：被删的图已经在文件里彻底消失，留着的话下次保存会照着旧坐标去擦，可能擦掉刚放进去的新图。
 
-### 6.10 导出页
+### 6.11 导出页
 
 读的是**磁盘上的文件**，不是内存模型，所以有未保存修改时直接拒绝。
 
 页码解析在后端（`parse_page_range`），支持 `1-3,5,7-9`、中文逗号、空格。非法片段不静默丢弃，返回 `(错误码, 原始片段)` 由界面列出。
 
-### 6.11 外部编辑
+### 6.12 外部编辑
 
 ```
 edit_external(id)   → 图片写到 temp/edit-<随机>/image.png → os.startfile 打开
@@ -347,7 +398,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 
 临时目录只允许删 `TEMP_DIR` 下自己建的那一层；启动时还会清理一天前的残留。
 
-### 6.12 预处理
+### 6.13 预处理
 
 把页内每张图转灰度、把亮于阈值的像素压成纯白（扫描件去底灰），结果另存为新文件。
 
@@ -371,13 +422,27 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
   "doc": { "path": "…", "name": "…", "dirty": false, "page_count": 12,
            "generation": 1, "can_save": true },
   "pages": [{ "index": 0, "w": 595, "h": 842, "has_text": true, "locked": 0 }],
-  "objects": [{ "id": "p0-x12-0", "page": 0, "x": 100, "y": 100, "w": 200, "h": 150,
-                "z": 10, "rotation": 0, "image": "sha1…", "thumb": "…", "src": "…" }],
+  "objects": [
+    { "id": "p0-x12-0", "kind": "image", "page": 0, "x": 100, "y": 100, "w": 200, "h": 150,
+      "z": 10, "rotation": 0, "image": "sha1…", "thumb": "…", "src": "…" },
+    { "id": "t-1a2b3c4d", "kind": "text", "page": 0, "x": 60, "y": 300, "w": 113.4, "h": 24,
+      "z": 11, "size": 14, "line_height": 1.15, "color": "blue", "hex": "#0078D4",
+      "runs": [["正文", "simsun"], [" Latin", "times"]],
+      "lines": [{ "baseline": 9.8, "runs": [["正文", "simsun", 0, 21.0], [" Latin", "times", 21.0, 30.5]] }] },
+    { "id": "h-5e6f7a8b", "kind": "highlight", "page": 0, "x": 60, "y": 400, "w": 200, "h": 11.25,
+      "z": 12, "color": "yellow", "hex": "#FFF066" }
+  ],
   "selection": ["p0-x12-0"],
   "history": { "can_undo": true, "can_redo": false, "label": "edit.move" },
   "language": "zh-CN", "languages": ["zh-CN", "en-US"],
   "theme": "light", "show_guides": true, "show_inspector": true, "eight_handles": true,
-  "keybindings": {}, "reference": { "left_mm": 10, … }, "undo_limit": 100,
+  "keybindings": {}, "reference": { "left_mm": [10], "right_mm": [10, 50], … },
+  "palette": { "text": [{"key": "blue", "hex": "#0078D4"}, …], "highlight": […] },
+  "fonts": [{ "key": "msyh", "css": "Microsoft YaHei" }, …],
+  "defaults": { "text_font": "msyh", "text_size_px": 14, "text_color": "blue",
+                "text_width_mm": 40, "text_line_height": 1.15,
+                "highlight_height_px": 15, "highlight_color": "yellow" },
+  "undo_limit": 100,
   "log_level": "INFO", "log_cleanup": true, "log_retention_days": 30,
   "backup_retention_days": 30
 }
@@ -395,7 +460,9 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 | 渲染 | `load_page`（另：`render_page` 供资源服务内部调用） |
 | 选择 | `select` |
 | 编辑 | `commit_transform` `delete_objects` `reorder_objects` `undo` `redo` |
-| 切分 | `split_object` `keep_cell` `punch_cell` |
+| 切分 | `split_object` `keep_cell` `punch_cell` `fill_cell` |
+| 文本 | `create_text` `update_text`（清空即删除） |
+| 荧光笔 | `create_highlight` `update_highlight` |
 | 保存导出 | `save_document` `browse_save` `export_pages` |
 | 剪贴板 / 外部 | `paste_image` `edit_external` `replace_image` |
 | 其它 | `preprocess_pdf` `update_reference` `update_settings` `set_language` `reset_settings` |
@@ -444,7 +511,7 @@ closing（UI 线程） → 有未保存修改就 request_close_prompt()（丢进
 
 ### 8.1 模块划分
 
-零构建，原生 ES module，18 个文件各管一件事：
+零构建，原生 ES module，21 个文件各管一件事：
 
 | 文件 | 职责 |
 |---|---|
@@ -452,15 +519,19 @@ closing（UI 线程） → 有未保存修改就 request_close_prompt()（丢进
 | `bridge.js` | 桥接封装：`call()`、`T()`、状态栏 `toast()` |
 | `state.js` | 纯视图状态（缩放、DPI、主题、手势中） |
 | `sync.js` | **唯一**的快照通道，合并短时间内的多次刷新 |
-| `render.js` | 快照 → DOM，含属性栏、多选组框与语言替换 |
+| `render.js` | 快照 → DOM，含属性栏、多选组框与语言替换；按 `kind` 分派到图片 / 文本框 / 荧光带 |
 | `canvas.js` | 页面可见性、位图加载、缩放与滚动 |
 | `interact.js` | 指针手势：选中、拖动、八手柄缩放、组缩放、框选、平移 |
 | `split.js` | 分割模式：切线、格子高亮、执行 |
-| `guides.js` | 参考线绘制 |
+| `modes.js` | 左栏三种模式（选择 / 文本 / 荧光笔）与光标 |
+| `text.js` | 文本框的渲染、contenteditable 编辑、浮动工具栏 |
+| `highlight.js` | 荧光带的渲染、绘制预览、调色条 |
+| `guides.js` | 参考线绘制（每边多条） |
 | `drop.js` | 拖文件进窗口：遮罩提示、挡住 WebView2 的默认导航 |
 | `controls.js` | 通用表单控件（分段选择器），设置页与首次运行共用 |
 | `settings.js` | 设置弹窗 |
 | `modal.js` | 通用弹窗与确认框 |
+| `markdown.js` | 使用说明的 Markdown 渲染 |
 | `export.js` | 导出页弹窗 |
 | `keymap.js` | 键位表、归一化、冲突检测 |
 | `shortcuts.js` | 键位 → 动作分发 |
@@ -502,6 +573,10 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 | 组缩放 | 大框的八个手柄 | 按同一 `sx/sy` 缩放整组，锚点是对面那条边 |
 | 框选 | 空白处拖动 | 与选框相交（含部分重叠）的本页图片 |
 | 平移 | `Space` + 拖动 / 中键 | 只改滚动位置，不碰模型 |
+| 画荧光带 | 荧光笔模式下横向拖动 | 松手才建对象，拖动中只有一个预览块 |
+| 建文本框 | 文本模式下单击空白 | 落点即左上角，随即进入编辑 |
+
+文本框与荧光带的手柄规则：文本框只有左右两个（改宽度、文字不缩放），荧光带一个都没有。组缩放时两者只按 `sx/sy` 挪位置，宽高一律不动——拉大整组不等于把字也拉大。
 
 - 拖动只改 `left/top`，不重排布局；松手一次性提交。
 - 移动阈值 3px，最小尺寸 4pt；组缩放还要保证组里最小的那张不低于 4pt、整组不出页面。
@@ -610,7 +685,9 @@ tests/
 ├─ test_geometry.py         夹取、角/边手柄缩放、切分矩阵
 ├─ test_document.py         打开、页信息、可编辑图片筛选
 ├─ test_render.py           涂白、渲染上限、缓存淘汰
-├─ test_split.py            切分 / 保留 / 打孔
+├─ test_split.py            切分 / 保留 / 打孔 / 涂白
+├─ test_textlayout.py       换行、行高、基线
+├─ test_overlay.py          文本框与荧光笔的落盘、读回、回收
 ├─ test_undo.py             栈行为、宏、dirty
 ├─ test_save.py             文字保留、批注保留、长宽比、备份命名与清理、失败回滚
 ├─ test_editor_api.py       接口层：快照、越界、任务、保存后重定基线
@@ -647,3 +724,6 @@ uv run pytest
 10. **新增颜色先加 token。** `static/css/tokens.css` 是唯一的颜色来源，深色模式只覆盖变量，不改布局。
 11. **配置里的键必须有人读。** 写进 `DEFAULT_APP` 却没有任何模块消费，就是一条会误导人的假设置。
 12. **临时提示只走状态栏。** 新加一种「底部横幅」「右上角气泡」等于再造一套提示语言；要表达进行中就用 `toast(..., { sticky: true, busy: true })`。
+13. **覆盖层只能靠内容流首行的标记认亲。** `garbage=4` 会重编号对象，xref 存不住；撤旧时只删标记点名的那一个 XObject。
+14. **子集化只在草稿文档里做。** 主文档调一次 `subset_fonts()` 就会把原文档的字体全部重写，等于改了不该改的东西。
+15. **文字与荧光笔画进页面内容流，不画成批注。** 批注的外观流各家阅读器支持不一，而且会被 Edge 的批注界面当成「用户的批注」。

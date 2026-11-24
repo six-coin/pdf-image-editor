@@ -16,18 +16,15 @@ def _load(code: str) -> dict[str, str]:
 
 
 def test_every_locale_has_the_same_keys():
-    # 临时放宽：本轮只往 zh-CN 加文案，英文等下一轮补齐后再恢复成 zh == en。
     zh = set(_load("zh-CN"))
     en = set(_load("en-US"))
-    assert en <= zh, f"只在英文里: {sorted(en - zh)}"
+    assert zh == en, f"只在中文里: {sorted(zh - en)}; 只在英文里: {sorted(en - zh)}"
 
 
 def test_placeholders_match_the_default_language():
     zh = _load("zh-CN")
     en = _load("en-US")
     for key, text in zh.items():
-        if key not in en:
-            continue  # 同上：英文还没补，先跳过
         expected = set(_PLACEHOLDER.findall(text))
         actual = set(_PLACEHOLDER.findall(en.get(key, "")))
         assert expected == actual, f"{key}: {expected} != {actual}"

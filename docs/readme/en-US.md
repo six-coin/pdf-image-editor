@@ -22,7 +22,7 @@ Saving only swaps the images; everything else is left untouched.
 - Pages are rendered at a DPI chosen from the current zoom, so zooming in stays sharp
 - Wheel to scroll, `Ctrl`+wheel to zoom around the pointer, `Space`+drag or middle-drag to pan
 - Light and dark themes; the system preference seeds the default once, then you switch by hand
-- Page-margin guides with independently adjustable edges
+- Page-margin guides, any number of them per edge
 
 **Edit**
 
@@ -34,6 +34,8 @@ Saving only swaps the images; everything else is left untouched.
 - Bring to front / send to back, delete, arrow-key nudging
 - Paste an image from the clipboard (`Ctrl+V`)
 - Edit an image in the system default program and send it back
+- **Text boxes**: font, size, line height and color, with several fonts mixed inside one box
+- **Highlighter**: horizontal bands that multiply over the page, so text underneath stays readable
 
 **Save**
 
@@ -70,7 +72,7 @@ On the **first run** you pick the interface language (the Windows UI language by
 
 ## 5. Interface
 
-The window has four parts: the top bar, the canvas, the inspector on the right, and the split bar at the bottom of the canvas (only in split mode). Each is described below.
+The window has five parts: the top bar, the tool rail on the left, the canvas, the inspector on the right, and the split bar at the bottom of the canvas (only in split mode). Each is described below.
 
 **Top bar**
 
@@ -80,6 +82,16 @@ The window has four parts: the top bar, the canvas, the inspector on the right, 
 | Middle | Undo / redo, zoom (`−` / percentage field / `+` / Fit Width / 100%) |
 | Right | Preprocess, Export Pages, Reload, theme toggle, Settings, show/hide inspector |
 
+**Tool rail**
+
+Always there, cannot be closed. Three icons decide what a press on the page does:
+
+| Icon | Mode | A press on the page |
+|---|---|---|
+| Arrow | Select | Select, drag, use handles, marquee (the default) |
+| T | Text | Drop a text box and start editing |
+| Marker | Highlighter | Drag horizontally to lay down a band |
+
 **Canvas**
 
 Pages are stacked vertically, and only four of them are rendered: the current page, the one after it, the one before it, and the page after that. Pages rendered earlier stay in place when you move away — nothing is unloaded — but distant pages are never rendered ahead of time. A floating "current page / total" chip sits in the bottom-left corner of the canvas and the same line appears at the bottom of the inspector; the busy bar on the right of the top bar shows progress for long tasks such as opening and preprocessing.
@@ -88,11 +100,12 @@ Pages are stacked vertically, and only four of them are rendered: the current pa
 
 - Nothing selected: a hint plus a "Paste image" button
 - One image selected: thumbnail, page, position (pt), size (pt), and "Split / Bring to front / Send to back / Edit externally / Delete"
+- A text box or a highlight selected: page, position, size, and "Delete"
 - Several selected: a hint plus "Delete"; a group frame appears on the canvas for scaling them together
 
 **Split bar**
 
-Appears at the bottom of the canvas once split mode starts. It shows how many horizontal and vertical cuts are placed and holds the three action buttons. The `kbd` hints on those buttons follow your custom key bindings.
+Appears at the bottom of the canvas once split mode starts. It shows how many horizontal and vertical cuts are placed and holds the four action buttons (keep / extract / erase / split into cells). The `kbd` hints on those buttons follow your custom key bindings.
 
 ## 6. Opening and viewing
 
@@ -212,19 +225,91 @@ One continuous drag is one entry; structural changes such as splitting and pasti
 Select **one** image, press `E` or click "Split" in the inspector. With several images selected split mode refuses to start — a cut belongs to exactly one image, and the message says so.
 
 1. **Place cuts**: click inside the image for a horizontal cut; hold `Shift` and click for a vertical one. The dashed preview turns as soon as `Shift` goes down or comes back up — no need to move the mouse first. Any number of cuts is allowed, positioned where you click.
-2. **Read the cells**: the cell under the pointer is highlighted, which enables "Keep this cell / Extract this cell" on the split bar.
+2. **Read the cells**: the cell under the pointer is highlighted, which enables "Keep this cell / Extract this cell / Erase this cell" on the split bar.
 3. **Apply**:
    - `1` keep this cell — discard everything else
    - `2` extract this cell — punch it out of the original (leaving a white hole) and turn the piece into its own image
+   - `3` erase this cell — punch it out and throw the piece away
    - `R` split into cells — every cell becomes its own image
 4. **Take it back**: `Ctrl+Z` undoes **the last cut** (in the order you placed them, horizontal or vertical), not the whole split session.
 5. **Leave**: `Esc` or "Cancel" on the split bar. Applying any action exits automatically.
 
 Global shortcuts are suspended in split mode, so the two key maps can bind the same key without fighting.
 
-> "Extract" versus "Keep": extract **punches a hole** — the original stays, minus one piece. Keep **replaces** — the original is gone and only that cell remains.
+> "Extract", "Erase" and "Keep": extract **punches a hole** and keeps the punched-out piece as a new image; erase punches the same hole but discards the piece; keep **replaces** — the original is gone and only that cell remains.
 
-## 9. Saving and exporting
+## 9. Text boxes
+
+Switch the left rail to Text (the T icon) and click on the page: a text box lands with its **top-left corner at the click point**. You can also press `T` at any time to create one where the pointer last was.
+
+### Editing
+
+- **Click** to select (and drag); **double-click** to edit — the caret is already in the box.
+- `Enter` starts a new line; `Esc` or clicking outside ends editing and saves.
+- Empty the box and click away and it is deleted — no invisible leftovers.
+- The size is always an integer (px); use `−` / `+` on the toolbar or type it in.
+- **Line height** is a multiple of the font size: 1.15 by default, adjustable between 0.8 and 3.
+
+### Toolbar
+
+The toolbar is pinned to the top-left of the box and appears as soon as it is selected:
+
+| Control | Meaning |
+|---|---|
+| Font | Microsoft YaHei / SimSun / FangSong / KaiTi / SimHei / Times New Roman |
+| Size | 6–200 px, 14 by default (the same size Edge uses for its annotations) |
+| Line height | 0.8–3×, 1.15 by default |
+| Color | Blue (default) / red / green, taken from Edge's annotation palette |
+
+**Mixed fonts are allowed**: select part of the text and pick a font — only that run changes. One box can hold a SimSun paragraph followed by a FangSong one.
+
+### Width
+
+A text box has **two handles, left and right**, and they change the width only — the text is re-wrapped, never scaled. The height always follows the number of lines and cannot be dragged. The default width is 4 cm and can be changed in Settings.
+
+### The "current default"
+
+Which style a new text box gets depends on the last text box you edited:
+
+- Before you have edited any box, the defaults from Settings apply (Microsoft YaHei / 14 px / blue / line height 1.15 / width 4 cm);
+- Once you have edited a box, the next new box inherits its style — the same behaviour as Edge.
+
+This rule never shows up in the UI: it is "the set you used last", not another setting. It resets when you open a new document.
+
+### On disk
+
+Text boxes are saved as **real text** — not images, not PDF annotations:
+
+- Edge, Chrome and Acrobat display, select, search and copy them, and printing keeps them;
+- Fonts are **subsetted** before being embedded, so only the glyphs you used travel with the file — embedding all six fonts whole is 41 MB, a subsetted page of text is tens of KB;
+- The fonts of the original document are not touched at all.
+
+The program leaves a marker on the first line of its own content stream, so reopening the file still recognises "this box was made here" and keeps it editable. Text that came with the PDF has no such marker and stays baked into the background, exactly as before.
+
+## 10. Highlighter
+
+Switch the left rail to Highlighter (the marker icon). The cursor turns into a dashed vertical rectangle; press and **drag horizontally** to lay down a band.
+
+- Horizontal only — no freehand strokes;
+- The band is created on release; while dragging you only see a preview, and a drag shorter than 4 pt is discarded;
+- 15 px tall and yellow `#FFF066` by default, matching Edge; the height is configurable in Settings (integer px);
+- Select a band and a small palette appears above it to switch it to green / blue / red.
+
+### It multiplies, it does not cover
+
+The band is drawn with **multiply** (PDF `/BM /Multiply`):
+
+| Backdrop | Result |
+|---|---|
+| White paper | Bright yellow |
+| Grey shading | Darker yellow |
+| Pure black | Still black — no visible change |
+
+That is exactly what a highlighter should do: text and lines are not covered, only tinted.
+
+A band can be **selected and moved, nothing else**: no handles, no resizing. Like text boxes it can be selected and moved together with images; scaling a group only moves it, never resizes it.
+
+## 11. Saving and exporting
 
 ### In-place save
 
@@ -240,9 +325,11 @@ While saving, the status bar at the bottom of the window (the same one every oth
 
 ### What saving does
 
-1. Redact every image at its **original position** (`src_rect`) to remove it from the page content;
-2. Re-insert every image at its **current position** (`rect`), stacked in z order;
-3. Write a temporary file → reopen it to verify the page count → replace the target.
+1. Remove the previous version of the text boxes and highlights this program drew;
+2. Redact every image at its **original position** (`src_rect`) to remove it from the page content;
+3. Re-insert every image at its **current position** (`rect`), stacked in z order;
+4. Draw this page's text boxes and highlights again (this is where the fonts are subsetted);
+5. Write a temporary file → reopen it to verify the page count → replace the target.
 
 Text, vectors, annotations, bookmarks and links therefore survive; there is no "drop the text layer" option to choose.
 
@@ -260,6 +347,7 @@ When saving finishes you are told which path was written and how many images wer
 | An image on page N failed to insert | Encoding or write error; the original is still in the background |
 | Page N failed to erase | The redaction did not apply; the original may remain |
 | Annotations on page N could not be restored | In rare cases writing `/Annots` back fails |
+| Text boxes or highlights on page N could not be written | Drawing the overlay failed; the images were already handled, the text on that page was not saved |
 | Saved, but the editor could not reopen the file | The file on disk is fine; click Reload in the top bar to continue |
 
 ### Export pages
@@ -273,7 +361,7 @@ When saving finishes you are told which path was written and how many images wer
 
 The ↻ button in the top bar re-reads the current file from disk and discards in-memory edits. Unsaved changes trigger a confirmation first.
 
-## 10. Black & white preprocessing
+## 12. Black & white preprocessing
 
 Scans usually carry a layer of grey background that looks bad in print or archive. "Preprocess" in the top bar converts every image in the document to grayscale, pushes pixels brighter than a threshold to pure white, and **saves the result as a new file**.
 
@@ -296,7 +384,7 @@ When it finishes you are told where the file went and how many images were proce
 
 > The higher the threshold, the more light grey becomes white; 235 suits most scans. Below 200 you start erasing pale lines and light colour along with the background.
 
-## 11. Keyboard shortcuts
+## 13. Keyboard shortcuts
 
 **Everything here can be rebound in Settings → Shortcuts**, effective immediately. Duplicate combinations inside one scope are rejected on the spot.
 
@@ -315,6 +403,7 @@ When it finishes you are told where the file went and how many images were proce
 | `Ctrl+I` | Show / hide the inspector |
 | `Ctrl+,` | Settings |
 | `E` | Enter split mode |
+| `T` | Create a text box at the pointer |
 | Arrow keys (`Shift` faster, `Ctrl` finer) | Nudge position |
 | `Space` + drag / middle-drag | Pan the canvas |
 
@@ -322,12 +411,12 @@ When it finishes you are told where the file went and how many images were proce
 
 | Key | Action |
 |---|---|
-| `1` / `2` | Keep the cell under the pointer / extract it |
+| `1` / `2` / `3` | Keep the cell under the pointer / extract it / erase it |
 | `R` | Split into cells |
 | `Ctrl+Z` | Undo the last cut |
 | `Esc` | Leave split mode |
 
-## 12. Settings
+## 14. Settings
 
 `Ctrl+,` or the gear in the top bar.
 
@@ -340,7 +429,14 @@ When it finishes you are told where the file went and how many images were proce
 | Undo limit | 10–500 | Lowering it only affects entries pushed afterwards |
 | Guides | On / Off | The page-margin lines on the canvas |
 | Eight handles | On / Off | Off leaves only the four corner handles |
-| Margins | 0–300 mm | Left / top / right / bottom |
+| Margins | 0–300 mm | Left / top / right / bottom; each edge takes several values separated by commas, e.g. `10, 50`. Stored as a sorted, de-duplicated list and formatted back to `10, 50` |
+| Default font | Six families | Font for new text boxes |
+| Default size | 6–200 px | 14 by default; integers only |
+| Default color | Blue / red / green | Color for new text boxes, blue by default |
+| Default width | 10–300 mm | 40 (4 cm) by default |
+| Default line height | 0.8–3× | 1.15 by default; a multiple of the font size |
+| Highlighter height | 4–200 px | 15 by default |
+| Highlighter color | Yellow / green / blue / red | Yellow by default |
 | Log level | Debug / Normal / Warnings / Errors | Takes effect at once and keeps writing to the same file |
 | Clean up logs automatically | On / Off | Deletes log files older than the retention period at startup; turn it off to keep them all |
 | Keep logs for (days) | 1–365 | 30 by default; has no effect while the switch above is off |
@@ -357,7 +453,7 @@ The last block in Settings is "About":
 | Data folder | Where settings and the default PDF folder live; defaults to `%PROGRAMDATA%\six-coin\pdf-image-editor`. An input box with "Change" and "Reset" on its right: pick a folder and `pdf-image-editor` is appended automatically; the old folder is copied there **after a restart** and then removed. Press "Restart now" under the field when you are done; unsaved changes are held back first |
 | User manual | Opens the manual in the current language (English if that file is missing) |
 
-## 13. Files and folders
+## 15. Files and folders
 
 The program folder holds code only; runtime files live in system folders.
 
@@ -368,7 +464,7 @@ program directory\
 └─ app\                  all code
 
 %PROGRAMDATA%\six-coin\pdf-image-editor\     data folder (configurable)
-├─ app.json             settings (language, theme, guide margins, key bindings)
+├─ app.json             settings (language, theme, guide margins, text/highlighter defaults, key bindings)
 ├─ backup\              pre-save backups, YYYYMMDD-<name>.bak.pdf
 └─ pdfs\                default folder for the open dialog
 
@@ -386,7 +482,7 @@ program directory\
 - Unknown keys in the configuration are preserved, which keeps old and new versions compatible.
 - The data folder always ends with the project code: picking `D://Data` gives `D://Data//pdf-image-editor`. On a change the old contents are copied there after a restart: folders are merged, and files already present in the target are never overwritten. If the copy fails nothing is touched and Settings says why — you never end up with a new folder and no settings. The old folder is removed once the switch succeeds.
 
-## 14. Troubleshooting
+## 16. Troubleshooting
 
 **Opening a PDF fails**
 The file may be corrupt, have no usable pages, or not be a PDF at all. The log has the full stack trace; first check that another reader can open it.
@@ -409,6 +505,9 @@ Backups moved to `backup\` inside the data folder (Settings → About → Data f
 **Preprocessing skipped an image**
 That image has an alpha channel (logo, watermark); thresholding would turn its transparent areas into black blocks, so it is skipped. Such images are meant to stay as they are.
 
+**Chinese in a text box looks different from the screen**
+That run uses a font without Chinese glyphs, such as Times New Roman, so the save falls back to another face — readable, but not the same letterforms. Switch that run to a Chinese font if it has to match.
+
 **A shortcut does nothing**
 First check whether you are in split mode (global shortcuts are suspended), then whether a save is running (the canvas and shortcuts are locked while saving), then whether an input has focus (keys go to the input). If you rebound keys, Settings marks the conflicts.
 
@@ -418,7 +517,7 @@ The WebView2 runtime is missing or too old. Install [WebView2 Runtime](https://d
 **Changing the data folder had no effect after a restart**
 Look at the line under the field in Settings: if it still says "Takes effect after restart", the copy has not succeeded yet (missing drive, file in use, no write permission). Type the current folder back or press "Reset" to cancel the change; once the problem is fixed press "Restart now" — closing the window and starting it again works too, but it must really exit: while the old process is alive, launching again only brings that window to the front instead of opening a second one.
 
-## 15. Known limitations
+## 17. Known limitations
 
 - **Rotated pages are not editable**: on a page that has been rotated as a whole, none of its images can be edited.
 - **Non-axis-aligned images are not editable**: rotated or flipped images stay in the background.
@@ -427,3 +526,7 @@ Look at the line under the field in Settings: if it still says "Takes effect aft
 - **Export requires saving first**: export reads the file on disk, not the in-memory edits.
 - **Preprocessing only handles raster images**: vectors and text are not thresholded, so a grey background painted as vector art stays where it is.
 - **Only four pages are preloaded**: distant pages render when you get near them, so dragging the scrollbar quickly shows grey placeholders for a moment.
+- **No text boxes or highlights on rotated pages**: the page coordinate system no longer matches the canvas — the same reason rotated images are not editable.
+- **Text does not re-wrap while you drag the width**: the box re-wraps on release, so the text looks clipped for a moment mid-drag.
+- **Text boxes and highlights are only editable where the marker is understood**: they are page content, so other readers show, select and print them, but they cannot be edited there like annotations.
+- **Overlays always sit above images on the same page**: they do not take part in image z-order (bring to front / send to back apply to images only).

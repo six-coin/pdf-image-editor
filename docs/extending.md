@@ -177,21 +177,35 @@ body.appendChild(
    ```
 
 3. 两个语言文件加 `save.warning_color_space`，需要细节时用 `{detail}` 占位符；
-4. `docs/readme/zh-CN.md` 与 `en-US.md` 第 9 节的提示表各补一行。
+4. `docs/readme/zh-CN.md` 与 `en-US.md` 第 11 节的提示表各补一行。
 
 `page` 为 `null` 表示整份文档级别的警告，界面上不会显示页码徽标。
 
-## 6. 修改界面
+## 6. 新增一种字体
+
+文本框的字体是**白名单**：键写进 PDF 的 `/SixCoin` 里，两边必须一致。
+
+1. `app/core/fonts.py` 的 `FAMILIES` 里加一行 `(键, CSS 族名, (候选文件名, …))`；
+2. `app/settings.py` 的 `FONT_KEYS` 补上同一个键（settings 是基础层，不 import core，所以两边各写一份，`tests/test_settings.py` 会比对）；
+3. 两个语言文件加 `font.<键>`；
+4. 字体文件放在系统字体目录里即可，程序不打包字体。缺失时 `fonts.font()` 退回 Helvetica——汉字会变成方框，但保存不会失败。
+
+选字体时注意两点：
+
+- **要能被 `pymupdf.Font(fontfile=...)` 读出来**。`.ttc` 取第一个字面，需要别的字面就得换一个单字面的 `.ttf`。
+- **中文字体才放中文**。Times New Roman 没有汉字，`TextWriter` 会静默换成 Droid Sans Fallback——能看，但和屏幕上不是一套字形。`fonts.missing_glyphs()` 可以查这件事。
+
+## 7. 修改界面
 
 前端是三个静态文件加一组 ES module，没有构建步骤，改完刷新窗口即可看到效果。
 
 | 文件 | 内容 |
 |---|---|
-| `index.html` | 结构与静态文案（`data-i18n*` 标记） |
+| `index.html` | 结构与静态文案（`data-i18n*` 标记），含左侧工具条 |
 | `css/tokens.css` | 颜色、圆角、缓动；深色只在 `[data-theme="dark"]` 里覆盖变量 |
 | `css/base.css` | 重置、字体、通用组件（按钮、输入框、弹窗、开关） |
 | `css/app.css` | 应用壳、顶栏、画布、属性栏、分割条 |
-| `js/*.js` | 每个文件一件事，见 architecture.md 第 8 节 |
+| `js/*.js` | 每个文件一件事，见 architecture.md 第 8 节。文本框在 `text.js`、荧光笔在 `highlight.js`、左栏模式在 `modes.js` |
 
 约定：
 
@@ -203,7 +217,7 @@ body.appendChild(
 - 所有后端调用走 `call()`；所有快照落地走 `apply()`。
 - 手势期间（`state.view.gesture`）不要触发重绘，否则正在拖的节点会被换掉。
 
-## 7. 代码约定
+## 8. 代码约定
 
 | 约定 | 说明 |
 |---|---|
@@ -214,6 +228,8 @@ body.appendChild(
 | 面向用户的文本走 `i18n.t()` | 异常信息也一样 |
 | 捕获异常要有具体理由 | 说明为什么这里能吞、吞掉之后用户看到什么 |
 | `core` 不导入界面库，也不反向依赖 `ui` / `system` | 由 `tests/test_source_hygiene.py` 守 |
+| 覆盖层只认内容流首行的标记，撤旧只删点名的那一个 XObject | `garbage=4` 会重编号；删多了会连页面图片一起删 |
+| 子集化只在草稿文档里做，主文档一次都不调 | 否则原文档的字体全被重写 |
 
 提交前跑：
 
