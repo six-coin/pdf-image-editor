@@ -10,6 +10,7 @@
 
 import { call, T } from './bridge.js';
 import { selectBox } from './controls.js';
+import { mountFloat, placeFloat } from './floatbar.js';
 import { apply, objectEl, pageEl } from './render.js';
 import { pxPerPt, state } from './state.js';
 
@@ -333,14 +334,8 @@ function hideBar() {
 
 function placeBar() {
   if (!bar || !bar.target) return;
-  const page = pageEl(bar.target.obj.page);
-  if (!page) return;
-  const k = pxPerPt();
-  const obj = bar.target.obj;
-  const height = bar.el.offsetHeight || 34;
-  const top = obj.y * k - height - 6;
-  bar.el.style.left = `${Math.max(2, obj.x * k)}px`;
-  bar.el.style.top = `${top >= 2 ? top : obj.y * k + obj.h * k + 6}px`;
+  // 位置按整个窗口算：挂在页面上时，元素靠近页面顶端就会把工具栏顶到窗口外。
+  placeFloat(bar.el, bar.target.obj);
 }
 
 function tapButton(label, title, onClick) {
@@ -443,7 +438,7 @@ function buildBar(target) {
     el.appendChild(swatch);
   }
 
-  page.appendChild(el);
+  mountFloat(el);
   bar = { el, id: target.id, live: target.live, target };
   placeBar();
 }
@@ -588,15 +583,23 @@ export function bindText() {
       if (!editing) return;
       if (editing.node.contains(event.target)) return;
       if (bar && bar.el.contains(event.target)) return;
-      // 这一下只负责结束编辑：拦在这里，别再让「文本模式点一下就建新框」跟着触发，
-      // 否则点一下空白就多出一个空文本框。
-      event.stopPropagation();
+      // 这一下只负责结束编辑。拦的只是画布上的那一下：否则「文本模式点空白建新框」
+      // 会跟着触发，点一下空白就多出一个空文本框。左栏、顶栏的按钮不在画布里，
+      // 不能被拦——否则编辑时点模式按钮会连切换都切不了。
+      if (event.target.closest && event.target.closest('#viewport')) {
+        event.stopPropagation();
+      }
       commitEdit();
     },
     true
   );
 
   document.addEventListener('selection:changed', syncTextBar);
+
+  // 滚动、缩放窗口时工具栏要跟着对象走：它是 fixed 的，不会自己动。
+  const viewport = document.getElementById('viewport');
+  if (viewport) viewport.addEventListener('scroll', placeBar, { passive: true });
+  window.addEventListener('resize', placeBar);
 
   document.addEventListener('layout:done', () => {
     if (editing) {

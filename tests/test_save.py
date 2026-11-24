@@ -135,20 +135,25 @@ def test_in_place_save_copies_a_dated_backup(pdf_factory, store, tmp_path):
     out.close()
 
 
-def test_each_in_place_save_keeps_its_own_backup(pdf_factory, store, tmp_path):
-    """同一天保存两次：第二份备份加 (1)，不能把上一份覆盖掉。"""
+def test_in_place_save_backs_up_only_once_a_day(pdf_factory, store, tmp_path):
+    """同名备份已经在了就不再备份：一天只留第一次保存前的那一版。"""
     src = pdf_factory("in.pdf")
+    original = src.read_bytes()
     doc = PdfDocument.open(src, store)
     state = _state(doc)
     doc.close()
 
     backup_dir = tmp_path / "backup"
     save(src, src, state, store, backup_dir=backup_dir)
+    stamp = date.today().strftime("%Y%m%d")
+    first = (backup_dir / f"{stamp}-in.bak.pdf").read_bytes()
+    assert first == original
+
     save(src, src, state, store, backup_dir=backup_dir)
 
-    stamp = date.today().strftime("%Y%m%d")
-    assert (backup_dir / f"{stamp}-in.bak.pdf").is_file()
-    assert (backup_dir / f"{stamp}-in(1).bak.pdf").is_file()
+    # 既没有 (1)，第一份也没有被第二次保存前的版本覆盖掉。
+    assert sorted(p.name for p in backup_dir.glob("*.pdf")) == [f"{stamp}-in.bak.pdf"]
+    assert (backup_dir / f"{stamp}-in.bak.pdf").read_bytes() == first
 
 
 def test_save_as_leaves_no_backup(pdf_factory, store, tmp_path):

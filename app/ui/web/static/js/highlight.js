@@ -7,8 +7,9 @@
    色带只能挪位置、换颜色，没有手柄。 */
 
 import { call } from './bridge.js';
+import { mountFloat, placeFloat } from './floatbar.js';
 import { apply, pageEl } from './render.js';
-import { pxPerPt, state } from './state.js';
+import { state } from './state.js';
 
 let bar = null;
 
@@ -56,11 +57,7 @@ function selectedBand() {
 
 function placeBar(obj) {
   if (!bar) return;
-  const k = pxPerPt();
-  const height = bar.offsetHeight || 32;
-  const top = obj.y * k - height - 6;
-  bar.style.left = `${Math.max(2, obj.x * k)}px`;
-  bar.style.top = `${top >= 2 ? top : obj.y * k + obj.h * k + 6}px`;
+  placeFloat(bar, obj);
 }
 
 async function recolor(obj, key) {
@@ -74,8 +71,7 @@ export function syncBandBar() {
     hideBar();
     return;
   }
-  const page = pageEl(obj.page);
-  if (!page) {
+  if (!pageEl(obj.page)) {
     hideBar();
     return;
   }
@@ -97,7 +93,7 @@ export function syncBandBar() {
     swatch.addEventListener('click', () => recolor(obj, color.key));
     el.appendChild(swatch);
   }
-  page.appendChild(el);
+  mountFloat(el);
   bar = el;
   placeBar(obj);
 }
@@ -109,4 +105,20 @@ export function bindHighlight() {
     if (obj) placeBar(obj);
   });
   document.addEventListener('pages:rebuilt', hideBar);
+
+  const viewport = document.getElementById('viewport');
+  if (viewport) {
+    viewport.addEventListener(
+      'scroll',
+      () => {
+        const obj = selectedBand();
+        if (obj) placeBar(obj);
+      },
+      { passive: true }
+    );
+  }
+  window.addEventListener('resize', () => {
+    const obj = selectedBand();
+    if (obj) placeBar(obj);
+  });
 }

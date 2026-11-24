@@ -301,6 +301,14 @@ def test_save_as_switches_baseline(editor, opened, tmp_path):
     assert instance.get_state()["doc"]["dirty"] is False
 
 
+def test_update_align_keeps_reference_untouched(editor, opened):
+    instance, _server = editor
+    opened()
+    snapshot = instance.update_align({"left_mm": "85, 10"})
+    assert snapshot["align"]["left_mm"] == [10.0, 85.0]
+    assert snapshot["reference"]["left_mm"] == [10.0]
+
+
 def test_in_place_save_writes_the_backup_into_the_data_dir(editor, opened):
     from app import paths
 

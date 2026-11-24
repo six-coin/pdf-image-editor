@@ -108,6 +108,7 @@
   "preprocess.open_title": "Preprocessing finished",
   "preprocess.open_ask": "Processed {count} image(s) and saved to {path}. Open it now?",
   "settings.title": "Settings",
+  "settings.general": "General",
   "settings.language": "Language",
   "settings.theme": "Appearance",
   "settings.undo_limit": "Undo limit",
@@ -215,5 +216,7 @@
   "settings.highlight": "Highlighter",
   "settings.highlight_height": "Default height (px)",
   "settings.highlight_color": "Default color",
-  "settings.margins_hint": "Separate several values with commas, for example 10, 50"
+  "settings.margins_hint": "Separate several values with commas, for example 10, 50",
+  "settings.align": "Snap lines (mm)",
+  "settings.align_hint": "Used for snapping while moving. Hidden until an element snaps, then shown as a green line. Separate several values with commas"
 }

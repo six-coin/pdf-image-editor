@@ -27,6 +27,13 @@ function section(labelKey) {
   return title;
 }
 
+/** 大块之间的细灰线。设置项之间不画线，只在换类别时画一条。 */
+function divider() {
+  const line = document.createElement('div');
+  line.className = 'settings-divider';
+  return line;
+}
+
 function numberBox(value, min, max, step, onChange) {
   const input = document.createElement('input');
   input.type = 'number';
@@ -63,8 +70,8 @@ function toggle(checked, onChange) {
   return label;
 }
 
-/** 逗号分隔的多值输入框：写 "10, 50" 就是两条参考线。 */
-function mmBox(values, onCommit) {
+/** 逗号分隔的多值输入框：写 "10, 50" 就是两条线。 */
+function mmBox(values, onCommit, group = 'reference') {
   const input = document.createElement('input');
   input.type = 'text';
   input.spellcheck = false;
@@ -72,7 +79,7 @@ function mmBox(values, onCommit) {
   const commit = async () => {
     const snapshot = await onCommit(input.value);
     if (!snapshot) return;
-    const list = (snapshot.reference || {})[input.dataset.key] || [];
+    const list = (snapshot[group] || {})[input.dataset.key] || [];
     input.value = list.join(', ');
   };
   input.addEventListener('keydown', (event) => {
@@ -177,6 +184,35 @@ export async function openSettings() {
     apply(snapshot);
     if (snapshot.ok === false && snapshot.message) toast(snapshot.message, false);
     return snapshot;
+  }
+
+  async function writeAlign(patch) {
+    const snapshot = await call('update_align', patch);
+    if (!snapshot) return null;
+    apply(snapshot);
+    if (snapshot.ok === false && snapshot.message) toast(snapshot.message, false);
+    return snapshot;
+  }
+
+  /** 四边多值输入：参考线与对齐线共用同一套版式。 */
+  function guideGrid(group, values, onCommit) {
+    const grid = document.createElement('div');
+    grid.className = 'margin-grid';
+    for (const key of ['left', 'top', 'right', 'bottom']) {
+      const cell = document.createElement('label');
+      cell.className = 'margin-cell';
+      const text = document.createElement('span');
+      text.textContent = T(`settings.${key}`);
+      const input = mmBox(
+        values[`${key}_mm`] || [],
+        (value) => onCommit({ [`${key}_mm`]: value }),
+        group
+      );
+      input.dataset.key = `${key}_mm`;
+      cell.append(text, input);
+      grid.appendChild(cell);
+    }
+    return grid;
   }
 
   /**
@@ -368,6 +404,14 @@ export async function openSettings() {
     const keys = bindings();
     body.innerHTML = '';
 
+    /** 换类别：先画一条细灰线，再写块标题。 */
+    const block = (labelKey) => {
+      body.appendChild(divider());
+      body.appendChild(section(labelKey));
+    };
+
+    body.appendChild(section('settings.general'));
+
     const languages = (data.languages || ['zh-CN']).map((code) => ({
       value: code,
       label: languageLabel(code),
@@ -422,29 +466,27 @@ export async function openSettings() {
     );
     body.appendChild(handlesRow);
 
-    const margins = data.reference || {};
-    const marginGrid = document.createElement('div');
-    marginGrid.className = 'margin-grid';
-    for (const key of ['left', 'top', 'right', 'bottom']) {
-      const cell = document.createElement('label');
-      cell.className = 'margin-cell';
-      const text = document.createElement('span');
-      text.textContent = T(`settings.${key}`);
-      const input = mmBox(margins[`${key}_mm`] || [], (value) =>
-        writeReference({ [`${key}_mm`]: value })
-      );
-      input.dataset.key = `${key}_mm`;
-      cell.append(text, input);
-      marginGrid.appendChild(cell);
-    }
-    const marginField = field('settings.margins', marginGrid);
+    const marginField = field(
+      'settings.margins',
+      guideGrid('reference', data.reference || {}, writeReference)
+    );
     const hint = document.createElement('p');
     hint.className = 'about-hint';
     hint.textContent = T('settings.margins_hint');
     marginField.appendChild(hint);
     body.appendChild(marginField);
 
-    body.appendChild(section('settings.text'));
+    const alignField = field(
+      'settings.align',
+      guideGrid('align', data.align || {}, writeAlign)
+    );
+    const alignHint = document.createElement('p');
+    alignHint.className = 'about-hint';
+    alignHint.textContent = T('settings.align_hint');
+    alignField.appendChild(alignHint);
+    body.appendChild(alignField);
+
+    block('settings.text');
 
     const defaults = data.defaults || {};
     const fontOptions = ((data.fonts || [])).map((font) => ({
@@ -498,7 +540,7 @@ export async function openSettings() {
       )
     );
 
-    body.appendChild(section('settings.highlight'));
+    block('settings.highlight');
 
     body.appendChild(
       field(
@@ -523,7 +565,7 @@ export async function openSettings() {
       )
     );
 
-    body.appendChild(section('settings.logs'));
+    block('settings.logs');
 
     body.appendChild(
       field(
@@ -562,9 +604,9 @@ export async function openSettings() {
       )
     );
 
-    body.appendChild(section('settings.backups'));
+    block('settings.backups');
 
-    // 备份在数据目录的 backup/ 里，启动时按这个天数清理；就地保存每次都会留一份。
+    // 备份在数据目录的 backup/ 里，启动时按这个天数清理；每个文档每天只留第一份。
     body.appendChild(
       field(
         'settings.backup_retention_days',
@@ -574,7 +616,7 @@ export async function openSettings() {
       )
     );
 
-    body.appendChild(section('settings.shortcuts'));
+    block('settings.shortcuts');
 
     const resetKeys = document.createElement('button');
     resetKeys.type = 'button';
@@ -588,7 +630,7 @@ export async function openSettings() {
 
     body.append(keySection('global', keys, bindKey), keySection('split', keys, bindKey));
 
-    body.appendChild(section('about.title'));
+    block('about.title');
 
     body.appendChild(field('about.data_dir', aboutBlock(data)));
 

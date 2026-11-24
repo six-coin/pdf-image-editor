@@ -87,6 +87,8 @@
   /* 参考线 */
   --guide: rgba(59, 130, 246, 0.45);
   --guide-active: var(--blue);
+  /* 吸附时的对齐线：绿色，比参考线醒目一档。 */
+  --snap-line: #10b981;
 
   /* 分割 */
   --split-line: var(--green);
@@ -168,6 +170,7 @@
   --obj-outline-soft: rgba(76, 141, 246, 0.6);
 
   --guide: rgba(76, 141, 246, 0.5);
+  --snap-line: #34d399;
 
   --split-fill: rgba(47, 191, 143, 0.16);
   --split-cell-hover: rgba(47, 191, 143, 0.26);

@@ -22,7 +22,7 @@ Saving only swaps the images; everything else is left untouched.
 - Pages are rendered at a DPI chosen from the current zoom, so zooming in stays sharp
 - Wheel to scroll, `Ctrl`+wheel to zoom around the pointer, `Space`+drag or middle-drag to pan
 - Light and dark themes; the system preference seeds the default once, then you switch by hand
-- Page-margin guides, any number of them per edge
+- Page-margin guides, any number of them per edge, plus configurable snap lines for moving elements
 
 **Edit**
 
@@ -313,7 +313,7 @@ A band can be **selected and moved, nothing else**: no handles, no resizing. Lik
 
 ### In-place save
 
-`Ctrl+S`. Every in-place save first copies the previous version into `backup\` inside the **data folder**, named `YYYYMMDD-<name>.bak.pdf`; a second save on the same day becomes `YYYYMMDD-<name>(1).bak.pdf`, and so on. Backups stay out of the source folder so a PDF that gets delivered or archived never drags a `.bak.pdf` along.
+`Ctrl+S`. An in-place save first copies the previous version into `backup\` inside the **data folder**, named `YYYYMMDD-<name>.bak.pdf`. **Each document is backed up only once a day**: a second save on the same day finds the name already taken and skips it — no `(1)`, no `(2)`. Backups stay out of the source folder so a PDF that gets delivered or archived never drags a `.bak.pdf` along.
 
 Backups older than the retention period (30 days by default, adjustable in Settings) are deleted at the next start. PDFs inside the backup folder cannot be opened: they are snapshots taken before a save, and editing one would only edit a copy.
 
@@ -404,6 +404,7 @@ When it finishes you are told where the file went and how many images were proce
 | `Ctrl+,` | Settings |
 | `E` | Enter split mode |
 | `T` | Create a text box at the pointer |
+| `Z` / `X` / `C` | Switch to Select / Text / Highlighter mode |
 | Arrow keys (`Shift` faster, `Ctrl` finer) | Nudge position |
 | `Space` + drag / middle-drag | Pan the canvas |
 
@@ -420,7 +421,9 @@ When it finishes you are told where the file went and how many images were proce
 
 `Ctrl+,` or the gear in the top bar.
 
-**There is no Save and no Cancel**: every change is written to `app.json` in the data folder immediately, and closing the dialog undoes nothing. The red "Reset all" at the bottom-left restores settings, shortcuts and guides together.
+**There is no Save and no Cancel**: every change is written to `app.json` in the data folder immediately, and closing the dialog undoes nothing. The red "Reset all" at the bottom-left restores settings, shortcuts, guides and snap lines together.
+
+Settings are grouped into blocks — General, Text boxes, Highlighter, Logs, Backups, Shortcuts, About — separated by a thin grey rule.
 
 | Item | Range | Notes |
 |---|---|---|
@@ -430,6 +433,7 @@ When it finishes you are told where the file went and how many images were proce
 | Guides | On / Off | The page-margin lines on the canvas |
 | Eight handles | On / Off | Off leaves only the four corner handles |
 | Margins | 0–300 mm | Left / top / right / bottom; each edge takes several values separated by commas, e.g. `10, 50`. Stored as a sorted, de-duplicated list and formatted back to `10, 50` |
+| Snap lines | 0–300 mm | Same four-edge, multi-value input. Defaults to the five guide positions plus 85 mm from the left; used for snapping while moving, hidden otherwise |
 | Default font | Six families | Font for new text boxes |
 | Default size | 6–200 px | 14 by default; integers only |
 | Default color | Blue / red / green | Color for new text boxes, blue by default |
@@ -465,7 +469,7 @@ program directory\
 
 %PROGRAMDATA%\six-coin\pdf-image-editor\     data folder (configurable)
 ├─ app.json             settings (language, theme, guide margins, text/highlighter defaults, key bindings)
-├─ backup\              pre-save backups, YYYYMMDD-<name>.bak.pdf
+├─ backup\              pre-save backups, one per document per day, YYYYMMDD-<name>.bak.pdf
 └─ pdfs\                default folder for the open dialog
 
 %LOCALAPPDATA%\six-coin\pdf-image-editor\
@@ -477,7 +481,7 @@ program directory\
 ```
 
 - Logs live in `%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\`, named `main_*`, one file per launch, rotating at 5 MB. Only the last 30 days are kept by default; anything older is deleted at startup.
-- Backups live in `backup\` inside the data folder, one per in-place save, kept for 30 days by default. They move with the data folder when you change it.
+- Backups live in `backup\` inside the data folder, one per document per day, kept for 30 days by default. They move with the data folder when you change it.
 - `app.json` is written atomically (temporary file + replace), so a crash mid-write never leaves half a file. A hand-edited file that breaks is reported with its file name — it is never silently reset.
 - Unknown keys in the configuration are preserved, which keeps old and new versions compatible.
 - The data folder always ends with the project code: picking `D://Data` gives `D://Data//pdf-image-editor`. On a change the old contents are copied there after a restart: folders are merged, and files already present in the target are never overwritten. If the copy fails nothing is touched and Settings says why — you never end up with a new folder and no settings. The old folder is removed once the switch succeeds.
@@ -500,7 +504,7 @@ Either it was never recognised as an editable object (same cases as above) or er
 It does not. Each page's images are read into the model only the first time that page is opened, so deleted or split-away images never reappear.
 
 **The `.bak.pdf` is not next to the file any more**
-Backups moved to `backup\` inside the data folder (Settings → About → Data folder). Names carry a date prefix, e.g. `20261123-report.bak.pdf`, and repeated saves on the same day are numbered.
+Backups moved to `backup\` inside the data folder (Settings → About → Data folder). Names carry a date prefix, e.g. `20261123-report.bak.pdf`. Each document is backed up only once a day, so repeated saves do not add more files — what you see is the document as it was when first opened that day.
 
 **Preprocessing skipped an image**
 That image has an alpha channel (logo, watermark); thresholding would turn its transparent areas into black blocks, so it is skipped. Such images are meant to stay as they are.

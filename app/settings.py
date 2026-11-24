@@ -25,6 +25,16 @@ DEFAULT_REFERENCE: dict[str, Any] = {
     "bottom_mm": [10.0],
 }
 
+# 对齐线：移动元素时用来吸附的线，默认就是那五条参考线再加一条左边 85mm。
+# 和参考线分开存：参考线是「看着舒服的版心」，对齐线是「吸附到哪里」，
+# 两者可以不一样，改一个不该顺手改另一个。
+DEFAULT_ALIGN: dict[str, Any] = {
+    "left_mm": [10.0, 85.0],
+    "top_mm": [10.0],
+    "right_mm": [10.0, 50.0],
+    "bottom_mm": [10.0],
+}
+
 # 字体键与颜色键在这里再列一遍：settings 是基础层，不该反过来 import core。
 # 两边是否一致由 tests/test_settings.py 守。
 FONT_KEYS = ("msyh", "simsun", "simfang", "simkai", "simhei", "times")
@@ -52,6 +62,8 @@ DEFAULT_APP: dict[str, Any] = {
     # 参考线边距。每边可以有任意多条，存成列表。放在这里而不是单独一个文件：
     # 一处配置一条读写路径，少一处能不同步。
     "reference": {key: list(value) for key, value in DEFAULT_REFERENCE.items()},
+    # 移动时的吸附线。结构同参考线：每边可以有任意多条，单位毫米。
+    "align": {key: list(value) for key, value in DEFAULT_ALIGN.items()},
     # 新建文本框的默认样式。字号单位是 px（与 Edge 的批注一致，1px = 0.75pt）。
     "text_font": "msyh",
     "text_size_px": 14,
@@ -78,6 +90,7 @@ def default_app() -> dict[str, Any]:
     config["language"] = i18n.initial_language()
     config["theme"] = theme_tool.system_theme()
     config["reference"] = {key: list(value) for key, value in DEFAULT_REFERENCE.items()}
+    config["align"] = {key: list(value) for key, value in DEFAULT_ALIGN.items()}
     return config
 
 
@@ -217,15 +230,20 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
         raw.get("highlight_color"), DEFAULT_APP["highlight_color"], HIGHLIGHT_COLOR_KEYS
     )
     reference = raw.get("reference")
-    merged["reference"] = _normalize_reference(reference if isinstance(reference, dict) else {})
+    merged["reference"] = _normalize_guides(
+        reference if isinstance(reference, dict) else {}, DEFAULT_REFERENCE
+    )
+    align = raw.get("align")
+    merged["align"] = _normalize_guides(align if isinstance(align, dict) else {}, DEFAULT_ALIGN)
     # save_mode 是早期版本的单选保存方式，读到就丢掉，不再写回文件。
     merged.pop("save_mode", None)
     return merged
 
 
-def _normalize_reference(raw: dict[str, Any]) -> dict[str, Any]:
+def _normalize_guides(raw: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
+    """把 ``reference`` / ``align`` 这类「四边多值」子对象归一化。"""
     merged = dict(raw)
-    for key, default in DEFAULT_REFERENCE.items():
+    for key, default in defaults.items():
         merged[key] = _mm_values(raw.get(key), default)
     return merged
 
@@ -283,11 +301,11 @@ def _legacy_reference() -> dict[str, Any]:
     path = paths.REFERENCE_CONFIG_PATH
     if path.is_file():
         try:
-            return _normalize_reference(_read_json(path))
+            return _normalize_guides(_read_json(path), DEFAULT_REFERENCE)
         except ConfigError:
             pass
     migrated = _migrate_legacy_reference()
-    return _normalize_reference(migrated or dict(DEFAULT_REFERENCE))
+    return _normalize_guides(migrated or dict(DEFAULT_REFERENCE), DEFAULT_REFERENCE)
 
 
 def _drop_legacy_reference() -> None:
@@ -340,5 +358,15 @@ def load_reference() -> dict[str, Any]:
 
 def save_reference(config: dict[str, Any]) -> None:
     app = load_app()
-    app["reference"] = _normalize_reference(config)
+    app["reference"] = _normalize_guides(config, DEFAULT_REFERENCE)
+    save_app(app)
+
+
+def load_align() -> dict[str, Any]:
+    return dict(load_app()["align"])
+
+
+def save_align(config: dict[str, Any]) -> None:
+    app = load_app()
+    app["align"] = _normalize_guides(config, DEFAULT_ALIGN)
     save_app(app)

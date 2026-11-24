@@ -18,6 +18,7 @@ import { pxPerPt, state } from './state.js';
 import { scheduleRefresh } from './sync.js';
 import { isSplitActive } from './split.js';
 import { createBand } from './highlight.js';
+import { hideSnap, showSnap, snapOffset } from './guides.js';
 import { MODE_HIGHLIGHT, MODE_TEXT, currentMode } from './modes.js';
 import { beginEdit, createTextAt, isEditing } from './text.js';
 
@@ -127,6 +128,7 @@ function endGesture() {
   state.view.gesture = false;
   gesture = null;
   setGroupBoxVisible(true);
+  hideSnap();
   // 手势期间被丢弃的快照不作数，这里重新拉一份最新的。
   if (state.stale) {
     state.stale = false;
@@ -381,11 +383,21 @@ function startBand(event) {
   el.style.pointerEvents = 'none';
   pageEl(hit.index).appendChild(el);
 
+  // 荧光带的竖直中线要对上光标图标的中线：落点取「鼠标 y ± 高度的一半」，
+  // 而不是把鼠标当成带子的上边缘。
+  const height = ((state.data.defaults && state.data.defaults.highlight_height_px) || 15) * 0.75;
+  const top = Math.min(Math.max(hit.y - height / 2, 0), Math.max(hit.info.h - height, 0));
+
   beginGesture({
     kind: 'band',
     pointerId: event.pointerId,
     page: hit.index,
-    origin: { x: Math.min(Math.max(hit.x, 0), hit.info.w), y: Math.min(Math.max(hit.y, 0), hit.info.h) },
+    origin: {
+      x: Math.min(Math.max(hit.x, 0), hit.info.w),
+      y: Math.min(Math.max(hit.y, 0), hit.info.h),
+    },
+    height,
+    top,
     el,
     width: 0,
     left: hit.x,
@@ -405,11 +417,11 @@ function moveBand(event) {
   const x = Math.min(Math.max(point.x, 0), info.w);
   const left = Math.min(gesture.origin.x, x);
   const width = Math.abs(x - gesture.origin.x);
-  const height = ((state.data.defaults && state.data.defaults.highlight_height_px) || 15) * 0.75;
+  const height = gesture.height;
   gesture.left = left;
   gesture.width = width;
   gesture.el.style.left = `${left * k}px`;
-  gesture.el.style.top = `${gesture.origin.y * k}px`;
+  gesture.el.style.top = `${gesture.top * k}px`;
   gesture.el.style.width = `${width * k}px`;
   gesture.el.style.height = `${height * k}px`;
   gesture.el.style.background =
@@ -512,8 +524,48 @@ function startMove(event, node) {
 }
 
 function moveItems(point) {
-  const dx = point.x - gesture.start.x;
-  const dy = point.y - gesture.start.y;
+  let dx = point.x - gesture.start.x;
+  let dy = point.y - gesture.start.y;
+
+  // 吸附以指针所在页为准：跨页拖动时，吸的是「要落下去的那一页」的线。
+  const hover = pageAt(point.y);
+  const snapPage = hover === null ? gesture.items[0].obj.page : hover;
+  const snapInfo = state.data.pages.find((p) => p.index === snapPage);
+  const snapRect = pageRectRel(snapPage);
+  let marks = null;
+
+  if (snapInfo && snapRect) {
+    const k = pxPerPt();
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const item of gesture.items) {
+      left = Math.min(left, item.scene.left + dx);
+      top = Math.min(top, item.scene.top + dy);
+      right = Math.max(right, item.scene.left + item.scene.width + dx);
+      bottom = Math.max(bottom, item.scene.top + item.scene.height + dy);
+    }
+    const bounds = {
+      x: (left - snapRect.left) / k,
+      y: (top - snapRect.top) / k,
+      w: (right - left) / k,
+      h: (bottom - top) / k,
+    };
+    const snap = snapOffset(bounds, snapInfo);
+    // 吸过头会把元素推出页面：那就不吸这一下，绿色线也不画。
+    if (snap.dx && (bounds.x + snap.dx < 0 || bounds.x + bounds.w + snap.dx > snapInfo.w)) {
+      snap.dx = 0;
+      snap.vertical = null;
+    }
+    if (snap.dy && (bounds.y + snap.dy < 0 || bounds.y + bounds.h + snap.dy > snapInfo.h)) {
+      snap.dy = 0;
+      snap.horizontal = null;
+    }
+    dx += snap.dx * k;
+    dy += snap.dy * k;
+    if (snap.vertical !== null || snap.horizontal !== null) marks = snap;
+  }
 
   for (const item of gesture.items) {
     const next = {
@@ -546,6 +598,9 @@ function moveItems(point) {
     item.el.style.left = `${next.left - item.origin.left}px`;
     item.el.style.top = `${next.top - item.origin.top}px`;
   }
+
+  if (marks) showSnap(snapPage, marks);
+  else hideSnap();
 }
 
 /* ---------- 单图缩放 ---------- */
@@ -837,7 +892,7 @@ function onUp(event) {
   if (current.kind === 'band') {
     current.el.remove();
     if (current.width >= 4) {
-      createBand(current.page, current.left, current.origin.y, current.width);
+      createBand(current.page, current.left, current.top, current.width);
     }
     return;
   }

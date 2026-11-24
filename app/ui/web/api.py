@@ -81,6 +81,7 @@ class EditorApi:
         # 日志文件在读到设置之前就开了（默认级别），这里补上用户选的那一份。
         settings.apply_log_settings(self._settings)
         self._reference = settings.load_reference()
+        self._align = settings.load_align()
         _sweep_temp()
         _sweep_backups(paths.backup_dir(), int(self._settings.get("backup_retention_days", 30)))
         self._close_confirmed = False
@@ -1157,6 +1158,20 @@ class EditorApi:
                 return {**self._snapshot(), "ok": False, "message": str(exc)}
             return self._snapshot()
 
+    def update_align(self, values: dict[str, Any] | None = None) -> dict[str, Any]:
+        """对齐线：结构同参考线，但只在移动吸附时用，平时不画出来。"""
+        with self._lock:
+            merged = dict(self._align)
+            if isinstance(values, dict):
+                merged.update(values)
+            try:
+                settings.save_align(merged)
+                self._align = settings.load_align()
+            except AppError as exc:
+                logger.warning("保存对齐线失败: {}", exc)
+                return {**self._snapshot(), "ok": False, "message": str(exc)}
+            return self._snapshot()
+
     # ---- 设置 ----
 
     def update_settings(self, patch: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -1281,8 +1296,10 @@ class EditorApi:
             try:
                 settings.save_app(settings.default_app())
                 settings.save_reference(dict(settings.DEFAULT_REFERENCE))
+                settings.save_align(dict(settings.DEFAULT_ALIGN))
                 self._settings = settings.load_app()
                 self._reference = settings.load_reference()
+                self._align = settings.load_align()
             except AppError as exc:
                 logger.warning("重置设置失败: {}", exc)
                 return {**self._snapshot(), "ok": False, "message": str(exc)}
@@ -1404,6 +1421,7 @@ class EditorApi:
             "eight_handles": bool(self._settings.get("eight_handles", True)),
             "keybindings": dict(self._settings.get("keybindings") or {}),
             "reference": dict(self._reference),
+            "align": dict(self._align),
             "palette": palette.palette_payload(),
             "fonts": [
                 {"key": key, "css": font_table.css_name(key)} for key in font_table.families()

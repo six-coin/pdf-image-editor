@@ -260,19 +260,15 @@ def _verify(path: Path, expected_pages: int) -> None:
 
 
 def backup_path(directory: Path, source: Path, day: date | None = None) -> Path:
-    """给备份起一个不会撞车的名字：``YYYYMMDD-原标题.bak.pdf``。
+    """备份的固定名字：``YYYYMMDD-原标题.bak.pdf``。
 
-    同一天反复保存会得到 ``(1)``、``(2)``……而不是覆盖上一份：备份存的是「保存
-    之前的那一版」，覆盖等于只留下最后一版，等于没有备份。
+    一个文档一天只备份一次：名字里带日期，同一天再保存时同名文件已经在了，
+    就不再备份（见 ``_backup``）。所以这里不给 ``(1)``、``(2)`` 留位置——
+    那样只会让 backup/ 里堆满同一份文件的不同快照，反而看不出哪份是「第一次」。
     """
     stamp = (day or date.today()).strftime("%Y%m%d")
     stem = Path(source).stem
-    candidate = directory / f"{stamp}-{stem}.bak.pdf"
-    index = 1
-    while candidate.exists():
-        candidate = directory / f"{stamp}-{stem}({index}).bak.pdf"
-        index += 1
-    return candidate
+    return directory / f"{stamp}-{stem}.bak.pdf"
 
 
 def _backup(dst_path: Path, directory: Path, report: SaveReport) -> None:
@@ -281,6 +277,10 @@ def _backup(dst_path: Path, directory: Path, report: SaveReport) -> None:
     try:
         directory.mkdir(parents=True, exist_ok=True)
         target = backup_path(directory, dst_path)
+        if target.exists():
+            # 今天已经备份过这一版了：保留最初那份「打开时的样子」，
+            # 不再生成第二份、也不加序号。第一次保存前的状态才是要留的。
+            return
         shutil.copy2(dst_path, target)
     except OSError as exc:
         # 复制到一半失败会留下一个看着像备份、其实是残片的东西，先收掉。

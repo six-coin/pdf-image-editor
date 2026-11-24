@@ -251,3 +251,25 @@ def test_bad_text_defaults_are_clamped(temp_config):
     assert config["text_line_height"] == pytest.approx(3.0)
     assert config["highlight_height_px"] == 4
     assert config["highlight_color"] == "yellow"
+
+
+def test_align_defaults_are_independent_of_reference(temp_config):
+    """对齐线默认是五条参考线再加左边 85mm，且和参考线分开存。"""
+    config = settings.load_app()
+    assert config["align"] == {
+        "left_mm": [10.0, 85.0],
+        "top_mm": [10.0],
+        "right_mm": [10.0, 50.0],
+        "bottom_mm": [10.0],
+    }
+    settings.save_align({"left_mm": "85, 10, 10"})
+    assert settings.load_align()["left_mm"] == [10.0, 85.0]
+    # 改对齐线不该顺手把参考线也改了。
+    assert settings.load_reference()["left_mm"] == [10.0]
+
+
+def test_align_rejects_garbage_and_keeps_defaults(temp_config):
+    settings.save_align({"top_mm": "abc, ,", "right_mm": [None, "x", 20]})
+    reloaded = settings.load_align()
+    assert reloaded["top_mm"] == settings.DEFAULT_ALIGN["top_mm"]
+    assert reloaded["right_mm"] == [20.0]

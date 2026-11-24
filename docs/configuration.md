@@ -6,7 +6,7 @@
 |---|---|
 | `<数据目录>\app.json` | 设置 |
 | `<数据目录>\pdfs\` | 打开对话框的默认目录 |
-| `<数据目录>\backup\` | 就地保存前的备份，`YYYYMMDD-原标题.bak.pdf` |
+| `<数据目录>\backup\` | 就地保存前的备份，`YYYYMMDD-原标题.bak.pdf`；每个文档每天只留第一份 |
 | `%LOCALAPPDATA%\six-coin\pdf-image-editor\data-dir.txt` | 数据目录指针，改目录后写这里 |
 | `%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\` | 日志 |
 | `%TEMP%\six-coin\pdf-image-editor\` | 外部编辑的临时目录 |
@@ -43,6 +43,12 @@
         "right_mm": [10.0, 50.0],
         "bottom_mm": [10.0]
     },
+    "align": {
+        "left_mm": [10.0, 85.0],
+        "top_mm": [10.0],
+        "right_mm": [10.0, 50.0],
+        "bottom_mm": [10.0]
+    },
     "text_font": "msyh",
     "text_size_px": 14,
     "text_color": "blue",
@@ -69,6 +75,7 @@
 | `log_retention_days` | 整数 | `30` | 1–365，越界夹取，非数字回退 30；`log_cleanup` 为假时不起作用 |
 | `backup_retention_days` | 整数 | `30` | 1–3650，越界夹取，非数字回退 30；启动时删掉 `backup\` 里修改时间早于这个天数的备份 |
 | `reference.left_mm` 等 | 数字列表 | `[10] / [10] / [10, 50] / [10]` | 每项 0–300，越界夹取；每边可以有任意多条参考线（上限 12），读的时候升序去重。也接受单个数字（老版本格式）或 `"10, 50"` 这样的字符串 |
+| `align.left_mm` 等 | 数字列表 | `[10, 85] / [10] / [10, 50] / [10]` | 结构、取值范围与解析规则同 `reference`；这是移动元素时用来吸附的对齐线。默认就是五条参考线再加左边 85mm，平时不画出来 |
 | `text_font` | 字符串 | `msyh` | `msyh` / `simsun` / `simfang` / `simkai` / `simhei` / `times`；新建文本框的默认字体 |
 | `text_size_px` | 整数 | `14` | 6–200，越界夹取；字号单位是 px（1px = 0.75pt，与 Edge 的批注一致），只能是整数 |
 | `text_color` | 字符串 | `blue` | `blue` / `red` / `green`；新建文本框的默认颜色 |
@@ -81,7 +88,8 @@
 
 - 布尔字段除 `true` / `false` 外也接受 `1` / `0`、`"true"` / `"yes"` / `"on"`，手改文件时不必纠结写法。
 - `NaN` 视为非法数字，回退默认值。
-- 参考线的列表里逐项夹取、去重、升序；整条都解析不出数字就退回默认值，不会把这一边清空。
+- 参考线与对齐线的列表里逐项夹取、去重、升序；整条都解析不出数字就退回默认值，不会把这一边清空。
+- `reference` 与 `align` 是两份独立配置：改参考线不会动对齐线，反之亦然。
 - **未知键原样保留**：跨版本共存时，旧版本写的字段不会在保存时被丢掉。
 - `keybindings` 为空对象表示「全部用前端内置的默认键位」，用户改过才会写进来。
 

@@ -204,6 +204,34 @@
   pointer-events: none;
 }
 
+/* 吸附提示线：只在移动吸住时出现，比参考线粗一倍、层级更高。
+   参考线是 1px 的淡蓝，这里是 2px 的实绿。 */
+.snap-guides {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.snap-line {
+  position: absolute;
+  background: var(--snap-line);
+}
+
+.snap-line.v {
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+}
+
+.snap-line.h {
+  left: 0;
+  right: 0;
+  height: 2px;
+  margin-top: -1px;
+}
+
 .page-no {
   position: absolute;
   left: 50%;
@@ -624,12 +652,15 @@ body.saving {
   letter-spacing: 0.2px;
 }
 
-/* 每一大块之间一条淡细线：设置项之间不再逐条画线。
-   只作用于直接挂在 .settings 下的块标题，快捷键里的小标题不加线。 */
+/* 每一大块之间一条细灰线：设置项之间不逐条画线，只在换类别时画一条。
+   线由 JS 显式插在块之间，所以块标题自己不再带 border-top。 */
+.settings-divider {
+  height: 1px;
+  background: var(--border);
+}
+
 .settings > .settings-section-title {
   margin: 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-soft);
 }
 
 .key-section {
@@ -1087,8 +1118,10 @@ select option {
 /* ---------- 浮动工具栏 ---------- */
 
 .float-bar {
-  position: absolute;
-  z-index: 8;
+  /* 挂在 body 上，按窗口定位：挂在页面上会被视口裁掉，也会挡住画布手势。
+     层级要高于页面上的吸附线，否则绿色线会从工具栏中间穿过去。 */
+  position: fixed;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 6px;
