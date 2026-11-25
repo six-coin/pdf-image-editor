@@ -70,6 +70,81 @@ function toggle(checked, onChange) {
   return label;
 }
 
+/** 单行文本设置：回车或失焦时提交，保留用户输入的空格。 */
+function textBox(value, placeholder, onCommit) {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.spellcheck = false;
+  input.value = String(value || '');
+  input.placeholder = placeholder || '';
+  let current = input.value;
+
+  const commit = () => {
+    if (input.value === current) return;
+    current = input.value;
+    onCommit(current);
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    commit();
+    input.blur();
+  });
+  input.addEventListener('blur', commit);
+  return input;
+}
+
+/** 路径设置：输入框 + 选择 + 恢复默认。 */
+function pathBox(value, placeholder, onCommit, onBrowse) {
+  const row = document.createElement('div');
+  row.className = 'path-control';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.spellcheck = false;
+  input.value = String(value || '');
+  input.placeholder = placeholder || '';
+  let current = input.value;
+
+  const commit = (next = input.value) => {
+    const normalized = String(next || '').trim();
+    input.value = normalized;
+    if (normalized === current) return;
+    current = normalized;
+    onCommit(normalized);
+  };
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    commit();
+    input.blur();
+  });
+  input.addEventListener('blur', () => commit());
+
+  const browse = document.createElement('button');
+  browse.type = 'button';
+  browse.className = 'btn sm';
+  browse.textContent = T('settings.open_dir_browse');
+  browse.addEventListener('click', async () => {
+    const picked = await onBrowse(input.value.trim() || placeholder);
+    if (!picked) return;
+    input.value = picked;
+    commit(picked);
+  });
+
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'btn sm';
+  clear.textContent = T('settings.open_dir_clear');
+  clear.addEventListener('click', () => {
+    input.value = '';
+    commit('');
+  });
+
+  row.append(input, browse, clear);
+  return row;
+}
+
 /** 逗号分隔的多值输入框：写 "10, 50" 就是两条线。 */
 function mmBox(values, onCommit, group = 'reference') {
   const input = document.createElement('input');
@@ -437,6 +512,21 @@ export async function openSettings() {
       )
     );
 
+    const openDirField = field(
+      'settings.open_dir',
+      pathBox(
+        data.open_dir || '',
+        data.open_dir_default || '',
+        (value) => writeSettings({ open_dir: value }),
+        (start) => call('browse_folder', start)
+      )
+    );
+    const openDirHint = document.createElement('p');
+    openDirHint.className = 'about-hint';
+    openDirHint.textContent = T('settings.open_dir_hint');
+    openDirField.appendChild(openDirHint);
+    body.appendChild(openDirField);
+
     body.appendChild(
       field(
         'settings.undo_limit',
@@ -489,6 +579,18 @@ export async function openSettings() {
     block('settings.text');
 
     const defaults = data.defaults || {};
+    const textDefaultField = field(
+      'settings.text_default',
+      textBox(defaults.text_default ?? '', T('settings.text_default_placeholder'), (value) =>
+        writeSettings({ text_default: value })
+      )
+    );
+    const textDefaultHint = document.createElement('p');
+    textDefaultHint.className = 'about-hint';
+    textDefaultHint.textContent = T('settings.text_default_hint');
+    textDefaultField.appendChild(textDefaultHint);
+    body.appendChild(textDefaultField);
+
     const fontOptions = ((data.fonts || [])).map((font) => ({
       value: font.key,
       label: T(`font.${font.key}`),

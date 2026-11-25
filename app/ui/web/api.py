@@ -141,13 +141,31 @@ class EditorApi:
 
     # ---- 文档 ----
 
+    def _open_directory(self) -> str:
+        """打开对话框的起始目录：用户设过就用它，否则用数据目录下的 pdfs。"""
+        raw = str(self._settings.get("open_dir", "") or "").strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("'", '"'):
+            raw = raw[1:-1].strip()
+        if raw:
+            try:
+                path = Path(os.path.expandvars(raw)).expanduser()
+                if not path.is_absolute():
+                    path = paths.DATA_DIR / path
+                if path.is_file():
+                    path = path.parent
+                if path.is_dir():
+                    return str(path)
+            except (OSError, ValueError):
+                pass
+        try:
+            return str(paths.ensure_pdfs_dir())
+        except OSError:
+            return ""
+
     def browse_pdf(self) -> str | None:
         if self._window is None:
             return None
-        try:
-            directory = str(paths.ensure_pdfs_dir())
-        except OSError:
-            directory = ""
+        directory = self._open_directory()
         result = self._window.create_file_dialog(
             webview.FileDialog.OPEN,
             directory=directory,
@@ -155,14 +173,32 @@ class EditorApi:
         )
         return _first_path(result)
 
-    def browse_folder(self) -> str | None:
-        """选目录：改数据目录用。"""
+    def browse_folder(self, start: str = "") -> str | None:
+        """选目录：改数据目录、选默认打开目录都用它。"""
         if self._window is None:
             return None
+        directory = str(paths.DATA_DIR)
+        raw = str(start or "").strip()
+        if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("'", '"'):
+            raw = raw[1:-1].strip()
+        if raw:
+            try:
+                path = Path(os.path.expandvars(raw)).expanduser()
+                if not path.is_absolute():
+                    path = paths.DATA_DIR / path
+                if path.is_file():
+                    path = path.parent
+                if not path.is_dir() and path == paths.PDFS_DIR:
+                    try:
+                        paths.ensure_pdfs_dir()
+                    except OSError:
+                        pass
+                if path.is_dir():
+                    directory = str(path)
+            except (OSError, ValueError):
+                pass
         try:
-            result = self._window.create_file_dialog(
-                webview.FileDialog.FOLDER, directory=str(paths.DATA_DIR)
-            )
+            result = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=directory)
         except Exception as error:  # 对话框打不开时返回空，由界面提示
             logger.warning("打开目录对话框失败: {}", error)
             return None
@@ -568,8 +604,13 @@ class EditorApi:
         x: float = 0.0,
         y: float = 0.0,
         style: dict[str, Any] | None = None,
+        text: str | None = None,
     ) -> dict[str, Any]:
-        """在落点新建一个文本框。样式由前端给（「当前默认值」只活在前端）。"""
+        """在落点新建一个文本框。样式由前端给（「当前默认值」只活在前端）。
+
+        ``text`` 为 ``None`` 时用设置里的默认文本；显式传空字符串表示这次
+        不要默认文本（新建时按住 Ctrl 走的就是这条路）。
+        """
         with self._lock:
             doc = self._doc
             stack = self._stack
@@ -581,6 +622,9 @@ class EditorApi:
                 return self._snapshot()
             page_w, page_h = doc.page_pt_size(index)
             style = style if isinstance(style, dict) else {}
+            if text is None:
+                text = str(self._settings.get("text_default", ""))
+            text = str(text).replace("\r\n", "\n").replace("\r", "\n")
 
             font_key = font_table.normalize(style.get("font", self._settings["text_font"]))
             size_px = _int_between(style.get("size"), self._settings["text_size_px"], 6, 200)
@@ -601,7 +645,7 @@ class EditorApi:
                 id=f"t-{uuid.uuid4().hex[:8]}",
                 page=index,
                 rect=Rect(left, top, width, 0.0),
-                runs=[TextRun("", font_key)],
+                runs=[TextRun(text, font_key)],
                 size_px=size_px,
                 line_height=line_height,
                 color=color,
@@ -1095,10 +1139,7 @@ class EditorApi:
             if self._doc is not None:
                 directory = str(self._doc.path.parent)
             else:
-                try:
-                    directory = str(paths.ensure_pdfs_dir())
-                except OSError:
-                    directory = ""
+                directory = self._open_directory()
         result = self._window.create_file_dialog(
             webview.FileDialog.SAVE,
             directory=directory,
@@ -1331,7 +1372,9 @@ class EditorApi:
             picked = _first_path(
                 self._window.create_file_dialog(
                     webview.FileDialog.OPEN,
-                    directory=str(current.parent) if current is not None else "",
+                    directory=(
+                        str(current.parent) if current is not None else self._open_directory()
+                    ),
                     file_types=(i18n.t("dialog.filter_pdf"), i18n.t("dialog.filter_all")),
                 )
             )
@@ -1636,6 +1679,8 @@ class EditorApi:
             "data_dir": str(paths.DATA_DIR),
             "data_dir_next": str(paths.pending_data_dir() or ""),
             "data_dir_default": str(paths.DATA_DIR_DEFAULT),
+            "open_dir": str(self._settings.get("open_dir", "")),
+            "open_dir_default": str(paths.PDFS_DIR),
             "data_dir_status": dict(paths.MIGRATION),
             "doc": {
                 "path": str(doc.path) if doc else "",
@@ -1673,6 +1718,7 @@ class EditorApi:
                 "text_color": str(self._settings.get("text_color", "blue")),
                 "text_width_mm": float(self._settings.get("text_width_mm", 45.0)),
                 "text_line_height": float(self._settings.get("text_line_height", 1.15)),
+                "text_default": str(self._settings.get("text_default", "")),
                 "highlight_height_px": int(self._settings.get("highlight_height_px", 15)),
                 "highlight_color": str(self._settings.get("highlight_color", "yellow")),
             },

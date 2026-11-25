@@ -384,7 +384,7 @@ function onTextModeDown(event) {
     return;
   }
   event.preventDefault();
-  createTextAt(hit.index, hit.x, hit.y);
+  createTextAt(hit.index, hit.x, hit.y, { blank: event.ctrlKey });
 }
 
 /** 荧光笔模式：按下横向拖出一条带子。 */

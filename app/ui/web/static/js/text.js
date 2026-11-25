@@ -653,10 +653,12 @@ export function resetTextDefaults() {
 }
 
 /** 新建一个文本框，落点由调用方给（文本模式下单击空白）。 */
-export async function createTextAt(pageIndex, x, y) {
+export async function createTextAt(pageIndex, x, y, { blank = false } = {}) {
   await commitEdit();
   const style = currentDefault || defaults();
-  const snapshot = await call('create_text', pageIndex, x, y, style);
+  const preset = (state.data && state.data.defaults && state.data.defaults.text_default) || '';
+  const text = blank ? '' : String(preset);
+  const snapshot = await call('create_text', pageIndex, x, y, style, text);
   if (!snapshot) return;
   apply(snapshot);
   const obj = snapshot.created

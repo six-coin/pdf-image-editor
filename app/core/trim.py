@@ -1,9 +1,10 @@
-"""裁掉图片四周的纯白边。
+"""裁掉图片四周接近纯白的边。
 
-只认「纯白」：RGB 三个分量都是 255，或者像素完全透明（透明区域压在纸上
-就是白的）。不做阈值容差——254 的扫描底灰不算白，免得把内容边缘啃掉。
+判定用 BT.601 灰度：``0.299R + 0.587G + 0.114B >= 0xF8``（248）就算白，
+不再要求三个分量都必须是 255。带 alpha 的像素先压在白底上再算灰度——
+透明区域压在纸上就是白的。
 
-裁法是取所有非白像素的包围盒：包围盒之外的四条边必然全是纯白，而且已经
+裁法是取所有非白像素的包围盒：包围盒之外的四条边必然都够白，而且已经
 不能再往里裁，切掉的面积就是最大的。
 """
 
@@ -13,6 +14,9 @@ import numpy as np
 import pymupdf
 
 from app.core.split import crop_pixmap
+
+_WHITE_LEVEL = 248.0
+_GRAY_WEIGHTS = np.array([0.299, 0.587, 0.114], dtype=np.float32)
 
 
 def _to_rgb(pix: pymupdf.Pixmap) -> pymupdf.Pixmap:
@@ -28,21 +32,27 @@ def _white_mask(pix: pymupdf.Pixmap) -> np.ndarray:
     arr = raw.reshape(height, pix.stride)[:, : width * channels].reshape(height, width, channels)
 
     if pix.alpha:
-        alpha = arr[:, :, channels - 1]
+        alpha = arr[:, :, channels - 1].astype(np.float32) / 255.0
         if channels == 2:
-            return (alpha == 0) | (arr[:, :, 0] == 255)
-        return (alpha == 0) | np.all(arr[:, :, :3] == 255, axis=2)
+            gray = arr[:, :, 0].astype(np.float32)
+        else:
+            gray = arr[:, :, :3].astype(np.float32) @ _GRAY_WEIGHTS
+        # PyMuPDF 的带 alpha 样本是预乘的：颜色已经乘过 alpha，
+        # 压到白纸上只需补上 ``255 * (1 - alpha)``。
+        effective = gray + 255.0 * (1.0 - alpha)
+        return effective >= _WHITE_LEVEL
     if channels == 1:
-        return arr[:, :, 0] == 255
+        return arr[:, :, 0].astype(np.float32) >= _WHITE_LEVEL
     if channels == 3:
-        return np.all(arr == 255, axis=2)
+        gray = arr.astype(np.float32) @ _GRAY_WEIGHTS
+        return gray >= _WHITE_LEVEL
     raise ValueError(f"unsupported image with {channels} channels")
 
 
 def trim_white(data: bytes) -> tuple[bytes, tuple[int, int, int, int], int, int] | None:
-    """裁掉四周纯白边，返回 ``(PNG, (x, y, w, h), 原宽, 原高)``。
+    """裁掉四周接近纯白的边，返回 ``(PNG, (x, y, w, h), 原宽, 原高)``。
 
-    没有可裁的边（已经贴边，或整张全白）时返回 ``None``。像素框用原图像素
+    没有可裁的边（已经贴边，或整张都够白）时返回 ``None``。像素框用原图像素
     坐标，调用方按比例换算成页面上的新矩形。
     """
     pix = _to_rgb(pymupdf.Pixmap(data))

@@ -229,6 +229,8 @@ def test_text_and_highlight_defaults(temp_config):
     assert config["text_line_height"] == pytest.approx(1.15)
     assert config["highlight_height_px"] == 15
     assert config["highlight_color"] == "yellow"
+    assert config["open_dir"] == ""
+    assert config["text_default"] == ""
 
 
 def test_text_black_and_yellow_only_highlighter():
@@ -240,6 +242,14 @@ def test_text_black_and_yellow_only_highlighter():
     assert palette.normalize_highlight("red") == "yellow"
     assert palette.normalize_highlight("green") == "yellow"
     assert list(palette.HIGHLIGHT_COLORS) == ["yellow"]
+
+
+def test_open_dir_is_trimmed_but_default_text_is_verbatim(temp_config):
+    settings.save_app({"open_dir": "  D:/Docs  ", "text_default": "  你好  "})
+    config = settings.load_app()
+    assert config["open_dir"] == "D:/Docs"
+    # 默认文本里的前导/尾随空格是用户有意敲的，不能顺手 trim 掉
+    assert config["text_default"] == "  你好  "
 
 
 def test_legacy_text_width_migrates_to_45(temp_config):

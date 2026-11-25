@@ -1,4 +1,4 @@
-"""裁白边：只裁纯白，包围盒之外必须全是 255。"""
+"""裁白边：灰度 >= 0xF8 就算白，包围盒之外必须都过阈值。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,16 @@ from app.core import trim
 
 
 def _png(width: int, height: int, content: tuple[int, int, int, int] | None) -> bytes:
-    arr = np.full((height, width, 3), 255, dtype=np.uint8)
+    return _png_on(width, height, (255, 255, 255), content)
+
+
+def _png_on(
+    width: int,
+    height: int,
+    background: tuple[int, int, int],
+    content: tuple[int, int, int, int] | None,
+) -> bytes:
+    arr = np.full((height, width, 3), background, dtype=np.uint8)
     if content is not None:
         x0, y0, x1, y1 = content
         arr[y0:y1, x0:x1] = (10, 20, 30)
@@ -47,13 +56,23 @@ def test_single_pixel_content_survives():
     assert box == (7, 8, 1, 1)
 
 
-def test_near_white_is_not_treated_as_white():
-    """254 的底灰不是纯白，不能被裁掉。"""
-    arr = np.full((20, 20, 3), 254, dtype=np.uint8)
-    arr[5:10, 5:10] = (0, 0, 0)
-    pix = pymupdf.Pixmap(pymupdf.csRGB, 20, 20, np.ascontiguousarray(arr).tobytes(), False)
+def test_248_is_treated_as_white():
+    """0xF8 是阈值本身，包含在内。"""
+    result = trim.trim_white(_png_on(20, 20, (248, 248, 248), (5, 5, 10, 10)))
+    assert result is not None
+    assert result[1] == (5, 5, 5, 5)
 
-    assert trim.trim_white(pix.tobytes("png")) is None
+
+def test_247_is_kept_as_content():
+    """比阈值低一级就不再算白，整张图都是内容，没有可裁的边。"""
+    assert trim.trim_white(_png_on(20, 20, (247, 247, 247), (5, 5, 10, 10))) is None
+
+
+def test_luminance_not_minimum_channel():
+    """(250,250,240) 的灰度约 248.9，虽然蓝通道低于 248，仍算白。"""
+    result = trim.trim_white(_png_on(20, 20, (250, 250, 240), (5, 5, 10, 10)))
+    assert result is not None
+    assert result[1] == (5, 5, 5, 5)
 
 
 def test_transparent_border_counts_as_white():
@@ -65,3 +84,15 @@ def test_transparent_border_counts_as_white():
     result = trim.trim_white(pix.tobytes("png"))
     assert result is not None
     assert result[1] == (8, 6, 22, 12)
+
+
+def test_semi_transparent_pixel_is_composited_over_white():
+    """半透明白压在纸上还是白；半透明黑不是。"""
+    arr = np.full((20, 20, 4), 255, dtype=np.uint8)
+    arr[:, :, 3] = 128
+    arr[5:10, 5:10] = (0, 0, 0, 128)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, 20, 20, np.ascontiguousarray(arr).tobytes(), True)
+
+    result = trim.trim_white(pix.tobytes("png"))
+    assert result is not None
+    assert result[1] == (5, 5, 5, 5)

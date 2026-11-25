@@ -54,6 +54,8 @@
     "text_color": "blue",
     "text_width_mm": 45.0,
     "text_line_height": 1.15,
+    "text_default": "",
+    "open_dir": "",
     "highlight_height_px": 15,
     "highlight_color": "yellow",
     "settings_version": 2
@@ -70,6 +72,7 @@
 | `show_guides` | 布尔 | `true` | 画布上的页边距参考线 |
 | `show_inspector` | 布尔 | `true` | 右侧属性栏是否展开 |
 | `eight_handles` | 布尔 | `true` | 选中图片时显示八个手柄（四角 + 四边中点）；关掉只留四角 |
+| `open_dir` | 字符串 | `""` | 打开 PDF 时对话框的起始目录；空字符串表示数据目录下的 `pdfs/`。目录不存在时回退 `pdfs/`，路径可以是文件（取父目录） |
 | `keybindings` | 对象 | `{}` | 见 1.1 |
 | `log_level` | 字符串 | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`，认不出来的值回退 `INFO`。改完立刻生效，日志仍写在同一个文件里 |
 | `log_cleanup` | 布尔 | `true` | 为真时在启动与保存这三项设置时清空过期日志，为假时一条都不删 |
@@ -82,6 +85,7 @@
 | `text_color` | 字符串 | `blue` | `blue` / `red` / `green` / `black`；新建文本框的默认颜色 |
 | `text_width_mm` | 数字 | `45` | 10–300，越界夹取；新建文本框的默认宽度（毫米） |
 | `text_line_height` | 数字 | `1.15` | 0.8–3，越界夹取；行高是字号的倍数，允许两位小数 |
+| `text_default` | 字符串 | `""` | 新建文本框时自动填入的文本；空字符串表示不填。保留前导/尾随空格；新建时按住 Ctrl 可跳过 |
 | `highlight_height_px` | 整数 | `15` | 4–200，越界夹取；荧光带的默认高度（px） |
 | `highlight_color` | 字符串 | `yellow` | 固定 `yellow`；旧配置里的其它颜色在读取时归一为黄色。荧光笔只有黄色一种 |
 | `settings_version` | 整数 | `2` | 配置结构版本，不要手改。版本 1 的旧默认宽度 40mm 在读取时迁到 45mm，用户改过的其它宽度保持不变 |

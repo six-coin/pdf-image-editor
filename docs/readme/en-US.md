@@ -112,7 +112,7 @@ Appears at the bottom of the canvas once split mode starts. It shows how many ho
 
 ### Open
 
-Click "Open" or press `Ctrl+O`. The file dialog starts in `pdfs/` under the program directory and creates that folder if it is missing — keeping frequently used PDFs there saves a few clicks.
+Click "Open" or press `Ctrl+O`. The file dialog starts in `pdfs/` under the data directory and creates that folder if it is missing — keeping frequently used PDFs there saves a few clicks. Settings has a **Default folder for opening files** option; leave it empty to fall back to `pdfs/`.
 
 You can also **drop a PDF onto the window**: with nothing open it simply opens; with a file already open and unsaved edits, you are asked whether to save, discard or cancel first. Dropping something that is not a PDF is rejected with a hint, and dropping several files opens the first one.
 
@@ -189,10 +189,11 @@ With two or more images selected, each keeps its own small outline and a group f
 
 ### Trimming white borders
 
-Select one or more images and press `G` (or use **Trim white borders** in the inspector). The program walks in from all four sides until every removed strip is pure white; what remains is the bounding box of all non-white pixels, so the removed area is as large as possible. The content stays at the same place on the page — only the rectangle and the pixels shrink. One `Ctrl+Z` undoes the whole operation.
+Select one or more images and press `G` (or use **Trim white borders** in the inspector). The program walks in from all four sides until every removed strip is light enough; what remains is the bounding box of all darker pixels, so the removed area is as large as possible. The content stays at the same place on the page — only the rectangle and the pixels shrink. One `Ctrl+Z` undoes the whole operation.
 
-- Only **pure white** counts (all RGB channels 255, or fully transparent); a 254 scanned background is not white and is kept;
-- an all-white image, or one with no white border, is left untouched and the status bar says so;
+- Pixels are converted to BT.601 grayscale and **anything at or above #F8F8F8 (248) counts as white**; the three channels no longer have to be exactly 255. Transparent and semi-transparent pixels are composited over white first;
+- a 254 scanned background is trimmed, while 247 light grey is still content;
+- an all-light image, or one with no light border, is left untouched and the status bar says so;
 - a mixed selection containing text boxes or highlights is refused.
 
 ### Merging images
@@ -292,6 +293,8 @@ Global shortcuts are suspended in split mode, so the two key maps can bind the s
 ## 9. Text boxes
 
 Switch the left rail to Text (the T icon) and click on the page: a text box lands with its **top-left corner at the click point**.
+
+Settings can hold a **default text for new text boxes**: every new box is prefilled with it. **Hold `Ctrl` while clicking empty space** to create an empty box instead.
 
 ### Editing
 
@@ -490,6 +493,7 @@ Settings are grouped into blocks — General, Text boxes, Highlighter, Logs, Bac
 |---|---|---|
 | Language | 中文 / English | Applied immediately, window title and hints included; the list is sorted by language code |
 | Theme | Light / Dark | No follow-system option; the system preference seeds it once on the first run. The moon/sun button in the top bar does the same |
+| Default folder for opening files | Any folder | PDF dialogs start here; leave empty to use `pdfs/` under the data directory |
 | Undo limit | 10–500 | Lowering it only affects entries pushed afterwards |
 | Guides | On / Off | The page-margin lines on the canvas |
 | Eight handles | On / Off | Off leaves only the four corner handles |
@@ -500,6 +504,7 @@ Settings are grouped into blocks — General, Text boxes, Highlighter, Logs, Bac
 | Default color | Blue / red / green / black | Color for new text boxes, blue by default |
 | Default width | 10–300 mm | 45 (4.5 cm) by default |
 | Default line height | 0.8–3× | 1.15 by default; a multiple of the font size |
+| Default text for new text boxes | Any text | Prefilled when creating; hold `Ctrl` while creating to start empty |
 | Highlighter height | 4–200 px | 15 by default |
 | Log level | Debug / Normal / Warnings / Errors | Takes effect at once and keeps writing to the same file |
 | Clean up logs automatically | On / Off | Deletes log files older than the retention period at startup; turn it off to keep them all |

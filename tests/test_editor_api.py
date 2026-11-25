@@ -254,6 +254,29 @@ def test_merge_images_rejects_mixed_selection(editor, opened):
     assert len([o for o in snapshot["objects"] if o["kind"] == "text"]) == 1
 
 
+def test_create_text_uses_default_text(editor, opened):
+    instance, _server = editor
+    opened()
+    instance.update_settings({"text_default": "默认文字"})
+
+    created = instance.create_text(page=0, x=50, y=50)["created"]
+    obj = [o for o in _objects(instance) if o["id"] == created][0]
+    text = "".join(run[0] for line in obj["lines"] for run in line["runs"])
+    assert text == "默认文字"
+
+
+def test_create_text_can_skip_default_text(editor, opened):
+    """按住 Ctrl 新建时传空字符串，不能再用设置里的默认文本。"""
+    instance, _server = editor
+    opened()
+    instance.update_settings({"text_default": "默认文字"})
+
+    created = instance.create_text(page=0, x=50, y=50, text="")["created"]
+    obj = [o for o in _objects(instance) if o["id"] == created][0]
+    text = "".join(run[0] for line in obj["lines"] for run in line["runs"])
+    assert text == ""
+
+
 def test_merged_image_is_saved_as_one_image(editor, opened):
     """保存时原图按墓碑表擦掉，只插回合并后的那一张。"""
     instance, _server = editor
@@ -748,11 +771,40 @@ def test_preprocess_worker_finishes_task(editor, pdf_factory, tmp_path):
 class _StubWindow:
     """只回答文件对话框，其余窗口能力一概不用。"""
 
-    def __init__(self, picked: str) -> None:
+    def __init__(self, picked: str | None) -> None:
         self._picked = picked
+        self.kwargs = {}
 
     def create_file_dialog(self, *args, **kwargs):
+        self.kwargs = kwargs
         return self._picked
+
+    def set_title(self, _title: str) -> None:
+        pass
+
+
+def test_browse_pdf_uses_the_configured_open_dir(editor, tmp_path):
+    instance, _server = editor
+    target = tmp_path / "docs"
+    target.mkdir()
+    instance.update_settings({"open_dir": str(target)})
+    window = _StubWindow(None)
+    instance._window = window  # noqa: SLF001
+
+    assert instance.browse_pdf() is None
+    assert window.kwargs["directory"] == str(target)
+
+
+def test_browse_pdf_falls_back_to_the_pdfs_folder(editor):
+    from app import paths
+
+    instance, _server = editor
+    instance.update_settings({"open_dir": ""})
+    window = _StubWindow(None)
+    instance._window = window  # noqa: SLF001
+
+    assert instance.browse_pdf() is None
+    assert window.kwargs["directory"] == str(paths.ensure_pdfs_dir())
 
 
 def test_preprocess_current_uses_the_open_document(editor, opened, tmp_path, wait):

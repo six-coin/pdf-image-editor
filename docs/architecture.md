@@ -47,7 +47,7 @@ app/
 │  ├─ document.py             PDF 句柄、页信息、可编辑图片、覆盖层
 │  ├─ render.py               页面光栅化 + LRU 缓存
 │  ├─ split.py                切分与打孔（纯函数）
-│  ├─ trim.py                 裁掉图片四周的纯白边（numpy）
+│  ├─ trim.py                 裁掉图片四周接近纯白的边（numpy）
 │  ├─ merge.py                多张图合成一张（numpy 双三次、白底、预乘 alpha）
 │  ├─ fonts.py                六种字体的路径表与懒加载缓存
 │  ├─ textlayout.py           换行、行高、基线（纯函数）
@@ -82,7 +82,7 @@ app/
 - 目标落在源目录里面（旧版本把「没补项目代号的指针」规范化后正是这种标记）按「没有变化」收敛：保留当前目录并丢掉标记。留着标记就是每次启动卡在同一条警告上，永远好不了。
 - **指针是权威**：只有「用户选新目录」时才做规范化，不会去改写历史指针——把指针改写成它自己的子目录，永远搬不成。
 - 改完目录由设置页的「立即重启」拉起新进程（释放单实例锁 → `pythonw main.pyw`）。搬迁只发生在启动早期，重开窗口是搬不动的。
-- `bootstrap.prepare()` 建齐数据目录、`pdfs/`、本地目录与日志目录；打开对话框的默认落点不存在时不会停在一个空目录上。
+- `bootstrap.prepare()` 建齐数据目录、`pdfs/`、本地目录与日志目录；`browse_pdf` 的起始目录按设置里的 `open_dir` 走，留空或失效时回退到 `pdfs/`，不会停在一个空目录上。
 - 版本号只有 `pyproject.toml` 一处，`app/version.py` 读它。
 - `bootstrap.is_first_run()` 的判据是数据目录里没有 `app.json`；首次运行时网页依次弹语言选择与使用说明。这两步用 `openModal({dismissible: false})` 打开：Esc 与点空白都不关，必须按按钮走完。
 - `main` 是唯一入口，持 `Local\SixCoin.PdfImageEditor.Main` 互斥量；重复启动**只**把已有窗口提到前面，提不到也只留一条日志——多开的意思就是「让我看到那个窗口」，弹一个「已经打开」的框只会让人以为双击失败了。
@@ -318,6 +318,8 @@ pointerup    → 一次性 commit_transform(items, selection)
 
 两者都不画成 PDF 批注，而是画进**页面内容流**：打印、复制文字、任何阅读器都按普通内容处理，不依赖各家对批注外观流的支持。
 
+新建文本框时，前端在单击那一刻决定内容：默认把设置里的 `text_default` 一起提交；按住 `Ctrl` 则提交空串。`create_text` 收到 `text=None` 时才回退到设置值，所以「显式空串」和「没传」是两条不同的路。
+
 ```
 每页：
   1. overlay.clear(page)         撤掉上一版（摘内容流 + 只删标记点名的那一个 XObject）
@@ -486,16 +488,17 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 
 选中图片按 `G` → `api.trim_images`。像素处理在 `core/trim.py`：
 
-1. 解码成 numpy，按通道判断「纯白」：RGB 三通道全 255，或 alpha 为 0（透明区域
-   压在纸上就是白的）。不做阈值容差，254 的扫描底灰不算白。
-2. 取所有非白像素的包围盒 `(x0, y0, x1, y1)`；包围盒之外的四条边必然全是纯白，
+1. 解码成 numpy，按 BT.601 灰度判断「够白」：`0.299R + 0.587G + 0.114B >= 248`
+   （#F8F8F8）。带 alpha 的样本在 PyMuPDF 里是预乘的，先补上
+   `255 × (1 − alpha)` 压到白底，再比阈值；不再要求三个通道都等于 255。
+2. 取所有非白像素的包围盒 `(x0, y0, x1, y1)`；包围盒之外的四条边必然都过阈值，
    而且已经不能再往里裁，切掉的面积最大。
 3. 按 `crop_pixmap` 裁出内容，再把对象矩形按像素比例缩到同一块：
    `x' = x + w·x0/W`、`w' = w·(x1−x0)/W`，y 同理。内容在页面上的位置不变。
 4. 多张图一次处理，压一条 `ObjectsChanged`（只改 `rect` 和 `image_id`），一次撤销。
    `src_rect` 保持原图位置，保存时仍然按整块原图做 redaction，再把裁过的图插回去。
 
-全白或本来就没有白边的图片跳过；全部跳过时不产生撤销记录，返回 `ok=False`。
+整张都够白或本来就没有浅色边的图片跳过；全部跳过时不产生撤销记录，返回 `ok=False`。
 
 ## 7. 前后端契约
 
@@ -525,11 +528,12 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
   "history": { "can_undo": true, "can_redo": false, "label": "edit.move" },
   "language": "zh-CN", "languages": ["zh-CN", "en-US"],
   "theme": "light", "show_guides": true, "show_inspector": true, "eight_handles": true,
+  "open_dir": "", "open_dir_default": "<数据目录>/pdfs",
   "keybindings": {}, "reference": { "left_mm": [10], "right_mm": [10, 50], … },
   "palette": { "text": [{"key": "blue", "hex": "#0078D4"}, …], "highlight": […] },
   "fonts": [{ "key": "msyh", "css": "Microsoft YaHei" }, …],
   "defaults": { "text_font": "msyh", "text_size_px": 14, "text_color": "blue",
-                "text_width_mm": 45, "text_line_height": 1.15,
+                "text_width_mm": 45, "text_line_height": 1.15, "text_default": "",
                 "highlight_height_px": 15, "highlight_color": "yellow" },
   "undo_limit": 100,
   "log_level": "INFO", "log_cleanup": true, "log_retention_days": 30,
@@ -795,7 +799,7 @@ tests/
 ├─ test_document.py         打开、页信息、可编辑图片筛选
 ├─ test_render.py           涂白、渲染上限、缓存淘汰
 ├─ test_split.py            切分 / 保留 / 打孔 / 涂白
-├─ test_trim.py             裁白边：纯白判定、包围盒、透明边
+├─ test_trim.py             裁白边：灰度阈值、包围盒、透明边
 ├─ test_textlayout.py       换行、行高、基线
 ├─ test_overlay.py          文本框与荧光笔的落盘、读回、回收
 ├─ test_tablelines.py       表格框线检测、拉直、交叉口

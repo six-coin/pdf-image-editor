@@ -51,6 +51,8 @@ DEFAULT_APP: dict[str, Any] = {
     "show_inspector": True,
     # 图片选中时显示八个手柄（四角 + 四边中点）；关掉只留四角。
     "eight_handles": True,
+    # 打开 PDF 时从哪个目录开始。空字符串表示用数据目录下的 pdfs。
+    "open_dir": "",
     # 空表示用前端的默认键位表；用户改过才会写进来。
     "keybindings": {},
     # 日志三件套：级别、是否自动清空、保留天数。
@@ -70,6 +72,8 @@ DEFAULT_APP: dict[str, Any] = {
     "text_color": "blue",
     "text_width_mm": 45.0,
     "text_line_height": 1.15,
+    # 新建文本框时自动填入的文本；空字符串表示不填。
+    "text_default": "",
     # 荧光带默认高度（px）与颜色。
     "highlight_height_px": 15,
     "highlight_color": "yellow",
@@ -201,6 +205,7 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     merged["show_guides"] = _boolean(raw.get("show_guides"), DEFAULT_APP["show_guides"])
     merged["show_inspector"] = _boolean(raw.get("show_inspector"), DEFAULT_APP["show_inspector"])
     merged["eight_handles"] = _boolean(raw.get("eight_handles"), DEFAULT_APP["eight_handles"])
+    merged["open_dir"] = str(raw.get("open_dir", "") or "").strip()
     merged["log_level"] = _choice(
         raw.get("log_level"), logging_setup.DEFAULT_LEVEL, logging_setup.LOG_LEVELS
     )
@@ -232,6 +237,7 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     merged["text_line_height"] = _number(
         raw.get("text_line_height"), DEFAULT_APP["text_line_height"], 0.8, 3.0
     )
+    merged["text_default"] = str(raw.get("text_default", "") or "")
     merged["highlight_height_px"] = _integer(
         raw.get("highlight_height_px"), DEFAULT_APP["highlight_height_px"], 4, 200
     )

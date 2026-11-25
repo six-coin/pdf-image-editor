@@ -894,6 +894,27 @@ body.saving {
   border-top: 1px solid var(--border);
 }
 
+/* 设置里的路径选择：输入框 + 选择 + 恢复默认。 */
+.path-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.path-control input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  font-family: "Cascadia Mono", "Consolas", monospace;
+  font-size: 12.5px;
+}
+
+.path-control .btn {
+  flex: none;
+  height: 38px;
+}
+
 .about-block {
   display: flex;
   flex-direction: column;
