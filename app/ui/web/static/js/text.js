@@ -11,6 +11,7 @@
 import { call, T } from './bridge.js';
 import { selectBox } from './controls.js';
 import { mountFloat, placeFloat } from './floatbar.js';
+import { MODE_SELECT, setMode } from './modes.js';
 import { apply, applySelection, objectEl, pageEl, updateLiveTextSize } from './render.js';
 import { pxPerPt, state } from './state.js';
 
@@ -19,6 +20,40 @@ const MIN_SIZE = 6;
 const MAX_SIZE = 200;
 const MIN_LINE_HEIGHT = 0.8;
 const MAX_LINE_HEIGHT = 3;
+
+// contenteditable 里的块级元素：粘贴、拖放带进来的 <div> / <p> 会把换行藏在
+// 元素边界上，textContent 里看不到。序列化和高度测量都必须把它们当换行。
+const BLOCK_TAGS = new Set([
+  'ADDRESS',
+  'ARTICLE',
+  'ASIDE',
+  'BLOCKQUOTE',
+  'DD',
+  'DIV',
+  'DL',
+  'DT',
+  'FIGCAPTION',
+  'FIGURE',
+  'FOOTER',
+  'FORM',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'HEADER',
+  'LI',
+  'MAIN',
+  'NAV',
+  'OL',
+  'P',
+  'PRE',
+  'SECTION',
+  'TABLE',
+  'TR',
+  'UL',
+]);
 
 let editing = null;
 let bar = null; // { el, id, live, target }
@@ -157,6 +192,7 @@ export async function beginEdit(obj) {
   const node = objectEl(obj.id);
   if (!node) return;
   const baseFont = (obj.runs && obj.runs.length && obj.runs[0][1]) || defaults().font;
+  composing = false;
 
   const editor = document.createElement('div');
   editor.className = 'text-editor';
@@ -198,6 +234,17 @@ export async function beginEdit(obj) {
   syncTextBar();
   editor.addEventListener('keydown', onEditorKey);
   editor.addEventListener('input', scheduleEditorHeight);
+  // 粘贴、拖放一律走纯文本：contenteditable 默认会把源文档的字体、颜色、
+  // 甚至 <div> 结构一起搬进来，提交时字体对不上、换行还会丢。
+  editor.addEventListener('paste', onEditorPaste);
+  editor.addEventListener('drop', onEditorDrop);
+  editor.addEventListener('compositionstart', () => {
+    composing = true;
+  });
+  editor.addEventListener('compositionend', () => {
+    composing = false;
+    scheduleEditorHeight();
+  });
 }
 
 function applyEditorMetrics() {
@@ -215,30 +262,61 @@ function applyEditorMetrics() {
  *
  * 编辑层是 contenteditable，浏览器自己排；框的高度却还停在上一次提交时的值，
  * 多敲两行字就溢出到框外。这里临时把编辑层改成高度自适应，量一次内容高度，
- * 再写回对象节点。行尾回车在浏览器里不占行盒，但后端把它算作一行，这里补上，
- * 编辑时和保存后的高度才一致。
+ * 再写回对象节点。
+ *
+ * 末尾的回车在浏览器里不占行盒（块末尾的换行会被吃掉），后端却把它算作一行：
+ * 补一个零宽哨兵把那个空行撑出来，既让光标有地方落，也让两边的高度一致。
  */
 function syncEditorHeight() {
   if (!editing) return;
   const { editor, node, style } = editing;
   const k = pxPerPt();
   const lineHeight = style.line_height * style.size * 0.75 * k;
+  ensureEolLine();
   const previousHeight = editor.style.height;
   const previousBottom = editor.style.bottom;
   editor.style.height = 'auto';
   editor.style.bottom = 'auto';
-  let content = editor.scrollHeight;
+  const content = Math.max(lineHeight, editor.scrollHeight);
   editor.style.height = previousHeight;
   editor.style.bottom = previousBottom;
-  if (editor.textContent.endsWith('\n')) content += lineHeight;
-  content = Math.max(lineHeight, content);
   node.style.height = `${content}px`;
   editing.height = content / k;
   updateLiveTextSize(editing.id, editing.obj.w, editing.height);
   placeBar();
 }
 
+/** 文字以换行结尾时，在末尾放一个零宽哨兵，让最后的空行真的占一行。 */
+function ensureEolLine() {
+  // 输入法组字期间不要动 DOM：在候选词旁边插节点会把组字打断。
+  if (!editing || composing) return;
+  const { editor } = editing;
+  const last = editor.lastChild;
+  const sentinel = Boolean(last && last.nodeType === 1 && last.dataset && last.dataset.eol === '1');
+  if (editorText(editor).endsWith('\n')) {
+    if (sentinel) return;
+    const span = document.createElement('span');
+    span.dataset.eol = '1';
+    span.textContent = ZWSP;
+    editor.appendChild(span);
+    return;
+  }
+  if (!sentinel) return;
+  // 光标可能正停在哨兵里，先挪到末尾再拆，别把光标一起删掉。
+  const selection = window.getSelection();
+  if (selection && selection.rangeCount && last.contains(selection.getRangeAt(0).startContainer)) {
+    const range = document.createRange();
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  last.remove();
+}
+
 function onEditorKey(event) {
+  // 输入法组字时的回车/退格属于输入法：拦下来会把候选词直接吃掉。
+  if (event.isComposing || event.keyCode === 229) return;
   if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
     // 保持 DOM 扁平：回车插的是真正的换行符，不是 <div> 套 <div>。
     event.preventDefault();
@@ -247,7 +325,7 @@ function onEditorKey(event) {
   }
   if (event.key === 'Escape') {
     event.preventDefault();
-    commitEdit();
+    exitEditToSelect();
     return;
   }
   if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
@@ -256,21 +334,71 @@ function onEditorKey(event) {
   }
 }
 
-function insertPlainText(text) {
+/** 粘贴、拖放进来的文本一律当纯文本：不要字体、颜色、字号，也不要块级结构。 */
+function plainText(raw) {
+  return String(raw || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\t/g, '    ')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
+}
+
+function onEditorPaste(event) {
+  const data = event.clipboardData;
+  if (!data) return;
+  event.preventDefault();
+  event.stopPropagation();
+  insertPlainText(plainText(data.getData('text/plain')));
+}
+
+function onEditorDrop(event) {
+  const data = event.dataTransfer;
+  const raw = data ? data.getData('text/plain') : '';
+  if (!raw) return; // 文件、图片交给画布
+  event.preventDefault();
+  event.stopPropagation();
+  if (document.caretRangeFromPoint) {
+    const point = document.caretRangeFromPoint(event.clientX, event.clientY);
+    if (point && editing && editing.editor.contains(point.startContainer)) {
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(point);
+    }
+  }
+  insertPlainText(plainText(raw));
+}
+
+/** 光标在编辑层里就返回当前 range；不在就补到末尾——点过工具条也不能让回车失效。 */
+function editorRange() {
+  if (!editing) return null;
   const selection = window.getSelection();
-  if (!selection || !selection.rangeCount) return;
-  const range = selection.getRangeAt(0);
+  if (selection && selection.rangeCount) {
+    const range = selection.getRangeAt(0);
+    if (editing.editor.contains(range.commonAncestorContainer)) return range;
+  }
+  caretToEnd(editing.editor);
+  const again = window.getSelection();
+  return again && again.rangeCount ? again.getRangeAt(0) : null;
+}
+
+function insertPlainText(text) {
+  if (!text) return;
+  const range = editorRange();
+  if (!range) return;
   range.deleteContents();
   const node = document.createTextNode(text);
   range.insertNode(node);
   range.setStartAfter(node);
   range.collapse(true);
+  const selection = window.getSelection();
   selection.removeAllRanges();
   selection.addRange(range);
   scheduleEditorHeight();
 }
 
 let heightFrame = 0;
+// 输入法组字中：这期间不改 DOM，等 compositionend 再量高度。
+let composing = false;
 
 /** 输入很密，按帧合并一次高度测量，别每个字符都强制回流。 */
 function scheduleEditorHeight() {
@@ -281,32 +409,69 @@ function scheduleEditorHeight() {
   });
 }
 
-/** 把 DOM 序列化成「文字 + 字体」的段。零宽占位符要剔掉。 */
-function serialize(root) {
+/**
+ * 把 DOM 拆成「文字 + 字体」的段。零宽占位符要剔掉。
+ *
+ * 块级元素的边界也是换行：粘贴进来的 <div>a</div><div>b</div> 在浏览器里是
+ * 两行，textContent 里却连在一起。不补这个换行，提交时两行会粘成一行。
+ */
+function collectRuns(root, baseFont) {
   const runs = [];
+  let pendingBreak = false;
   const add = (text, font) => {
     if (!text) return;
     const last = runs[runs.length - 1];
     if (last && last[1] === font) last[0] += text;
     else runs.push([text, font]);
   };
+  const atLineStart = () => {
+    const last = runs[runs.length - 1];
+    return !last || last[0].endsWith('\n');
+  };
+  const emit = (text, font) => {
+    if (!text) return;
+    // 刚走完一个块：它后面自带一次换行，等下一段内容出现时再补，免得留下
+    // 一个多余的行尾换行（块末尾的换行浏览器是不画的）。
+    if (pendingBreak) {
+      pendingBreak = false;
+      if (!atLineStart()) add('\n', font);
+    }
+    add(text, font);
+  };
   const walk = (node, font) => {
     for (const child of node.childNodes) {
       if (child.nodeType === 3) {
-        add(child.nodeValue.split(ZWSP).join(''), font);
+        emit(child.nodeValue.split(ZWSP).join(''), font);
         continue;
       }
       if (child.nodeType !== 1) continue;
       if (child.tagName === 'BR') {
-        add('\n', font);
+        emit('\n', font);
         continue;
       }
       const own = child.dataset && child.dataset.font ? child.dataset.font : font;
+      const block = BLOCK_TAGS.has(child.tagName);
+      if (block && !atLineStart()) add('\n', font);
       walk(child, own);
+      if (block) pendingBreak = true;
     }
   };
-  walk(root, editing ? editing.baseFont : defaults().font);
+  walk(root, baseFont);
   return runs;
+}
+
+/** 编辑层里真正的文字（含块级边界与 <br> 的换行），高度与「是不是默认文本」都按它算。 */
+function editorText(root) {
+  return collectRuns(root, '').map(([text]) => text).join('');
+}
+
+function serialize(root) {
+  return collectRuns(root, editing ? editing.baseFont : defaults().font);
+}
+
+/** 编辑完还是设置里的默认文本：这个框只是占位，删掉。 */
+function defaultText() {
+  return String((state.data && state.data.defaults && state.data.defaults.text_default) || '');
 }
 
 export async function commitEdit() {
@@ -315,6 +480,11 @@ export async function commitEdit() {
   const runs = serialize(current.editor);
   editing = null;
 
+  // 内容还是默认文本：这个框没被真正编辑过，交回后端删掉。
+  const preset = defaultText();
+  const joined = runs.map(([text]) => text).join('');
+  const placeholder = Boolean(preset.trim()) && joined.trim() === preset.trim();
+
   // 进去看一眼又出来不该留下一条撤销记录。空框（runs 为空）仍然要走一次，
   // 让后端把它删掉。
   const sameRuns = JSON.stringify(runs) === JSON.stringify(current.obj.runs || []);
@@ -322,7 +492,7 @@ export async function commitEdit() {
     current.style.size === current.obj.size &&
     current.style.color === current.obj.color &&
     current.style.line_height === current.obj.line_height;
-  if (runs.length && sameRuns && sameStyle) {
+  if (runs.length && sameRuns && sameStyle && !placeholder) {
     // 内容没变，但编辑层已经拆了：必须把普通文本节点装回去，否则页面会停在
     // 「看着还在编辑、其实 editing 已经是 null」的状态，缩放时字号也不跟着变。
     restoreTextNode(current);
@@ -330,13 +500,39 @@ export async function commitEdit() {
     return;
   }
 
-  const snapshot = await call('update_text', current.id, runs, {
-    size: current.style.size,
-    color: current.style.color,
-    line_height: current.style.line_height,
-  });
+  const snapshot = await call(
+    'update_text',
+    current.id,
+    runs,
+    {
+      size: current.style.size,
+      color: current.style.color,
+      line_height: current.style.line_height,
+    },
+    true
+  );
   if (snapshot) apply(snapshot);
   else restoreTextNode(current);
+}
+
+/**
+ * Esc：结束编辑 → 切到选择模式 → 选中这个框。
+ *
+ * 直接提交再取消选中会让人愣一下：想接着拖这个框，还得再点一次。切到选择模式
+ * 之后框就带着手柄，方向键、拖动立刻可用。
+ */
+async function exitEditToSelect() {
+  const current = editing;
+  if (!current) return;
+  const id = current.id;
+  await commitEdit();
+  setMode(MODE_SELECT);
+  if (!state.data) return;
+  // 内容还是默认文本时框已经被删掉了，没什么可选。
+  const alive = (state.data.objects || []).some((obj) => obj.id === id);
+  if (!alive) return;
+  const snapshot = await call('select', [id]);
+  if (snapshot) apply(snapshot);
 }
 
 /** 把编辑层换回按模型渲染的普通文本框。 */

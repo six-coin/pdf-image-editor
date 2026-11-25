@@ -694,7 +694,7 @@ export async function openSettings() {
 
     block('settings.backups');
 
-    // 备份在数据目录的 backup/ 里，启动时按这个天数清理；每个文档每天只留第一份。
+    // 备份在数据目录的 backup/ 里，启动时按这个天数清理；每次就地保存留一份，同名排号。
     body.appendChild(
       field(
         'settings.backup_retention_days',

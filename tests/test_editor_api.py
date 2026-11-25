@@ -277,6 +277,111 @@ def test_create_text_can_skip_default_text(editor, opened):
     assert text == ""
 
 
+def test_update_text_drops_a_box_left_at_the_default_text(editor, opened):
+    """编辑完还是默认文本：这个框只是占位，提交时就该消失。"""
+    instance, _server = editor
+    opened()
+    instance.update_settings({"text_default": "默认文字"})
+    created = instance.create_text(page=0, x=50, y=50)["created"]
+
+    snapshot = instance.update_text(created, [["默认文字", "msyh"]], None, True)
+
+    assert all(obj["id"] != created for obj in snapshot["objects"])
+
+
+def test_update_text_keeps_a_box_that_was_actually_edited(editor, opened):
+    instance, _server = editor
+    opened()
+    instance.update_settings({"text_default": "默认文字"})
+    created = instance.create_text(page=0, x=50, y=50)["created"]
+
+    snapshot = instance.update_text(created, [["换了内容", "msyh"]], None, True)
+
+    kept = [obj for obj in snapshot["objects"] if obj["id"] == created]
+    assert len(kept) == 1
+    assert kept[0]["lines"][0]["runs"][0][0] == "换了内容"
+
+
+def test_style_update_keeps_a_box_with_the_default_text(editor, opened):
+    """只改样式时不能按「还是默认文本」删掉：换个颜色框就没了，太吓人。"""
+    instance, _server = editor
+    opened()
+    instance.update_settings({"text_default": "默认文字"})
+    created = instance.create_text(page=0, x=50, y=50)["created"]
+
+    snapshot = instance.update_text(created, [["默认文字", "msyh"]], {"color": "red"})
+
+    assert any(obj["id"] == created for obj in snapshot["objects"])
+
+
+def test_text_created_on_an_unloaded_page_is_saved(editor, pdf_factory, tmp_path):
+    """一页都没装载就在第 2 页建框：保存不能因为「这页没装载」把它整页跳过。
+
+    保存只处理装载过的页（否则会把没装载页上已有的文本框擦掉），所以新建对象
+    之前必须先把这一页装载进来。
+    """
+    instance, _server = editor
+    path = pdf_factory("unloaded.pdf", pages=2)
+    started = instance.open_path(str(path), force=True)
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        if instance.poll_task(started["task"])["state"] != "running":
+            break
+        time.sleep(0.02)
+
+    created = instance.create_text(page=1, x=50, y=50, text="没装载的页")["created"]
+    assert created
+
+    target = tmp_path / "out.pdf"
+    result = instance.save_document(str(target))
+    assert result["ok"] is True, result
+
+    doc = pymupdf.open(target)
+    try:
+        assert "没装载的页" in doc[1].get_text().replace("\xa0", " ")
+        # 第 1 页没被动过
+        assert "Hello text layer 1" in doc[0].get_text()
+        assert "Hello text layer 2" in doc[1].get_text()
+    finally:
+        doc.close()
+
+
+def test_save_keeps_text_on_pages_that_were_never_loaded(editor, pdf_factory, tmp_path):
+    """整条链路的回归：没滚到过的页，保存后它的文本框不能消失。
+
+    打开文档时只有视口附近的页会装载。以前保存对每一页都先撤覆盖层再按模型
+    重画，没装载的页撤掉就画不回来——用户看到的是「保存之后某一页的文字没了」。
+    """
+    instance, _server = editor
+    path = pdf_factory("two-pages.pdf", pages=2)
+
+    def reopen():
+        started = instance.open_path(str(path), force=True)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            if instance.poll_task(started["task"])["state"] != "running":
+                return
+            time.sleep(0.02)
+
+    # 先在第 2 页留一个文本框，保存（模拟上一次编辑的结果）
+    reopen()
+    instance.load_page(1, 96)
+    created = instance.create_text(page=1, x=50, y=50, text="第二页的笔记")["created"]
+    assert created
+    assert instance.save_document(str(path))["ok"] is True
+
+    # 重新打开，只装载第 1 页（用户没滚到第 2 页），再保存一次
+    reopen()
+    assert instance.load_page(0, 96)["ok"] is True
+    assert instance.save_document(str(path))["ok"] is True
+
+    doc = pymupdf.open(path)
+    try:
+        assert "第二页的笔记" in doc[1].get_text().replace("\xa0", " ")
+    finally:
+        doc.close()
+
+
 def test_merged_image_is_saved_as_one_image(editor, opened):
     """保存时原图按墓碑表擦掉，只插回合并后的那一张。"""
     instance, _server = editor

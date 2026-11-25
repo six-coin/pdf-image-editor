@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -31,26 +32,55 @@ MARK_PREFIX = b"% sixcoin-overlay v1 "
 _META_KEY = "SixCoin"
 _GS_NAME = "GSmul"
 _PX_TO_PT = textlayout.PX_TO_PT
+# 内容流里的 ``/名字 Do``：show_pdf_page 挂上去的 Form XObject 只能靠它认。
+_NAME_DO = re.compile(rb"/([^\s/<>\[\](){}]+)\s+Do\b")
 
 
 def _num(value: float) -> str:
     return f"{value:.3f}".rstrip("0").rstrip(".")
 
 
-def _xobject_names(doc: pymupdf.Document, page: pymupdf.Page) -> set[str]:
-    kind, value = doc.xref_get_key(page.xref, "Resources/XObject")
-    if kind != "dict":
-        return set()
-    names: set[str] = set()
-    for part in value.strip()[2:-2].split(" 0 R"):
-        part = part.strip()
-        if part:
-            names.add(part.split()[0].lstrip("/"))
-    return names
+def _resources_owner(doc: pymupdf.Document, page: pymupdf.Page) -> tuple[int, str] | None:
+    """页面实际使用的 ``/Resources`` 在哪：``(对象 xref, 键前缀)``。
+
+    ``/Resources`` 不一定写在页面自己身上：可以是间接对象，也可以挂在父节点上由
+    页面继承（生成器省体积的常见做法）。只读页面自己的键会在后两种结构上落空，
+    于是认不出覆盖层 XObject 的名字——标记写不进去，下一次保存就当这页没有覆盖层。
+    """
+    xref = page.xref
+    for _ in range(32):
+        kind, value = doc.xref_get_key(xref, "Resources")
+        if kind == "xref":
+            return int(value.split()[0]), ""
+        if kind == "dict":
+            return xref, "Resources/"
+        kind, value = doc.xref_get_key(xref, "Parent")
+        if kind != "xref":
+            return None
+        xref = int(value.split()[0])
+    return None
+
+
+def _xobject_owner(doc: pymupdf.Document, page: pymupdf.Page) -> tuple[int, str] | None:
+    """``/XObject`` 字典在哪：``(对象 xref, 键前缀)``。字典本身也可能是间接对象。"""
+    owner = _resources_owner(doc, page)
+    if owner is None:
+        return None
+    xref, prefix = owner
+    kind, value = doc.xref_get_key(xref, f"{prefix}XObject")
+    if kind == "xref":
+        return int(value.split()[0]), ""
+    if kind == "dict":
+        return xref, f"{prefix}XObject/"
+    return None
 
 
 def _xobject_xref(doc: pymupdf.Document, page: pymupdf.Page, name: str) -> int | None:
-    kind, value = doc.xref_get_key(page.xref, f"Resources/XObject/{name}")
+    owner = _xobject_owner(doc, page)
+    if owner is None:
+        return None
+    xref, prefix = owner
+    kind, value = doc.xref_get_key(xref, f"{prefix}{name}")
     if kind != "xref" or not value:
         return None
     try:
@@ -113,26 +143,49 @@ def hidden(doc: pymupdf.Document, page: pymupdf.Page) -> Iterator[None]:
         _set_contents(doc, page, contents)
 
 
-def clear(doc: pymupdf.Document, page: pymupdf.Page) -> bool:
-    """撤掉上一版的覆盖层。
+def take(doc: pymupdf.Document, page: pymupdf.Page) -> list[dict]:
+    """撤掉上一版的覆盖层，返回它原来的内容（读不出来时返回空表）。
+
+    返回值是兜底用的：新的一版万一画不上去，还能把旧的照原样画回来，而不是让
+    这一页的文本框凭空消失。
 
     只删标记里点名的那一个 XObject——遍历删掉整个 XObject 字典会把页面上的
     图片（``fzImg0``）一起删掉，下一次保存就会报 ``cannot find XObject resource``。
     """
     own = _own_streams(doc, page)
     if not own:
-        return False
+        return []
+    items = _items_from(doc, page, own)
     doomed = {xref for xref, _name in own}
     _set_contents(doc, page, [xref for xref in page.get_contents() if xref not in doomed])
-    for _xref, name in own:
-        if name:
-            doc.xref_set_key(page.xref, f"Resources/XObject/{name}", "null")
-    return True
+    owner = _xobject_owner(doc, page)
+    if owner is not None:
+        xref, prefix = owner
+        for _stream, name in own:
+            if not name:
+                continue
+            try:
+                # 删在真正持有它的字典里：页面的 /Resources 可能是继承来的，
+                # 往页面自己身上写会造出一个空 Resources，把继承的图片和字体
+                # 全挡在外面。
+                doc.xref_set_key(xref, f"{prefix}{name}", "null")
+            except Exception:
+                # 资源键删不掉不影响页面：覆盖层流已经从 /Contents 摘掉了。
+                pass
+    return items
 
 
 def read(doc: pymupdf.Document, page: pymupdf.Page) -> list[dict]:
     """读出这一页由本项目产生的对象（原始 JSON 列表）。"""
-    for _xref, name in _own_streams(doc, page):
+    return _items_from(doc, page, _own_streams(doc, page))
+
+
+def _items_from(
+    doc: pymupdf.Document,
+    page: pymupdf.Page,
+    streams: list[tuple[int, str]],
+) -> list[dict]:
+    for _xref, name in streams:
         xobj = _xobject_xref(doc, page, name) if name else None
         if xobj is None:
             continue
@@ -223,14 +276,23 @@ def draw(
 
         scratch.subset_fonts()
 
-        before_streams = set(page.get_contents())
-        before_names = _xobject_names(doc, page)
-        page.show_pdf_page(pymupdf.Rect(0, 0, width, height), scratch, 0)
-        new_streams = [x for x in page.get_contents() if x not in before_streams]
-        new_names = _xobject_names(doc, page) - before_names
-        if not new_streams or not new_names:
+        before_contents = page.get_contents()
+        try:
+            page.show_pdf_page(pymupdf.Rect(0, 0, width, height), scratch, 0)
+        except Exception:
+            _restore_contents(doc, page, before_contents)
+            raise
+        new_streams = [x for x in page.get_contents() if x not in before_contents]
+        if not new_streams:
             return False
-        name = sorted(new_names)[-1]
+        # 名字以内容流里的 ``/xxx Do`` 为准：/Resources 可能是继承来的，
+        # 在页面自己身上比对资源字典会漏掉刚挂上去的 XObject。
+        name = _drawn_name(doc, new_streams[-1])
+        xobj = _xobject_xref(doc, page, name) if name else None
+        if xobj is None:
+            # 认不出挂上去的是哪个 XObject：把这条流摘掉，别留半条覆盖层。
+            _restore_contents(doc, page, before_contents)
+            return False
 
         payload = {
             "v": 1,
@@ -239,9 +301,7 @@ def draw(
         meta = doc.get_new_xref()
         doc.update_object(meta, "<<>>")
         doc.update_stream(meta, json.dumps(payload, ensure_ascii=False).encode("utf-8"))
-        xobj = _xobject_xref(doc, page, name)
-        if xobj is not None:
-            doc.xref_set_key(xobj, _META_KEY, f"{meta} 0 R")
+        doc.xref_set_key(xobj, _META_KEY, f"{meta} 0 R")
 
         stream = new_streams[-1]
         marker = MARK_PREFIX + name.encode("ascii") + b"\n"
@@ -249,3 +309,17 @@ def draw(
         return True
     finally:
         scratch.close()
+
+
+def _drawn_name(doc: pymupdf.Document, stream_xref: int) -> str | None:
+    data = doc.xref_stream(stream_xref) or b""
+    found = _NAME_DO.findall(data)
+    return found[-1].decode("ascii", "ignore") if found else None
+
+
+def _restore_contents(doc: pymupdf.Document, page: pymupdf.Page, contents: list[int]) -> None:
+    try:
+        _set_contents(doc, page, contents)
+    except Exception:
+        # 回滚失败也只能继续往上抛原始错误，别把它盖掉。
+        pass

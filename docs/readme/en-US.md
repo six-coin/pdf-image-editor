@@ -299,11 +299,14 @@ Settings can hold a **default text for new text boxes**: every new box is prefil
 ### Editing
 
 - **Click** to select (and drag); **double-click** to edit — the caret is already in the box, and the left rail switches to the Text tool automatically.
-- `Enter` starts a new line; `Esc` or clicking outside ends editing and saves.
+- `Enter` starts a new line; `Ctrl+Enter` ends editing right away.
+- `Esc` ends editing, **switches to the Select tool and selects the box** — it is ready to drag or nudge with the arrow keys, no extra click needed.
 - **Clicking outside** ends editing and deselects the box; it does not create a new text box in the empty space.
-- While editing, the box grows or shrinks with its content; a trailing Enter also counts as a line, matching the saved height.
+- While editing, the box grows or shrinks with its content; a trailing Enter also counts as a line, and that empty line is visible while editing, matching the saved height.
+- Pasting (`Ctrl+V`) or dropping text keeps **plain text only**: fonts, sizes, colours, bold, indentation and block structure from the source are dropped; line breaks are kept.
 - Wrapping matches the saved result: Chinese breaks per character, closing punctuation (`, . ; : ! ?` and their fullwidth forms) never starts a line, opening punctuation (`( [ { «` and their fullwidth forms) never ends one; English breaks per word, overlong words are split.
 - Empty the box and click away and it is deleted — no invisible leftovers.
+- Leave the box at the **default text** and it is deleted too: an unreplaced placeholder is not content.
 - The size is always an integer (px); use `−` / `+` on the toolbar or type it in.
 - **Line height** is a multiple of the font size: 1.15 by default, adjustable between 0.8 and 3.
 
@@ -374,7 +377,7 @@ A band can be **selected and moved, nothing else**: no handles, no resizing. Lik
 
 ### In-place save
 
-`Ctrl+S`. An in-place save first copies the previous version into `backup\` inside the **data folder**, named `YYYYMMDD-<name>.bak.pdf`. **Each document is backed up only once a day**: a second save on the same day finds the name already taken and skips it — no `(1)`, no `(2)`. Backups stay out of the source folder so a PDF that gets delivered or archived never drags a `.bak.pdf` along.
+`Ctrl+S`. An in-place save first copies the previous version into `backup\` inside the **data folder**, named `YYYYMMDD-<name>.bak.pdf`. **Every save is backed up**: when the name is already taken, the next one becomes `YYYYMMDD-<name>.bak1.pdf`, then `bak2.pdf`, and so on — the state before each save is kept, nothing is dropped. Backups stay out of the source folder so a PDF that gets delivered or archived never drags a `.bak.pdf` along.
 
 Backups older than the retention period (30 days by default, adjustable in Settings) are deleted at the next start. PDFs inside the backup folder cannot be opened: they are snapshots taken before a save, and editing one would only edit a copy.
 
@@ -456,8 +459,8 @@ When it finishes you are told where the file went and how many images were proce
 | `Ctrl+E` | Export pages |
 | `Ctrl+Z` / `Ctrl+Y` | Undo / redo |
 | `Ctrl+A` | Select all on the current page (Select tool only) |
-| `Esc` | Clear the selection (Select tool only) |
-| `Ctrl+V` | Paste image |
+| `Esc` | Clear the selection (Select tool only); while editing a text box, finish editing and select it |
+| `Ctrl+V` | Paste image (plain text only when a text box is being edited) |
 | `Ctrl+0` / `Ctrl+=` / `Ctrl+-` / `Ctrl+1` | Fit width / zoom in / zoom out / 100% |
 | `Delete` | Delete selection |
 | `Ctrl+U` / `Ctrl+L` | Bring to front / send to back |
@@ -534,7 +537,7 @@ program directory\
 
 %PROGRAMDATA%\six-coin\pdf-image-editor\     data folder (configurable)
 ├─ app.json             settings (language, theme, guide margins, text/highlighter defaults, key bindings)
-├─ backup\              pre-save backups, one per document per day, YYYYMMDD-<name>.bak.pdf
+├─ backup\              pre-save backups, one per save, YYYYMMDD-<name>.bak.pdf
 └─ pdfs\                default folder for the open dialog
 
 %LOCALAPPDATA%\six-coin\pdf-image-editor\
@@ -546,7 +549,7 @@ program directory\
 ```
 
 - Logs live in `%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\`, named `main_*`, one file per launch, rotating at 5 MB. Only the last 30 days are kept by default; anything older is deleted at startup.
-- Backups live in `backup\` inside the data folder, one per document per day, kept for 30 days by default. They move with the data folder when you change it.
+- Backups live in `backup\` inside the data folder, one per in-place save (numbered `bak1`, `bak2` when names repeat), kept for 30 days by default. They move with the data folder when you change it.
 - `app.json` is written atomically (temporary file + replace), so a crash mid-write never leaves half a file. A hand-edited file that breaks is reported with its file name — it is never silently reset.
 - Unknown keys in the configuration are preserved, which keeps old and new versions compatible.
 - The data folder always ends with the project code: picking `D://Data` gives `D://Data//pdf-image-editor`. On a change the old contents are copied there after a restart: folders are merged, and files already present in the target are never overwritten. If the copy fails nothing is touched and Settings says why — you never end up with a new folder and no settings. The old folder is removed once the switch succeeds.
@@ -569,7 +572,7 @@ Either it was never recognised as an editable object (same cases as above) or er
 It does not. Each page's images are read into the model only the first time that page is opened, so deleted or split-away images never reappear.
 
 **The `.bak.pdf` is not next to the file any more**
-Backups moved to `backup\` inside the data folder (Settings → About → Data folder). Names carry a date prefix, e.g. `20261123-report.bak.pdf`. Each document is backed up only once a day, so repeated saves do not add more files — what you see is the document as it was when first opened that day.
+Backups moved to `backup\` inside the data folder (Settings → About → Data folder). Names carry a date prefix, e.g. `20261123-report.bak.pdf`; repeated saves on the same day become `.bak1.pdf`, `.bak2.pdf`, each holding the file as it was right before that save.
 
 **Preprocessing skipped an image**
 That image has an alpha channel (logo, watermark); thresholding would turn its transparent areas into black blocks, so it is skipped. Such images are meant to stay as they are.

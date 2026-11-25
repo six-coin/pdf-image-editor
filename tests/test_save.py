@@ -12,10 +12,11 @@ from datetime import date
 import pymupdf
 import pytest
 
+from app.core import overlay
 from app.core.document import PdfDocument
 from app.core.save import save, sweep_backups
 from app.errors import SaveError
-from app.models import DocumentState, Rect
+from app.models import DocumentState, Rect, TextObject, TextRun
 
 
 def _state(doc: PdfDocument) -> DocumentState:
@@ -157,8 +158,8 @@ def test_in_place_save_copies_a_dated_backup(pdf_factory, store, tmp_path):
     out.close()
 
 
-def test_in_place_save_backs_up_only_once_a_day(pdf_factory, store, tmp_path):
-    """同名备份已经在了就不再备份：一天只留第一次保存前的那一版。"""
+def test_in_place_save_keeps_a_numbered_backup_each_time(pdf_factory, store, tmp_path):
+    """同名备份已经在了就往后排号：每次保存前的那一版都要留下来。"""
     src = pdf_factory("in.pdf")
     original = src.read_bytes()
     doc = PdfDocument.open(src, store)
@@ -166,16 +167,35 @@ def test_in_place_save_backs_up_only_once_a_day(pdf_factory, store, tmp_path):
     doc.close()
 
     backup_dir = tmp_path / "backup"
-    save(src, src, state, store, backup_dir=backup_dir)
     stamp = date.today().strftime("%Y%m%d")
+    save(src, src, state, store, backup_dir=backup_dir)
     first = (backup_dir / f"{stamp}-in.bak.pdf").read_bytes()
     assert first == original
 
+    # 第二次保存前把图挪个位置：第二份备份必须带着这一次改动之前的样子。
+    doc = PdfDocument.open(src, store)
+    state = _state(doc)
+    state.objects[0].rect = Rect(200, 200, 120, 90)
+    doc.close()
     save(src, src, state, store, backup_dir=backup_dir)
 
-    # 既没有 (1)，第一份也没有被第二次保存前的版本覆盖掉。
-    assert sorted(p.name for p in backup_dir.glob("*.pdf")) == [f"{stamp}-in.bak.pdf"]
-    assert (backup_dir / f"{stamp}-in.bak.pdf").read_bytes() == first
+    names = sorted(p.name for p in backup_dir.glob("*.pdf"))
+    assert names == [f"{stamp}-in.bak.pdf", f"{stamp}-in.bak1.pdf"]
+    # 第一份还是最初的样子，没有被覆盖。
+    assert (backup_dir / f"{stamp}-in.bak.pdf").read_bytes() == original
+    # bak1 是第二次保存前的文件：图还在原位。
+    before = pymupdf.open(backup_dir / f"{stamp}-in.bak1.pdf")
+    assert before[0].get_image_info(xrefs=True)[0]["bbox"][0] == pytest.approx(100, abs=1)
+    before.close()
+
+    # 再存一次：序号继续往后排，不会覆盖前两份。
+    save(src, src, state, store, backup_dir=backup_dir)
+    names = sorted(p.name for p in backup_dir.glob("*.pdf"))
+    assert names == [
+        f"{stamp}-in.bak.pdf",
+        f"{stamp}-in.bak1.pdf",
+        f"{stamp}-in.bak2.pdf",
+    ]
 
 
 def test_save_as_leaves_no_backup(pdf_factory, store, tmp_path):
@@ -227,6 +247,88 @@ def test_out_of_page_image_keeps_its_rect(pdf_factory, store, tmp_path):
     assert bbox[3] == pytest.approx(1000, abs=1)
     out.close()
     doc.close()
+
+
+def _page_text(page) -> str:
+    """TextWriter 写出来的空格是不换行空格（\\xa0），比较前统一成普通空格。"""
+    return page.get_text().replace("\xa0", " ")
+
+
+def _overlay_pdf(tmp_path, pages: int = 3):
+    """每一页都有本项目画的文本框，用来验证保存不会把它们弄丢。"""
+    path = tmp_path / "overlay.pdf"
+    doc = pymupdf.open()
+    for index in range(pages):
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 72), f"PAGE{index + 1} text", fontsize=16)
+        overlay.draw(
+            doc,
+            page,
+            [
+                TextObject(
+                    id=f"t{index}",
+                    page=index,
+                    rect=Rect(60, 300, 200, 30),
+                    runs=[TextRun(f"note {index + 1}", "msyh")],
+                    z=50,
+                )
+            ],
+        )
+    doc.save(str(path), garbage=4, deflate=True)
+    doc.close()
+    return path
+
+
+def test_save_keeps_overlays_on_pages_never_loaded(tmp_path, store):
+    """没装载进模型的页，保存时不能动它的覆盖层。
+
+    这是「保存之后某一页的文本框整页消失」的回归：以前对每一页都无条件撤掉
+    覆盖层，没装载过的页在模型里一个对象都没有，撤掉就再也画不回去了。
+    """
+    src = _overlay_pdf(tmp_path)
+    doc = PdfDocument.open(src, store)
+    state = DocumentState(path=src, loaded={0})
+    state.pages = [doc.page_info(i) for i in range(doc.page_count)]
+    state.objects = doc.editable_images(0) + doc.overlay_objects(0)
+    doc.close()
+
+    dst = tmp_path / "out.pdf"
+    report = save(src, dst, state, store)
+
+    assert not [w for w in report.warnings if w["code"].startswith("overlay")]
+    out = pymupdf.open(dst)
+    for index in range(3):
+        assert len(overlay.read(out, out[index])) == 1
+        assert f"note {index + 1}" in _page_text(out[index])
+    out.close()
+
+
+def test_save_rewrites_overlays_on_loaded_pages(tmp_path, store):
+    """装载过的页照常更新：改过的文字要写进去，删掉的框要消失。"""
+    src = _overlay_pdf(tmp_path)
+    doc = PdfDocument.open(src, store)
+    state = DocumentState(path=src, loaded={0, 1})
+    state.pages = [doc.page_info(i) for i in range(doc.page_count)]
+    state.objects = doc.overlay_objects(0) + doc.overlay_objects(1)
+    doc.close()
+
+    first = [o for o in state.objects if o.page == 0][0]
+    first.runs = [TextRun("changed text", "msyh")]
+    state.objects = [o for o in state.objects if o.page != 1]
+
+    dst = tmp_path / "out.pdf"
+    save(src, dst, state, store)
+
+    out = pymupdf.open(dst)
+    assert "changed text" in _page_text(out[0])
+    assert "note 1" not in _page_text(out[0])
+    assert len(overlay.read(out, out[0])) == 1
+    # 第 2 页装载过但框被删了：这一页的覆盖层要清掉。
+    assert overlay.read(out, out[1]) == []
+    assert "note 2" not in _page_text(out[1])
+    # 第 3 页没装载：原样保留。
+    assert "note 3" in _page_text(out[2])
+    out.close()
 
 
 def _annotated_pdf(tmp_path):

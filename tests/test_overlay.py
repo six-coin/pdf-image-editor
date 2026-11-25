@@ -360,3 +360,93 @@ def test_hidden_detaches_the_overlay_only_while_rendering():
         assert overlay.read(doc, page)
     finally:
         doc.close()
+
+
+def _image_pages(tmp_path, name: str) -> pymupdf.Document:
+    """三页、每页都有文字和一张图，用来验证覆盖层不会把页面资源挖空。"""
+    doc = pymupdf.open()
+    for index in range(3):
+        page = doc.new_page(width=595, height=842)
+        page.insert_text((72, 72), f"PAGE{index + 1} text", fontsize=16)
+        pix = pymupdf.Pixmap(pymupdf.csRGB, 40, 30, b"\xff\x00\x00" * 1200, False)
+        page.insert_image(pymupdf.Rect(100, 100, 300, 250), pixmap=pix)
+    path = tmp_path / name
+    doc.save(str(path))
+    doc.close()
+    return pymupdf.open(path)
+
+
+def _resources_xref(doc, page) -> int:
+    kind, value = doc.xref_get_key(page.xref, "Resources")
+    assert kind == "xref"
+    return int(value.split()[0])
+
+
+def _note(page: int = 1):
+    from app.models import Rect, TextObject, TextRun
+
+    return TextObject(
+        id=f"t{page}",
+        page=page,
+        rect=Rect(60, 300, 200, 30),
+        runs=[TextRun("overlay note", "msyh")],
+        z=50,
+    )
+
+
+def test_draw_works_when_resources_are_inherited(tmp_path):
+    """``/Resources`` 挂在父节点上（页面继承）时也要认得出刚挂上去的 XObject。
+
+    认不出来的后果不是「画不上」而是「画上了却没写标记」：文字被烤进页面，
+    模型里读不回来，下一次保存还会当它不存在。
+    """
+    doc = _image_pages(tmp_path, "inherit-src.pdf")
+    try:
+        shared = _resources_xref(doc, doc[0])
+        pages_xref = int(doc.xref_get_key(doc.pdf_catalog(), "Pages")[1].split()[0])
+        doc.xref_set_key(pages_xref, "Resources", f"{shared} 0 R")
+        for index in range(doc.page_count):
+            doc.xref_set_key(doc[index].xref, "Resources", "null")
+        out = tmp_path / "inherit.pdf"
+        doc.save(str(out), garbage=3, deflate=True)
+    finally:
+        doc.close()
+
+    doc = pymupdf.open(out)
+    try:
+        page = doc[1]
+        assert overlay.draw(doc, page, [_note()]) is True
+        assert len(overlay.read(doc, page)) == 1
+        # 页面自己不能被写成一个只含 XObject 的 Resources：那会把继承来的
+        # 字体和图片全挡住，整页内容看起来就没了。
+        assert len(page.get_image_info(xrefs=True)) == 1
+        assert "PAGE2 text" in page.get_text()
+    finally:
+        doc.close()
+
+
+def test_draw_works_when_the_xobject_dict_is_indirect(tmp_path):
+    """``/Resources/XObject`` 是间接对象时，资源字典本身读不到名字。"""
+    doc = _image_pages(tmp_path, "indirect-src.pdf")
+    try:
+        for index in range(doc.page_count):
+            page = doc[index]
+            res = _resources_xref(doc, page)
+            kind, value = doc.xref_get_key(res, "XObject")
+            assert kind == "dict"
+            fresh = doc.get_new_xref()
+            doc.update_object(fresh, value)
+            doc.xref_set_key(res, "XObject", f"{fresh} 0 R")
+        out = tmp_path / "indirect.pdf"
+        doc.save(str(out), garbage=3, deflate=True)
+    finally:
+        doc.close()
+
+    doc = pymupdf.open(out)
+    try:
+        page = doc[1]
+        assert overlay.draw(doc, page, [_note()]) is True
+        assert len(overlay.read(doc, page)) == 1
+        assert len(page.get_image_info(xrefs=True)) == 1
+    finally:
+        doc.close()

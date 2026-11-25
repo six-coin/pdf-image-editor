@@ -108,6 +108,8 @@
   "save.warning_reopen_failed": "Saved, but the editor could not reopen the file: {detail}",
   "save.warning_backup_failed": "The backup could not be written: {detail}",
   "save.warning_overlay_failed": "Text boxes or highlights could not be written on this page: {detail}",
+  "save.warning_overlay_kept": "This page's text boxes could not be updated, so the previous content was kept",
+  "save.warning_overlay_lost": "This page's text boxes and highlights could not be written and may be lost: {detail}",
   "export.title": "Export pages",
   "export.hint": "Export uses the last saved file and does not include unsaved edits.",
   "export.range": "Page range",

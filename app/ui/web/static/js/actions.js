@@ -114,6 +114,9 @@ const WARNING_KEYS = {
   annots_lost: 'save.warning_annots_lost',
   reopen_failed: 'save.warning_reopen_failed',
   backup_failed: 'save.warning_backup_failed',
+  overlay_failed: 'save.warning_overlay_failed',
+  overlay_kept: 'save.warning_overlay_kept',
+  overlay_lost: 'save.warning_overlay_lost',
 };
 
 async function showWarnings(report) {

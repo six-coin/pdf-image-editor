@@ -287,6 +287,10 @@ class DocumentState:
     selection: list[str] = field(default_factory=list)
     # 被删掉的原图位置。对象没了，但它在 PDF 里还占着地方，保存时仍要 redaction。
     removed: dict[int, list[Rect]] = field(default_factory=dict)
+    # 已经装载进模型的页。保存时只能动这些页：没装载过的页在模型里没有任何对象，
+    # 擦掉它的覆盖层就再也画不回来了（保存一次少一页的文字）。
+    # ``None`` 表示调用方不跟踪装载状态，按「全都装载过」处理。
+    loaded: set[int] | None = None
 
     def mark_removed(self, page: int, rect: Rect | None) -> None:
         if rect is None:

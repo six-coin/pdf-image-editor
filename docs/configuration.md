@@ -6,7 +6,7 @@
 |---|---|
 | `<数据目录>\app.json` | 设置 |
 | `<数据目录>\pdfs\` | 打开对话框的默认目录 |
-| `<数据目录>\backup\` | 就地保存前的备份，`YYYYMMDD-原标题.bak.pdf`；每个文档每天只留第一份 |
+| `<数据目录>\backup\` | 就地保存前的备份，`YYYYMMDD-原标题.bak.pdf`；同名时排号成 `.bak1.pdf`、`.bak2.pdf`… |
 | `%LOCALAPPDATA%\six-coin\pdf-image-editor\data-dir.txt` | 数据目录指针，改目录后写这里 |
 | `%LOCALAPPDATA%\six-coin\pdf-image-editor\logs\` | 日志 |
 | `%TEMP%\six-coin\pdf-image-editor\` | 外部编辑的临时目录 |

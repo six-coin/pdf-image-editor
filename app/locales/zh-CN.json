@@ -108,6 +108,8 @@
   "save.warning_reopen_failed": "文件已保存，但界面没能重新打开它：{detail}",
   "save.warning_backup_failed": "备份没有写成：{detail}",
   "save.warning_overlay_failed": "文本框或荧光笔没能写入这一页：{detail}",
+  "save.warning_overlay_kept": "这一页的文本框没能更新，已保留原来的内容",
+  "save.warning_overlay_lost": "这一页的文本框和荧光笔没能写入，内容可能丢失：{detail}",
   "export.title": "导出选中页",
   "export.hint": "导出的内容取自上次保存的文件，不会包含未保存的修改。",
   "export.range": "页码范围",

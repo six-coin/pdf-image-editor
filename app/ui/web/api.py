@@ -66,10 +66,9 @@ class EditorApi:
         self._lock = RLock()
         self._store = ImageStore()
         self._doc: PdfDocument | None = None
-        self._state = DocumentState()
+        self._state = DocumentState(loaded=set())
         self._cache: RenderCache | None = None
         self._stack: UndoStack | None = None
-        self._loaded_pages: set[int] = set()
         self._generation = 0
         self._rev = 0
         self._tasks: dict[str, dict[str, Any]] = {}
@@ -251,9 +250,8 @@ class EditorApi:
                 self._doc.close()
             self._doc = doc
             self._cache = self._new_cache(doc)
-            self._state = DocumentState(path=doc.path, pages=pages)
+            self._state = DocumentState(path=doc.path, pages=pages, loaded=set())
             self._stack = UndoStack(self._state, limit=int(self._settings["undo_limit"]))
-            self._loaded_pages.clear()
             self._finish_task(task_id, "ready")
         logger.info("已打开 {} 共 {} 页", path, len(pages))
 
@@ -296,13 +294,15 @@ class EditorApi:
                 self._state.pages[page_index] = info
 
             # 每页的图片只抽一次：重复抽会把用户已经删掉、切掉的原图重新塞回模型，
-            # 表现就是"保留一格之后大图又回来了"。已装载的页记在 _loaded_pages 里。
-            if page_index not in self._loaded_pages:
+            # 表现就是"保留一格之后大图又回来了"。已装载的页记在 state.loaded 里。
+            loaded = self._state.loaded if self._state.loaded is not None else set()
+            if page_index not in loaded:
                 for obj in doc.editable_images(page_index):
                     self._state.objects.append(obj)
                 for obj in doc.overlay_objects(page_index):
                     self._state.objects.append(obj)
-                self._loaded_pages.add(page_index)
+                loaded.add(page_index)
+                self._state.loaded = loaded
 
             if self._cache is not None:
                 self._cache.page_png(page_index, page_dpi)
@@ -449,12 +449,15 @@ class EditorApi:
             if 0 <= page < doc.page_count:
                 wanted.add(page)
 
-        for index in sorted(wanted - self._loaded_pages):
+        loaded = self._state.loaded
+        if loaded is None:
+            loaded = self._state.loaded = set()
+        for index in sorted(wanted - loaded):
             for obj in doc.editable_images(index):
                 self._state.objects.append(obj)
             for obj in doc.overlay_objects(index):
                 self._state.objects.append(obj)
-            self._loaded_pages.add(index)
+            loaded.add(index)
 
     def delete_objects(self, ids: list[str] | None = None) -> dict[str, Any]:
         with self._lock:
@@ -620,6 +623,9 @@ class EditorApi:
             if doc.page(index).rotation % 360 != 0:
                 # 旋转页的坐标系与画布对不上，和「旋转页的图片不可编辑」同一个理由。
                 return self._snapshot()
+            # 在这一页新建对象之前，先把这一页原有的对象抽进模型：保存只处理
+            # 装载过的页，页没装载就建东西，这个框会连页一起被跳过。
+            self._ensure_pages([{"page": index}], doc)
             page_w, page_h = doc.page_pt_size(index)
             style = style if isinstance(style, dict) else {}
             if text is None:
@@ -666,8 +672,14 @@ class EditorApi:
         object_id: str,
         runs: list[Any] | None = None,
         style: dict[str, Any] | None = None,
+        drop_if_default: bool = False,
     ) -> dict[str, Any]:
-        """改内容或样式。内容被清空就等于删掉这个文本框。"""
+        """改内容或样式。内容被清空就等于删掉这个文本框。
+
+        ``drop_if_default`` 只在「提交一次编辑」时给：编辑完还是设置里的默认文本，
+        说明用户没打算写东西，这个框留着就是一条多余的占位。改样式不传它——
+        否则给一个还带着默认文本的框换个颜色，框就没了。
+        """
         with self._lock:
             stack = self._stack
             obj = self._state.find(str(object_id))
@@ -678,7 +690,13 @@ class EditorApi:
             if runs is not None:
                 parsed = [TextRun.from_any(item) for item in runs]
                 parsed = [run for run in parsed if run.text]
-                if not parsed or not "".join(run.text for run in parsed).strip():
+                text = "".join(run.text for run in parsed)
+                preset = str(self._settings.get("text_default", "") or "")
+                if (
+                    not parsed
+                    or not text.strip()
+                    or (drop_if_default and preset.strip() and text.strip() == preset.strip())
+                ):
                     self._state.drop([obj.id])
                     stack.push(StructureChanged(before, self._state.clone_objects(), "edit.text"))
                     return self._snapshot()
@@ -714,6 +732,8 @@ class EditorApi:
             index = _page_index(page, doc.page_count)
             if doc.page(index).rotation % 360 != 0:
                 return self._snapshot()
+            # 同 create_text：这一页还没装载就先把它原有的对象抽进来。
+            self._ensure_pages([{"page": index}], doc)
             page_w, page_h = doc.page_pt_size(index)
 
             height = (
@@ -1044,13 +1064,12 @@ class EditorApi:
         doc = PdfDocument.open(path, self._store)
         self._doc = doc
         self._cache = self._new_cache(doc)
-        state = DocumentState(path=doc.path)
+        state = DocumentState(path=doc.path, loaded=set())
         for index in range(doc.page_count):
             width, height = doc.page_pt_size(index)
             state.pages.append(PageInfo(index=index, width=width, height=height))
         self._state = state
         self._stack = UndoStack(state, limit=int(self._settings["undo_limit"]))
-        self._loaded_pages.clear()
 
     def _rebase_after_save(self, path: Path) -> bool:
         """保存后把新文件当作基线，但不重建对象——界面不重新加载。
@@ -1071,7 +1090,10 @@ class EditorApi:
                     by_page.setdefault(obj.page, []).append(obj)
 
             # 只处理已经装载过的页：没装载过的页没有对象，这里也不该替它抽图。
-            pages = sorted(set(self._loaded_pages) | set(by_page))
+            loaded = self._state.loaded
+            if loaded is None:
+                loaded = set(range(doc.page_count))
+            pages = sorted(set(loaded) | set(by_page))
             fresh: dict[int, list[ImageObject]] = {}
             for index in pages:
                 if index >= doc.page_count:
@@ -1097,7 +1119,9 @@ class EditorApi:
 
         self._doc = doc
         self._cache = self._new_cache(doc)
-        self._loaded_pages.update(pages)
+        if self._state.loaded is None:
+            self._state.loaded = set()
+        self._state.loaded.update(pages)
         # 被删掉的图已经在文件里彻底消失，墓碑表必须清空：
         # 留着的话下次保存会照着旧坐标去擦，可能擦掉刚放进去的新图。
         self._state.removed.clear()
@@ -1207,6 +1231,9 @@ class EditorApi:
                 index = 0
             if not 0 <= index < doc.page_count:
                 index = 0
+            # 粘到没装载过的页上时，先把这一页原有的图抽进模型：保存只处理
+            # 装载过的页，否则刚粘上去的这张不会被写进文件。
+            self._ensure_pages([{"page": index}], doc)
 
             try:
                 pix = pymupdf.Pixmap(data)

@@ -320,9 +320,13 @@ pointerup    → 一次性 commit_transform(items, selection)
 
 新建文本框时，前端在单击那一刻决定内容：默认把设置里的 `text_default` 一起提交；按住 `Ctrl` 则提交空串。`create_text` 收到 `text=None` 时才回退到设置值，所以「显式空串」和「没传」是两条不同的路。
 
+编辑结束时 `commitEdit` 会带 `drop_if_default=True` 调 `update_text`：内容还是 `text_default`
+就把这个框删掉（占位符没被替换，留着没有意义）。只改样式的调用不传这个参数，否则给一个
+还带着默认文本的框换个颜色，框就没了。
+
 ```
-每页：
-  1. overlay.clear(page)         撤掉上一版（摘内容流 + 只删标记点名的那一个 XObject）
+每页（只处理 state.loaded 里的页）：
+  1. overlay.take(page)          撤掉上一版，同时把它的 JSON 读出来兜底
   2. redaction + insert_image    现有图片流程
   3. overlay.draw(page, items)
        草稿文档（mediabox 尺寸）
@@ -330,15 +334,30 @@ pointerup    → 一次性 commit_transform(items, selection)
          → 文字：TextWriter，一种颜色一个，混排字体在同一条流里
          → scratch.subset_fonts()      只子集化我们自己的字体
        page.show_pdf_page(mediabox, scratch, 0)   → 一个 Form XObject
+       从新内容流里的 `/名字 Do` 认出它（不是从资源字典比对）
        内容流首行写标记 `% sixcoin-overlay v1 <xobj名>`
        该页对象 JSON 写进 XObject 的 /SixCoin 流
 ```
 
+**只处理装载过的页**是这里最要紧的一条。模型是懒加载的：一页没滚进视口，它的
+文本框就不在 `state.objects` 里。如果保存时对每一页都先撤覆盖层再按模型重画，
+没装载的页会被撤掉、又画不回来——用户看到的就是「保存之后某一页的文本框整页
+消失」。所以 `DocumentState.loaded` 跟着 `load_page` / `_ensure_pages` 一起长，
+保存只碰这个集合里的页；`create_text`、`create_highlight`、`paste_image` 在动手
+之前先把目标页装载进来，否则新建的对象会被整页跳过。
+
 三条必须守住的：
 
-1. **顺序**：`apply_redactions()` 会把整页内容流合并成一条，所以覆盖层只能在它之后写；上一版必须在它之前撤。
+1. **顺序**：`apply_redactions()` 会把整页内容流合并成一条，所以覆盖层只能在它之后写；上一版必须在它之前撤。`take()` 返回的旧 JSON 是兜底：新版没画上去就把旧的照原样画回来，并记一条 `overlay_kept` / `overlay_lost` 警告，绝不静默丢。
 2. **回收**：撤旧时只删标记里点名的那一个 XObject。遍历删整个 `/Resources/XObject` 会把页面上的图片（`fzImg0`）一起删掉，下一次保存就报 `cannot find XObject resource`。
 3. **字体**：子集化只发生在草稿文档里。主文档一次 `subset_fonts()` 都不能调——那会把原文档所有字体一起子集化，违背「其余内容一个字节都不动」。
+
+**资源字典要按继承链找。** `/Resources` 可能是间接对象，也可能挂在父节点上由页面继承
+（生成器省体积的常见做法）；`/XObject` 本身也可以是间接对象。只读页面自己的
+`Resources/XObject` 会在这些结构上落空：`show_pdf_page` 明明挂上去了，却认不出名字，
+标记写不进去，模型重开时读不回来。`overlay` 里的 `_resources_owner` / `_xobject_owner`
+沿 `/Parent` 找真正持有字典的对象，删除名字也删在那个对象上——写回页面自己身上会造出
+一个只含 `XObject` 的 `/Resources`，把继承来的图片和字体全挡住，整页内容看起来就没了。
 
 标记是唯一的身份凭据：`garbage=4` 会重编号对象，xref 存不住。重新打开时按内容流首行认出自己，再从 `/SixCoin` 还原对象；别的 PDF 里的文字没有这个标记，自然就是「烘焙在背景里、不可编辑」。
 
@@ -347,6 +366,20 @@ pointerup    → 一次性 commit_transform(items, selection)
 前导空格不占位。编辑层用 `white-space: pre-wrap` + `font-kerning: none`，与这套规则
 同构，所以「编辑时看到的换行」和「保存后的换行」一致。高度恒为「行数 × 行高」：
 编辑时前端按内容实时量，提交后后端重算，两边不会一个长一个短。
+
+编辑层只认纯文本：`paste` / `drop` 一律 `preventDefault`，取 `text/plain` 归一化
+（`\r\n` → `\n`、制表符展开、去掉控制字符）后自己插文本节点。否则浏览器会把源文档
+的字体、颜色、`<div>` 结构一起搬进来——`textContent` 里看不到块级边界，换行就丢了，
+而 `scrollHeight` 又按块算行数，于是「高度变高但没有空行」。`collectRuns` 遍历 DOM
+时把 `<div>` / `<p>` 这类块级元素和 `<br>` 都当换行，序列化和高度测量共用它。
+
+块末尾的换行浏览器不画行盒，但后端把它算作一行（`layout` 按 `\n` 切分）。编辑时在
+末尾补一个零宽哨兵（`<span data-eol>`）把空行撑出来，序列化时哨兵被剔掉，所以
+「回车之后能看见空行、高度也对」。
+
+`Esc` 的语义是「结束编辑 → 切到选择工具 → 选中这个框」：提交后按 id 再 `select`
+一次，接着就能拖、能用方向键；如果内容是默认文本、框已经被删掉，就不选。
+输入法组字期间（`isComposing` / `keyCode 229`）不拦回车与 Esc，否则会把候选词吃掉。
 
 ### 6.8 撤销栈
 
@@ -371,15 +404,21 @@ api.save_document(path?)
   → 只读文件提前拦下
   → doc.close()（Windows 上 os.replace 覆盖不了仍被打开的文件）
   → core.save.save(src, dst, state, store)
-       → 逐页：摘 /Annots → add_redact_annot(src_rect) → apply_redactions
-                → 挂回 /Annots → 按 z 插入当前图片
+       → 逐页（只碰 state.loaded 里的页）：
+              摘 /Annots → add_redact_annot(src_rect) → apply_redactions
+              → 挂回 /Annots → 按 z 插入当前图片 → 重画覆盖层
        → doc.save(临时文件, garbage=4, deflate=True)
        → 重新打开校验页数
        → 就地保存时先把原文件复制进 <数据目录>/backup/
-         （YYYYMMDD-原标题.bak.pdf；同名已存在就跳过，失败只记警告）
+         （YYYYMMDD-原标题.bak.pdf；同名已存在就排到 bak1、bak2…，失败只记警告）
        → os.replace(临时文件, 目标)
   → 成功：以新文件为基线；失败：把句柄接回去，编辑不丢
 ```
+
+**只碰装载过的页**：模型是懒加载的，没滚进视口过的页在 `state.objects` 里没有对象。
+无条件「先撤覆盖层、再按模型重画」会把这些页的文字擦掉又画不回来——这就是「保存
+偶尔丢掉一页数据」的根因。`DocumentState.loaded` 由 `load_page` / `_ensure_pages`
+维护，保存按它跳过没装载的页；新建对象（文本框、荧光带、粘贴图片）之前先装载目标页。
 
 `apply_redactions` 的参数是刻意的：`images=REMOVE` 只摘图，`graphics=LINE_ART_NONE`、`text=TEXT_NONE` 保证文字与矢量不动。
 
@@ -801,10 +840,10 @@ tests/
 ├─ test_split.py            切分 / 保留 / 打孔 / 涂白
 ├─ test_trim.py             裁白边：灰度阈值、包围盒、透明边
 ├─ test_textlayout.py       换行、行高、基线
-├─ test_overlay.py          文本框与荧光笔的落盘、读回、回收
+├─ test_overlay.py          文本框与荧光笔的落盘、读回、回收、继承/间接资源
 ├─ test_tablelines.py       表格框线检测、拉直、交叉口
 ├─ test_undo.py             栈行为、宏、dirty
-├─ test_save.py             文字保留、批注保留、长宽比、备份命名与清理、失败回滚
+├─ test_save.py             文字保留、批注保留、长宽比、备份排号与清理、没装载页的覆盖层、失败回滚
 ├─ test_editor_api.py       接口层：快照、越界、任务、保存后重定基线
 ├─ test_asset_server.py     路由、token、缓存头、路径穿越
 ├─ test_system.py           剪贴板、外部打开、预处理
@@ -840,5 +879,6 @@ uv run pytest
 11. **配置里的键必须有人读。** 写进 `DEFAULT_APP` 却没有任何模块消费，就是一条会误导人的假设置。
 12. **临时提示只走状态栏。** 新加一种「底部横幅」「右上角气泡」等于再造一套提示语言；要表达进行中就用 `toast(..., { sticky: true, busy: true })`。
 13. **覆盖层只能靠内容流首行的标记认亲。** `garbage=4` 会重编号对象，xref 存不住；撤旧时只删标记点名的那一个 XObject。
-14. **子集化只在草稿文档里做。** 主文档调一次 `subset_fonts()` 就会把原文档的字体全部重写，等于改了不该改的东西。
-15. **文字与荧光笔画进页面内容流，不画成批注。** 批注的外观流各家阅读器支持不一，而且会被 Edge 的批注界面当成「用户的批注」。
+14. **保存只碰装载过的页（`state.loaded`）。** 模型是懒加载的，没装载的页在模型里没有任何对象；对它撤覆盖层等于删掉这一页的文本框，而且再也画不回来。新建对象前必须先把目标页装载进来。
+15. **子集化只在草稿文档里做。** 主文档调一次 `subset_fonts()` 就会把原文档的字体全部重写，等于改了不该改的东西。
+16. **文字与荧光笔画进页面内容流，不画成批注。** 批注的外观流各家阅读器支持不一，而且会被 Edge 的批注界面当成「用户的批注」。

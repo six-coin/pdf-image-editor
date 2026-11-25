@@ -26,7 +26,7 @@ import pymupdf
 from app.core import overlay
 from app.core.imagestore import ImageStore
 from app.errors import SaveError
-from app.models import DocumentState, ImageObject, Rect
+from app.models import DocumentState, HighlightObject, ImageObject, Rect, TextObject
 
 _VALID_ROTATIONS = (0, 90, 180, 270)
 
@@ -156,20 +156,31 @@ def _apply_preserve(
     store: ImageStore,
     report: SaveReport,
 ) -> None:
+    # 只动「模型里装载过」的页。没装载的页在模型里一个对象都没有：擦掉它的覆盖层
+    # 之后没有任何东西能画回去，保存一次就少一页的文字。这是丢页的根因，别改成
+    # 无条件遍历——``None`` 是调用方不跟踪装载状态，按全部装载处理。
+    loaded = state.loaded if state.loaded is not None else set(range(doc.page_count))
+
+    # 按页分好再进循环：几百个对象时，每页都扫一遍整张表会明显拖慢保存。
+    images: dict[int, list[ImageObject]] = {}
+    sources: dict[int, list[ImageObject]] = {}
+    overlays: dict[int, list[TextObject | HighlightObject]] = {}
+    for obj in state.objects:
+        if isinstance(obj, ImageObject):
+            images.setdefault(obj.page, []).append(obj)
+            origin = obj.src_page if obj.src_page is not None else obj.page
+            sources.setdefault(origin, []).append(obj)
+        else:
+            overlays.setdefault(obj.page, []).append(obj)
+
     for index in range(doc.page_count):
+        if index not in loaded:
+            continue
         page = doc[index]
         # 覆盖层必须在 redaction 之前撤掉：apply_redactions 会把整页内容流合并成
         # 一条，标记流混进去之后就再也认不出来了。
-        overlay.clear(doc, page)
-        objects = [o for o in state.objects if o.page == index and isinstance(o, ImageObject)]
-        # 原图未必还在这一页（跨页拖动过），按 src_page 找它的原位。
-        sources = [
-            o
-            for o in state.objects
-            if isinstance(o, ImageObject)
-            and (o.src_page if o.src_page is not None else o.page) == index
-        ]
-        targets = _redact_targets(sources, state.removed.get(index))
+        previous = overlay.take(doc, page)
+        targets = _redact_targets(sources.get(index, []), state.removed.get(index))
         if targets:
             saved_annots = _detach_annotations(doc, page)
             try:
@@ -185,12 +196,30 @@ def _apply_preserve(
                 report.warnings.append({"page": index, "code": "redact_failed", "detail": str(exc)})
             finally:
                 _restore_annotations(doc, page, saved_annots, report, index)
-        _insert_objects(page, objects, store, report, index)
+        _insert_objects(page, images.get(index, []), store, report, index)
+        items = sorted(overlays.get(index, []), key=lambda o: o.z)
         try:
-            overlay.draw(doc, page, state.overlays_on(index))
+            drawn = overlay.draw(doc, page, items)
         except Exception as exc:
             # 文本/荧光笔画不上去不能把整次保存拖垮：图已经处理完了。
             report.warnings.append({"page": index, "code": "overlay_failed", "detail": str(exc)})
+            drawn = False
+        if items and not drawn:
+            # 新的覆盖层没写进去，旧的又已经被撤掉了：把原来那版原样画回去，
+            # 宁可这一页的编辑没更新，也不能让它整页文字凭空消失。
+            restored = False
+            if previous:
+                try:
+                    restored = overlay.draw(doc, page, overlay.objects_for_page(page, previous))
+                except Exception:
+                    restored = False
+            report.warnings.append(
+                {
+                    "page": index,
+                    "code": "overlay_kept" if restored else "overlay_lost",
+                    "detail": f"{len(items)} items",
+                }
+            )
 
 
 def save(
@@ -257,16 +286,17 @@ def _verify(path: Path, expected_pages: int) -> None:
         check.close()
 
 
-def backup_path(directory: Path, source: Path, day: date | None = None) -> Path:
-    """备份的固定名字：``YYYYMMDD-原标题.bak.pdf``。
+def backup_path(directory: Path, source: Path, day: date | None = None, index: int = 0) -> Path:
+    """备份名字：``YYYYMMDD-原标题.bak.pdf``，撞名时变成 ``…-in.bak1.pdf``。
 
-    一个文档一天只备份一次：名字里带日期，同一天再保存时同名文件已经在了，
-    就不再备份（见 ``_backup``）。所以这里不给 ``(1)``、``(2)`` 留位置——
-    那样只会让 backup/ 里堆满同一份文件的不同快照，反而看不出哪份是「第一次」。
+    同一天保存第二次时不再「已经有了就不备份」——那样第二次保存前的那一版
+    就永久丢了。改成往后排号，每次保存前的状态都留得下来；序号直接跟在 ``bak``
+    后面，不加括号和空格，路径里少两个容易出问题的字符。
     """
     stamp = (day or date.today()).strftime("%Y%m%d")
     stem = Path(source).stem
-    return directory / f"{stamp}-{stem}.bak.pdf"
+    suffix = str(index) if index else ""
+    return directory / f"{stamp}-{stem}.bak{suffix}.pdf"
 
 
 def _backup(dst_path: Path, directory: Path, report: SaveReport) -> None:
@@ -274,11 +304,14 @@ def _backup(dst_path: Path, directory: Path, report: SaveReport) -> None:
     target: Path | None = None
     try:
         directory.mkdir(parents=True, exist_ok=True)
-        target = backup_path(directory, dst_path)
-        if target.exists():
-            # 今天已经备份过这一版了：保留最初那份「打开时的样子」，
-            # 不再生成第二份、也不加序号。第一次保存前的状态才是要留的。
-            return
+        index = 0
+        while True:
+            target = backup_path(directory, dst_path, index=index)
+            if not target.exists():
+                break
+            index += 1
+            if index > 999:
+                raise OSError(f"too many backups of {dst_path.name}")
         shutil.copy2(dst_path, target)
     except OSError as exc:
         # 复制到一半失败会留下一个看着像备份、其实是残片的东西，先收掉。
