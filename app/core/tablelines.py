@@ -30,6 +30,11 @@ _MAX_FIT_DEVIATION = 5.0
 _MAX_THICKNESS_SPREAD = 0.35
 _SEED_RATIO = 0.75
 _RELIABLE_RATIO = 0.08
+# 一条线至少要有这么长才算表格线。短于它的笔画一律不碰：手写批注里
+# 几十像素的横竖线太多，按「线」处理只会把字迹拉成栅栏。
+_MIN_LINE_SPAN = 170
+# 端点落在另一条线（或它的端点）上就算接上了。扫描件线头常多出几像素。
+_CONNECT_TOL = 9.0
 
 
 @dataclass(frozen=True)
@@ -249,15 +254,36 @@ def _candidates(
         if axis == "h":
             if x1 - x0 + 1 < 24 or y1 - y0 + 1 > _MAX_LINE_THICKNESS:
                 continue
-            item = _measure_h(core, x0, x1, y0, y1) or _measure_h(ink, x0, x1, y0, y1)
+            item = _pick_measure(_measure_h(core, x0, x1, y0, y1), _measure_h(ink, x0, x1, y0, y1))
         else:
             if y1 - y0 + 1 < 24 or x1 - x0 + 1 > _MAX_LINE_THICKNESS:
                 continue
-            item = _measure_v(core, x0, x1, y0, y1) or _measure_v(ink, x0, x1, y0, y1)
+            item = _pick_measure(_measure_v(core, x0, x1, y0, y1), _measure_v(ink, x0, x1, y0, y1))
         if item is not None:
             item["cid"] = f"{axis}{len(result)}"
             result.append(item)
     return result
+
+
+def _pick_measure(
+    core_item: dict[str, Any] | None, ink_item: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """线芯与整条墨迹各量一次，挑更靠谱的那份。
+
+    线芯掩膜只留最深的像素，浅灰线会断断续续，量出来的相对厚度波动虚高；
+    整条墨迹更连续，但抗锯齿边会把中心线稍微带偏。优先用通过几何检查的
+    那份：线芯合格就用线芯，否则退到墨迹；两份都不合格时留波动小的那份，
+    交给后面的 ``_good`` 淘汰。
+    """
+    if core_item is None:
+        return ink_item
+    if ink_item is None:
+        return core_item
+    if _good(core_item):
+        return core_item
+    if _good(ink_item):
+        return ink_item
+    return core_item if core_item["spread"] <= ink_item["spread"] else ink_item
 
 
 def _measure_h(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int) -> dict[str, Any] | None:
@@ -278,6 +304,9 @@ def _measure_h(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int) -> dict[str,
     if keep.sum() >= 6:
         slope, intercept = np.polyfit(xs[valid][keep], centers[keep], 1)
         residual = centers[keep] - (slope * xs[valid][keep] + intercept)
+    # 厚度波动只看参与拟合的列：贴着线的字会把个别列的墨迹算多，
+    # 拿全部列算方差会把一条 2px 的细线误判成「粗细不均的笔画」。
+    spread_counts = counts[valid][keep] if keep.sum() >= 6 else counts[valid]
     return {
         "axis": "h",
         "x0": x0,
@@ -290,7 +319,7 @@ def _measure_h(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int) -> dict[str,
         "b": float(intercept),
         "rms": float(np.sqrt((residual**2).mean())),
         "max": float(np.abs(residual).max()),
-        "spread": float(np.std(counts[valid]) / max(1e-6, np.mean(counts[valid]))),
+        "spread": float(np.std(spread_counts) / max(1e-6, np.mean(spread_counts))),
         "centers": centers_full,
     }
 
@@ -313,6 +342,7 @@ def _measure_v(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int) -> dict[str,
     if keep.sum() >= 6:
         slope, intercept = np.polyfit(ys[valid][keep], centers[keep], 1)
         residual = centers[keep] - (slope * ys[valid][keep] + intercept)
+    spread_counts = counts[valid][keep] if keep.sum() >= 6 else counts[valid]
     return {
         "axis": "v",
         "x0": x0,
@@ -325,7 +355,7 @@ def _measure_v(ink: np.ndarray, x0: int, x1: int, y0: int, y1: int) -> dict[str,
         "b": float(intercept),
         "rms": float(np.sqrt((residual**2).mean())),
         "max": float(np.abs(residual).max()),
-        "spread": float(np.std(counts[valid]) / max(1e-6, np.mean(counts[valid]))),
+        "spread": float(np.std(spread_counts) / max(1e-6, np.mean(spread_counts))),
         "centers": centers_full,
     }
 
@@ -364,10 +394,13 @@ def _accept(
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """认线：长线直接收，短线必须两端都搭在「可靠线」上。
 
-    可靠线 = 长度至少占图宽/高 30% 且几何合格的候选。它不一定被最终接受，
+    可靠线 = 长度至少占图宽/高 8% 且几何合格的候选。它不一定被最终接受，
     但足以当短线的支撑。这样表格不必铺满整张图，也不会让手写笔画互相支撑。
+
+    收下的线还要再筛一遍：两端都不与任何垂直线形成 corner / 丁字口的，
+    属于孤立笔画（只是从别的线上横穿而过不算接上），一律不要。
     """
-    short_min = max(40, min(64, int(round(0.03 * max(width, height)))))
+    short_min = _MIN_LINE_SPAN
     reliable_h = [
         c for c in hcands if _good(c) and c["span"] >= max(short_min, _RELIABLE_RATIO * width)
     ]
@@ -399,7 +432,44 @@ def _accept(
         if top and bottom:
             accepted_v.append(item)
 
-    return _dedupe(accepted_h), _dedupe(accepted_v)
+    return _drop_isolated(_dedupe(accepted_h), _dedupe(accepted_v))
+
+
+def _h_connected(item: dict[str, Any], verticals: list[dict[str, Any]]) -> bool:
+    """横线的任一端点落在某条竖线上（含端点）就算接上。"""
+    for x in (item["x0"], item["x1"]):
+        y = item["k"] * x + item["b"]
+        for other in verticals:
+            if abs(other["k"] * y + other["b"] - x) > _CONNECT_TOL:
+                continue
+            if other["y0"] - _CONNECT_TOL <= y <= other["y1"] + _CONNECT_TOL:
+                return True
+    return False
+
+
+def _v_connected(item: dict[str, Any], horizontals: list[dict[str, Any]]) -> bool:
+    """竖线的任一端点落在某条横线上（含端点）就算接上。"""
+    for y in (item["y0"], item["y1"]):
+        x = item["k"] * y + item["b"]
+        for other in horizontals:
+            if abs(other["k"] * x + other["b"] - y) > _CONNECT_TOL:
+                continue
+            if other["x0"] - _CONNECT_TOL <= x <= other["x1"] + _CONNECT_TOL:
+                return True
+    return False
+
+
+def _drop_isolated(
+    horizontals: list[dict[str, Any]], verticals: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """去掉两端都没有 corner / 丁字口的线。
+
+    ``_h_connected`` 只看端点：一条横线从竖线中间穿过去（十字交叉）时，
+    两个端点都不在竖线上，按规则不算接上——手写笔画常常正好压在表格线上。
+    """
+    kept_h = [item for item in horizontals if _h_connected(item, verticals)]
+    kept_v = [item for item in verticals if _v_connected(item, horizontals)]
+    return kept_h, kept_v
 
 
 def _dedupe(items: list[dict[str, Any]]) -> list[dict[str, Any]]:

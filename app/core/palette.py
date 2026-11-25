@@ -10,13 +10,13 @@ TEXT_COLORS: dict[str, str] = {
     "blue": "#0078D4",
     "red": "#CC0000",
     "green": "#107C10",
+    "black": "#000000",
 }
 
+# 荧光笔只有黄色。带颜色的荧光带在打印和扫描里几乎没有区别，
+# 反而会让人以为可以选颜色；调色板直接收成一个键。
 HIGHLIGHT_COLORS: dict[str, str] = {
     "yellow": "#FFF066",
-    "green": "#107C10",
-    "blue": "#0078D4",
-    "red": "#CC0000",
 }
 
 DEFAULT_TEXT_COLOR = "blue"

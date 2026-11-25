@@ -63,6 +63,22 @@ def test_piece_pixels_are_halved(store):
         assert (pix.width, pix.height) == (50, 40)
 
 
+def test_piece_ids_do_not_merge_row_and_column(store):
+    """(1, 12) 与 (11, 2) 不能拼成同一个 id。"""
+    obj = _object(store)
+    pieces = build_split(
+        [obj],
+        "o1",
+        [index / 13 for index in range(1, 13)],
+        [index / 12 for index in range(1, 12)],
+        store,
+    )
+    assert pieces is not None
+    assert any(piece.id.endswith("-s-1-12") for piece in pieces)
+    assert any(piece.id.endswith("-s-11-2") for piece in pieces)
+    assert len({piece.id for piece in pieces}) == len(pieces)
+
+
 def test_keep_cell_uses_explicit_row_and_col(store):
     obj = _object(store)
     pieces = keep_cell([obj], "o1", [0.5], [0.5], 1, 1, store)
@@ -112,6 +128,22 @@ def test_punch_fills_only_the_cell(store):
 def test_punch_cell_out_of_range_returns_none(store):
     obj = _object(store)
     assert punch_cell([obj], "o1", [0.5], [0.5], 9, 9, store) is None
+
+
+def test_repeated_punch_on_the_same_cell_gets_unique_ids(store):
+    """同一张原图反复提取同一格：派生 id 不能撞车。
+
+    撞车后列表里会有两个同 id 的对象，前端按 id 找元素会找到旧的，
+    表现就是「选中一块却亮了两块」、拖手柄改的是另一块。
+    """
+    obj = _object(store)
+    hole, first = punch_cell([obj], "o1", [0.5], [0.5], 0, 0, store)
+    obj.image_id = hole
+
+    _hole2, second = punch_cell([obj, first], "o1", [0.4], [0.5], 0, 0, store)
+
+    assert first.id != second.id
+    assert len({first.id, second.id, obj.id}) == 3
 
 
 def test_fill_cell_only_whitens_the_cell(store):

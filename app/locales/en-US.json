@@ -214,7 +214,6 @@
   "text.line_height": "Line height",
   "text.width": "Width",
   "text.hint": "Double-click a text box to edit it",
-  "highlight.color": "Color",
   "highlight.height": "Height",
   "font.msyh": "Microsoft YaHei",
   "font.simsun": "SimSun",
@@ -225,6 +224,7 @@
   "color.blue": "Blue",
   "color.red": "Red",
   "color.green": "Green",
+  "color.black": "Black",
   "color.yellow": "Yellow",
   "inspector.highlight": "Highlight",
   "settings.text_font": "Default font",
@@ -234,7 +234,6 @@
   "settings.text_line_height": "Default line height (×)",
   "settings.highlight": "Highlighter",
   "settings.highlight_height": "Default height (px)",
-  "settings.highlight_color": "Default color",
   "settings.margins_hint": "Separate several values with commas, for example 10, 50",
   "settings.align": "Snap lines (mm)",
   "settings.align_hint": "Used for snapping while moving. Hidden until an element snaps, then shown as a green line. Separate several values with commas"

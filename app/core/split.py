@@ -66,6 +66,22 @@ def fill_white(pix: pymupdf.Pixmap, x: int, y: int, w: int, h: int) -> pymupdf.P
     return pymupdf.Pixmap(pix.colorspace, pix.width, pix.height, bytes(buffer), pix.alpha)
 
 
+def _unique_id(used: set[str], base: str) -> str:
+    """给切出来的小块一个不撞车的 id。
+
+    切分/提取的 id 是从原图 id 派生的（``p0-x12-0-p-0-0``）。如果同一张原图
+    被反复提取同一格，派生 id 会一模一样；对象列表里出现两个同 id 的对象后，
+    前端按 id 找元素会找到旧的，选中会同时点亮两块、缩放也会改错对象。
+    行列之间用 ``-`` 隔开：``1-12`` 和 ``11-2`` 不能拼成同一个字符串。
+    """
+    if base not in used:
+        return base
+    index = 2
+    while f"{base}-{index}" in used:
+        index += 1
+    return f"{base}-{index}"
+
+
 def _piece(
     obj: ImageObject,
     cell: tuple[int, int, Rect],
@@ -73,13 +89,16 @@ def _piece(
     store: ImageStore,
     suffix: str,
     z: int,
+    used: set[str],
 ) -> ImageObject:
     row, col, rect = cell
     sx0, sy0, sw, sh = _pixel_rect(obj, rect, pix)
     sub = crop_pixmap(pix, sx0, sy0, sw, sh)
+    piece_id = _unique_id(used, f"{obj.id}-{suffix}-{row}-{col}")
+    used.add(piece_id)
 
     return ImageObject(
-        id=f"{obj.id}-{suffix}-{row}{col}",
+        id=piece_id,
         page=obj.page,
         rect=rect,
         image_id=store.put(sub.tobytes("png")),
@@ -109,7 +128,8 @@ def build_split(
     if not matrix:
         return None
     pix = pymupdf.Pixmap(store.get(obj.image_id))
-    return [_piece(obj, cell, pix, store, "s", obj.z) for cell in matrix]
+    used = {item.id for item in objects}
+    return [_piece(obj, cell, pix, store, "s", obj.z, used) for cell in matrix]
 
 
 def keep_cell(
@@ -130,7 +150,8 @@ def keep_cell(
     if not target:
         return None
     pix = pymupdf.Pixmap(store.get(obj.image_id))
-    return [_piece(obj, target[0], pix, store, "k", obj.z)]
+    used = {item.id for item in objects}
+    return [_piece(obj, target[0], pix, store, "k", obj.z, used)]
 
 
 def punch_cell(
@@ -157,7 +178,7 @@ def punch_cell(
     cell = target[0]
     sx0, sy0, sw, sh = _pixel_rect(obj, cell[2], pix)
 
-    piece = _piece(obj, cell, pix, store, "p", obj.z)
+    piece = _piece(obj, cell, pix, store, "p", obj.z, {item.id for item in objects})
     # 洞是直接挖在原图像素上的，不叠白色矩形：叠层在缩放时会被插值成半透明。
     hole = fill_white(pix, sx0, sy0, sw, sh)
     return store.put(hole.tobytes("png")), piece

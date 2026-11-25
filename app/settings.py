@@ -38,8 +38,8 @@ DEFAULT_ALIGN: dict[str, Any] = {
 # 字体键与颜色键在这里再列一遍：settings 是基础层，不该反过来 import core。
 # 两边是否一致由 tests/test_settings.py 守。
 FONT_KEYS = ("msyh", "simsun", "simfang", "simkai", "simhei", "times")
-TEXT_COLOR_KEYS = ("blue", "red", "green")
-HIGHLIGHT_COLOR_KEYS = ("yellow", "green", "blue", "red")
+TEXT_COLOR_KEYS = ("blue", "red", "green", "black")
+HIGHLIGHT_COLOR_KEYS = ("yellow",)
 
 DEFAULT_APP: dict[str, Any] = {
     "language": "zh-CN",

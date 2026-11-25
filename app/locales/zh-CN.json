@@ -214,7 +214,6 @@
   "text.line_height": "行高",
   "text.width": "宽度",
   "text.hint": "双击文本框可编辑内容",
-  "highlight.color": "颜色",
   "highlight.height": "高度",
   "font.msyh": "微软雅黑",
   "font.simsun": "宋体",
@@ -225,6 +224,7 @@
   "color.blue": "蓝色",
   "color.red": "红色",
   "color.green": "绿色",
+  "color.black": "黑色",
   "color.yellow": "黄色",
   "inspector.highlight": "荧光带",
   "settings.text_font": "默认字体",
@@ -234,7 +234,6 @@
   "settings.text_line_height": "默认行高（倍）",
   "settings.highlight": "荧光笔",
   "settings.highlight_height": "默认高度（px）",
-  "settings.highlight_color": "默认颜色",
   "settings.margins_hint": "多个数值用英文逗号分隔，例如 10, 50",
   "settings.align": "对齐线（毫米）",
   "settings.align_hint": "移动元素时吸附用；平时不显示，吸住时画一条绿色提示线。每边多个值用英文逗号分隔"

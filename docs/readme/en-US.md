@@ -241,7 +241,9 @@ Only the pixel content is replaced; position and size stay as they were.
 
 Select a table image and click **Straighten table lines** in the inspector. The program finds the ruling lines, makes them exactly horizontal or vertical, and draws every line at a fixed 3 px.
 
-- **Long lines are accepted first**: borders spanning at least 75% of the image width/height seed the grid. Other segments are accepted only when **both ends land on an accepted line**, so short cell dividers longer than about three handwritten characters are handled, while a long handwritten stroke that does not touch a line at both ends is ignored.
+- **At least 170 px**: anything shorter is never treated as a table line, so small strokes in handwriting are left alone.
+- **No isolated lines**: an endpoint must land on a perpendicular line (a corner or a T-junction). Merely crossing another line in the middle does not count; a line with both ends free is discarded.
+- **Long lines are accepted first**: borders spanning at least 75% of the image width/height seed the grid. Other segments are accepted only when **both ends land on an accepted line**, so long cell dividers are handled, while a long handwritten stroke that does not touch a line at both ends is ignored.
 - **Fixed 3 px width**: the original width is not measured; a 2 px outer border and a 4 px inner line both become 3 px.
 - **Pure black core**: lines are drawn in `(0,0,0)` on the pixel grid, so the scanned dark grey is gone.
 - **Endpoints follow the junction type**: at a T-junction the stem stops at the crossbar's centreline (up to 9 px of overshoot still counts as the same junction), so it never pokes out past the crossbar; only at a corner does it reach the far pixel edge of the other line, filling the outer corner.
@@ -249,7 +251,7 @@ Select a table image and click **Straighten table lines** in the inspector. The 
 
 The result is a new image and can be undone with `Ctrl+Z`. If no table lines are found, the image is left untouched and a message says so.
 
-**Not covered**: pages skewed by more than about 0.5°, perspective distortion, dashed or broken lines (they are not bridged), and vector ruling lines that are PDF drawings rather than pixels of the selected image.
+**Not covered**: pages skewed by more than about 0.5°, perspective distortion, dashed or broken lines (they are not bridged), and three-line tables with only parallel horizontal rules — they have no corner or T-junction, so they are skipped as isolated lines. Vector ruling lines that are PDF drawings rather than pixels of the selected image are also out of scope.
 
 ### Undo / redo
 
@@ -299,7 +301,7 @@ The toolbar is pinned to the top-left of the box and appears as soon as it is se
 | Font | Microsoft YaHei / SimSun / FangSong / KaiTi / SimHei / Times New Roman |
 | Size | 6–200 px, 14 by default (the same size Edge uses for its annotations) |
 | Line height | 0.8–3×, 1.15 by default |
-| Color | Blue (default) / red / green, taken from Edge's annotation palette |
+| Color | Blue (default) / red / green / black; the first three come from Edge's annotation palette |
 
 **Mixed fonts are allowed**: select part of the text and pick a font — only that run changes. One box can hold a SimSun paragraph followed by a FangSong one. The font name on the toolbar follows the run under the caret instead of sticking to the first run.
 
@@ -336,8 +338,8 @@ Switch the left rail to Highlighter (the marker icon). The cursor turns into a d
 
 - Horizontal only — no freehand strokes;
 - The band is created on release; while dragging you only see a preview, and a drag shorter than 4 pt is discarded;
-- 15 px tall and yellow `#FFF066` by default, matching Edge; the height is configurable in Settings (integer px);
-- Select a band and a small palette appears above it to switch it to green / blue / red.
+- Always yellow `#FFF066`, matching Edge; 15 px tall by default, and the height is configurable in Settings (integer px);
+- Yellow is the only colour — there is no colour palette.
 
 ### It multiplies, it does not cover
 
@@ -482,11 +484,10 @@ Settings are grouped into blocks — General, Text boxes, Highlighter, Logs, Bac
 | Snap lines | 0–300 mm | Same four-edge, multi-value input. Defaults to the five guide positions plus 85 mm from the left; used for snapping while moving, hidden otherwise |
 | Default font | Six families | Font for new text boxes |
 | Default size | 6–200 px | 14 by default; integers only |
-| Default color | Blue / red / green | Color for new text boxes, blue by default |
+| Default color | Blue / red / green / black | Color for new text boxes, blue by default |
 | Default width | 10–300 mm | 45 (4.5 cm) by default |
 | Default line height | 0.8–3× | 1.15 by default; a multiple of the font size |
 | Highlighter height | 4–200 px | 15 by default |
-| Highlighter color | Yellow / green / blue / red | Yellow by default |
 | Log level | Debug / Normal / Warnings / Errors | Takes effect at once and keeps writing to the same file |
 | Clean up logs automatically | On / Off | Deletes log files older than the retention period at startup; turn it off to keep them all |
 | Keep logs for (days) | 1–365 | 30 by default; has no effect while the switch above is off |

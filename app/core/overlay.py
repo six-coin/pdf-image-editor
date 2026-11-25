@@ -159,7 +159,10 @@ def objects_for_page(page: pymupdf.Page, items: list[dict]) -> list[TextObject |
         if kind == "text":
             result.append(TextObject.from_pdf_dict(item, index))
         elif kind == "hl":
-            result.append(HighlightObject.from_pdf_dict(item, index))
+            band = HighlightObject.from_pdf_dict(item, index)
+            # 旧文件里可能存着绿/蓝/红荧光带；现在只认黄色，读进来就统一掉。
+            band.color = palette.normalize_highlight(band.color)
+            result.append(band)
     return result
 
 

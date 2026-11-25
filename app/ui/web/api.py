@@ -685,17 +685,6 @@ class EditorApi:
             stack.push(StructureChanged(before, self._state.clone_objects(), "edit.highlight"))
             return {**self._snapshot(), "created": obj.id}
 
-    def update_highlight(self, object_id: str, color: str | None = None) -> dict[str, Any]:
-        with self._lock:
-            stack = self._stack
-            obj = self._state.find(str(object_id))
-            if stack is None or not isinstance(obj, HighlightObject):
-                return self._snapshot()
-            before = self._state.clone_objects()
-            obj.color = palette.normalize_highlight(color)
-            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.highlight"))
-            return self._snapshot()
-
     def fill_cell(
         self,
         object_id: str,
@@ -1547,11 +1536,15 @@ class EditorApi:
                 }
                 for line in lines
             ]
-            data["hex"] = palette.TEXT_COLORS[obj.color]
+            data["hex"] = palette.TEXT_COLORS.get(
+                obj.color, palette.TEXT_COLORS[palette.DEFAULT_TEXT_COLOR]
+            )
             return data
         if isinstance(obj, HighlightObject):
             data = obj.to_dict()
-            data["hex"] = palette.HIGHLIGHT_COLORS[obj.color]
+            data["hex"] = palette.HIGHLIGHT_COLORS.get(
+                obj.color, palette.HIGHLIGHT_COLORS[palette.DEFAULT_HIGHLIGHT_COLOR]
+            )
             return data
 
         data = obj.to_dict()

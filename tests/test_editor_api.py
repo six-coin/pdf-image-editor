@@ -167,6 +167,24 @@ def test_punch_whitens_original_and_extracts_piece(editor, opened):
     assert len(snapshot["selection"]) == 1
 
 
+def test_repeated_punch_does_not_duplicate_ids_or_selection(editor, opened):
+    """同一张原图连续提取：对象 id 必须唯一，选择只能落到新抠出来的那一块。"""
+    instance, _server = editor
+    opened()
+    obj = _objects(instance)[0]
+
+    first = instance.punch_cell(obj["id"], [0.5], [0.5], 0, 0)
+    first_piece = [o for o in first["objects"] if o["id"] != obj["id"]][0]
+    assert first["selection"] == [first_piece["id"]]
+
+    # 换一条切线，但行列号仍是 (0, 0)：派生 id 和第一次完全相同
+    second = instance.punch_cell(obj["id"], [0.4], [0.5], 0, 0)
+    ids = [o["id"] for o in second["objects"]]
+    assert len(ids) == len(set(ids))
+    assert len(second["selection"]) == 1
+    assert second["selection"][0] in ids
+
+
 def test_undo_redo_after_split(editor, opened):
     instance, _server = editor
     opened()

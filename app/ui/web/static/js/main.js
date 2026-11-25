@@ -7,7 +7,6 @@ import { selectBox } from './controls.js';
 import { bindDropZone } from './drop.js';
 import { openExport } from './export.js';
 import { bindGuides } from './guides.js';
-import { bindHighlight } from './highlight.js';
 import { bindInteract } from './interact.js';
 import { renderMarkdown } from './markdown.js';
 import { askUnsaved, isOpen, openModal } from './modal.js';
@@ -209,7 +208,6 @@ async function init() {
     actions.clearSelection();
   });
   bindText();
-  bindHighlight();
   bindDropZone();
   bindGuides();
   bindShortcuts();

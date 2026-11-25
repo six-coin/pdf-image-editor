@@ -551,20 +551,6 @@ export async function openSettings() {
       )
     );
 
-    body.appendChild(
-      field(
-        'settings.highlight_color',
-        segmented(
-          (data.palette.highlight || []).map((item) => ({
-            value: item.key,
-            label: T(`color.${item.key}`),
-          })),
-          defaults.highlight_color,
-          (value) => writeSettings({ highlight_color: value })
-        )
-      )
-    );
-
     block('settings.logs');
 
     body.appendChild(

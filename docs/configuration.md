@@ -79,11 +79,11 @@
 | `align.left_mm` 等 | 数字列表 | `[10, 85] / [10] / [10, 50] / [10]` | 结构、取值范围与解析规则同 `reference`；这是移动元素时用来吸附的对齐线。默认就是五条参考线再加左边 85mm，平时不画出来 |
 | `text_font` | 字符串 | `msyh` | `msyh` / `simsun` / `simfang` / `simkai` / `simhei` / `times`；新建文本框的默认字体 |
 | `text_size_px` | 整数 | `14` | 6–200，越界夹取；字号单位是 px（1px = 0.75pt，与 Edge 的批注一致），只能是整数 |
-| `text_color` | 字符串 | `blue` | `blue` / `red` / `green`；新建文本框的默认颜色 |
+| `text_color` | 字符串 | `blue` | `blue` / `red` / `green` / `black`；新建文本框的默认颜色 |
 | `text_width_mm` | 数字 | `45` | 10–300，越界夹取；新建文本框的默认宽度（毫米） |
 | `text_line_height` | 数字 | `1.15` | 0.8–3，越界夹取；行高是字号的倍数，允许两位小数 |
 | `highlight_height_px` | 整数 | `15` | 4–200，越界夹取；荧光带的默认高度（px） |
-| `highlight_color` | 字符串 | `yellow` | `yellow` / `green` / `blue` / `red`；新建荧光带的默认颜色 |
+| `highlight_color` | 字符串 | `yellow` | 固定 `yellow`；旧配置里的其它颜色在读取时归一为黄色。荧光笔只有黄色一种 |
 | `settings_version` | 整数 | `2` | 配置结构版本，不要手改。版本 1 的旧默认宽度 40mm 在读取时迁到 45mm，用户改过的其它宽度保持不变 |
 
 说明：

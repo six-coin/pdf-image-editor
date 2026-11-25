@@ -231,6 +231,17 @@ def test_text_and_highlight_defaults(temp_config):
     assert config["highlight_color"] == "yellow"
 
 
+def test_text_black_and_yellow_only_highlighter():
+    from app.core import palette
+
+    assert palette.normalize_text("black") == "black"
+    assert palette.text_rgb("black") == (0.0, 0.0, 0.0)
+    # 旧的绿/蓝/红荧光带一律归到黄色
+    assert palette.normalize_highlight("red") == "yellow"
+    assert palette.normalize_highlight("green") == "yellow"
+    assert list(palette.HIGHLIGHT_COLORS) == ["yellow"]
+
+
 def test_legacy_text_width_migrates_to_45(temp_config):
     """老配置没有 settings_version：旧的 40mm 默认迁到 45mm。"""
     (temp_config / "app.json").write_text(json.dumps({"text_width_mm": 40.0}), encoding="utf-8")
