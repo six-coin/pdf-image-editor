@@ -63,6 +63,28 @@ def test_moved_image_lands_at_new_position(pdf_factory, store, tmp_path):
     doc.close()
 
 
+def test_image_outside_the_page_keeps_its_position(pdf_factory, store, tmp_path):
+    """单张图片允许被移到页外，保存时不能把它夹回页内或改大小。"""
+    src = pdf_factory("in.pdf")
+    doc = PdfDocument.open(src, store)
+    state = _state(doc)
+    state.objects[0].rect = Rect(-150, -100, 120, 90)
+
+    dst = tmp_path / "out.pdf"
+    save(src, dst, state, store)
+
+    out = pymupdf.open(dst)
+    infos = out[0].get_image_info(xrefs=True)
+    assert len(infos) == 1
+    bbox = infos[0]["bbox"]
+    assert bbox[0] == pytest.approx(-150, abs=1)
+    assert bbox[1] == pytest.approx(-100, abs=1)
+    assert bbox[2] - bbox[0] == pytest.approx(120, abs=1)
+    assert bbox[3] - bbox[1] == pytest.approx(90, abs=1)
+    out.close()
+    doc.close()
+
+
 def test_deleted_image_leaves_text_alone(pdf_factory, store, tmp_path):
     src = pdf_factory("in.pdf")
     doc = PdfDocument.open(src, store)
@@ -186,7 +208,8 @@ def test_sweep_backups_drops_only_expired_files(tmp_path):
     assert fresh.is_file()
 
 
-def test_out_of_page_image_is_clamped(pdf_factory, store, tmp_path):
+def test_out_of_page_image_keeps_its_rect(pdf_factory, store, tmp_path):
+    """图片允许超出页面；保存时保留原矩形，由阅读器按页裁切。"""
     src = pdf_factory("in.pdf")
     doc = PdfDocument.open(src, store)
     state = _state(doc)
@@ -195,11 +218,13 @@ def test_out_of_page_image_is_clamped(pdf_factory, store, tmp_path):
     dst = tmp_path / "out.pdf"
     report = save(src, dst, state, store)
 
-    assert any(w["code"] == "image_clamped" for w in report.warnings)
+    assert not any(w["code"] == "image_clamped" for w in report.warnings)
     out = pymupdf.open(dst)
     bbox = out[0].get_image_info(xrefs=True)[0]["bbox"]
-    assert bbox[2] <= 595 + 1
-    assert bbox[3] <= 842 + 1
+    assert bbox[0] == pytest.approx(560, abs=1)
+    assert bbox[1] == pytest.approx(800, abs=1)
+    assert bbox[2] == pytest.approx(760, abs=1)
+    assert bbox[3] == pytest.approx(1000, abs=1)
     out.close()
     doc.close()
 

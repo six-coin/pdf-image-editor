@@ -37,6 +37,7 @@ const GLOBAL_RUNNERS = {
   zoom_fit: fitWidth,
   zoom_reset: resetZoom,
   split: startSplit,
+  trim: actions.trimImages,
   mode_select: () => setMode(MODE_SELECT),
   mode_text: () => setMode(MODE_TEXT),
   mode_highlight: () => setMode(MODE_HIGHLIGHT),

@@ -477,7 +477,7 @@ function renderInspector() {
     note.textContent = imagesOnly
       ? T('inspector.multi_images', { count: chosen.length })
       : T('inspector.multi');
-    body.append(note, actionRow(imagesOnly ? ['merge', 'delete'] : ['delete']));
+    body.append(note, actionRow(imagesOnly ? ['merge', 'trim', 'delete'] : ['delete']));
     return;
   }
 
@@ -531,11 +531,12 @@ function renderInspector() {
     list.append(dt, dd);
   }
   body.appendChild(list);
-  body.appendChild(actionRow(['table', 'split', 'front', 'back', 'external', 'delete']));
+  body.appendChild(actionRow(['table', 'trim', 'split', 'front', 'back', 'external', 'delete']));
 }
 
 const ACTIONS = {
   table: ['inspector.table_lines', 'btn sm', 'table'],
+  trim: ['inspector.trim', 'btn sm', 'trim'],
   merge: ['inspector.merge', 'btn sm', 'merge'],
   split: ['toolbar.split', 'btn sm', 'split'],
   front: ['toolbar.front', 'btn sm', 'front'],

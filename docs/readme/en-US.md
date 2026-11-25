@@ -11,7 +11,7 @@ Scanned documents and mixed text/image PDFs often need a large image cut apart, 
 This tool splits every page into a **background** plus **independent image objects**:
 
 - the **background** keeps the document's text, vectors and annotations and is rendered on demand at the target DPI;
-- **image objects** can be dragged, scaled, split, deleted and replaced individually.
+- **image objects** can be dragged, scaled, split, trimmed, deleted and replaced individually.
 
 Saving only swaps the images; everything else is left untouched.
 
@@ -22,7 +22,7 @@ Saving only swaps the images; everything else is left untouched.
 - Pages are rendered at a DPI chosen from the current zoom, so zooming in stays sharp
 - Wheel to scroll, `Ctrl`+wheel to zoom around the pointer, `Space`+drag or middle-drag to pan
 - Light and dark themes; the system preference seeds the default once, then you switch by hand
-- Page-margin guides, any number of them per edge, plus configurable snap lines for moving elements
+- Page-margin guides, any number of them per edge, plus configurable snap lines for moving and resizing elements
 
 **Edit**
 
@@ -154,6 +154,8 @@ Jumping is instant rather than a smooth scroll: in a 50-page document, going fro
 
 Drag the selection. A move only counts after 3px of travel, so a plain click never nudges anything. With several selected, dragging any one of them moves the whole group.
 
+When **exactly one image** is selected it may be dragged outside the page (useful for bleed or layout work) and stays there on release; a multi-selection and text boxes are still kept inside the page. The part outside the page is clipped when printing/exporting, but its position is kept in the file.
+
 ### Scaling
 
 With one image selected there are eight handles: four corners plus the midpoint of each edge.
@@ -165,7 +167,9 @@ With one image selected there are eight handles: four corners plus the midpoint 
 
 The edge handles exist for images whose displayed ratio differs from their pixel ratio: a square icon stretched flat can be squeezed back by dragging the top or bottom edge, no re-cropping needed. The pixels are untouched; only the rectangle on the page changes.
 
-While scaling, the edge you drag (both edges, for a corner) **stops at the page border**: drag past it and the edge sticks there, so the image is never squashed or cropped.
+While scaling, the edge you drag (both edges, for a corner) **stops at the page border**: drag past it and the edge sticks there, so the image is never squashed or cropped. The exception is a **single selected image**, whose edges may be dragged outside the page.
+
+While dragging an edge or corner, the moving edges snap to the reference and alignment guides and a green line appears. For ratio-locked corner scaling only the nearer edge snaps; the other edge follows the original ratio, so snapping never distorts the image.
 
 The eight handles can be switched off in Settings, leaving the four corners.
 
@@ -182,6 +186,14 @@ With two or more images selected, each keeps its own small outline and a group f
 - every image scales by the same factor, so relative positions and gaps scale with them;
 - the smallest image never drops below 4pt, and the group cannot be dragged outside the page;
 - dragging any image in the group moves the whole group.
+
+### Trimming white borders
+
+Select one or more images and press `G` (or use **Trim white borders** in the inspector). The program walks in from all four sides until every removed strip is pure white; what remains is the bounding box of all non-white pixels, so the removed area is as large as possible. The content stays at the same place on the page — only the rectangle and the pixels shrink. One `Ctrl+Z` undoes the whole operation.
+
+- Only **pure white** counts (all RGB channels 255, or fully transparent); a 254 scanned background is not white and is kept;
+- an all-white image, or one with no white border, is left untouched and the status bar says so;
+- a mixed selection containing text boxes or highlights is refused.
 
 ### Merging images
 
@@ -450,6 +462,7 @@ When it finishes you are told where the file went and how many images were proce
 | `Ctrl+I` | Show / hide the inspector |
 | `Ctrl+,` | Settings |
 | `E` | Enter split mode |
+| `G` | Trim white borders on the selected images |
 | `Z` / `X` / `C` | Switch to Select / Text / Highlighter mode |
 | Arrow keys (`Shift` faster, `Ctrl` finer) | Nudge position |
 | `Space` + drag / middle-drag | Pan the canvas |
@@ -481,7 +494,7 @@ Settings are grouped into blocks — General, Text boxes, Highlighter, Logs, Bac
 | Guides | On / Off | The page-margin lines on the canvas |
 | Eight handles | On / Off | Off leaves only the four corner handles |
 | Margins | 0–300 mm | Left / top / right / bottom; each edge takes several values separated by commas, e.g. `10, 50`. Stored as a sorted, de-duplicated list and formatted back to `10, 50` |
-| Snap lines | 0–300 mm | Same four-edge, multi-value input. Defaults to the five guide positions plus 85 mm from the left; used for snapping while moving, hidden otherwise |
+| Snap lines | 0–300 mm | Same four-edge, multi-value input. Defaults to the five guide positions plus 85 mm from the left; used for snapping while moving or resizing, hidden otherwise |
 | Default font | Six families | Font for new text boxes |
 | Default size | 6–200 px | 14 by default; integers only |
 | Default color | Blue / red / green / black | Color for new text boxes, blue by default |

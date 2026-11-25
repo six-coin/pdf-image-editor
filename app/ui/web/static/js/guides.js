@@ -18,17 +18,134 @@ function values(raw) {
 
 /** 某页上所有对齐线的位置（pt），分成竖直与水平两组。 */
 export function alignLines(info) {
-  const align = (state.data && state.data.align) || {};
+  return linesOf((state.data && state.data.align) || {}, info);
+}
+
+function linesOf(raw, info) {
   const vertical = [];
   const horizontal = [];
-  for (const mm of values(align.left_mm)) vertical.push(mm * MM_TO_PT);
-  for (const mm of values(align.right_mm)) vertical.push(info.w - mm * MM_TO_PT);
-  for (const mm of values(align.top_mm)) horizontal.push(mm * MM_TO_PT);
-  for (const mm of values(align.bottom_mm)) horizontal.push(info.h - mm * MM_TO_PT);
+  for (const mm of values(raw.left_mm)) vertical.push(mm * MM_TO_PT);
+  for (const mm of values(raw.right_mm)) vertical.push(info.w - mm * MM_TO_PT);
+  for (const mm of values(raw.top_mm)) horizontal.push(mm * MM_TO_PT);
+  for (const mm of values(raw.bottom_mm)) horizontal.push(info.h - mm * MM_TO_PT);
   return {
     vertical: vertical.filter((x) => x > 0 && x < info.w),
     horizontal: horizontal.filter((y) => y > 0 && y < info.h),
   };
+}
+
+/** 缩放时两套线都认：常驻参考线和移动用的对齐线。 */
+function resizeLines(info) {
+  const align = alignLines(info);
+  const reference = linesOf((state.data && state.data.reference) || {}, info);
+  const merge = (a, b) => [
+    ...new Set([...a, ...b].map((value) => Math.round(value * 1000) / 1000)),
+  ];
+  return {
+    vertical: merge(align.vertical, reference.vertical),
+    horizontal: merge(align.horizontal, reference.horizontal),
+  };
+}
+
+function nearest(value, positions, threshold) {
+  let best = null;
+  for (const line of positions) {
+    const distance = Math.abs(line - value);
+    if (distance <= threshold && (!best || distance < best.distance)) {
+      best = { distance, line };
+    }
+  }
+  return best;
+}
+
+/**
+ * 缩放吸附：只有正在移动的边参与。
+ *
+ * 角手柄会同时移动两条边；等比缩放时只吸更近的那一条，另一条按原比例
+ * 跟随，避免为了贴线把长宽比拉坏。边手柄只动一条边，直接吸。
+ *
+ * 返回吸附后的矩形，以及吸中的两条线（没吸中为 null）。矩形不合格
+ * （小于最小尺寸或出页）时退回原样，调用方据此不画绿线。
+ */
+export function snapResize(rect, corner, info, options = {}) {
+  const { keepRatio = false, allowOutside = false, minW = 1, minH = 1 } = options;
+  const lines = resizeLines(info);
+  const threshold = SNAP_PX / pxPerPt();
+
+  const movesLeft = corner === 'w' || corner === 'tl' || corner === 'bl';
+  const movesRight = corner === 'e' || corner === 'tr' || corner === 'br';
+  const movesTop = corner === 'n' || corner === 'tl' || corner === 'tr';
+  const movesBottom = corner === 's' || corner === 'bl' || corner === 'br';
+
+  const vertical = movesLeft
+    ? nearest(rect.x, lines.vertical, threshold)
+    : movesRight
+      ? nearest(rect.x + rect.w, lines.vertical, threshold)
+      : null;
+  const horizontal = movesTop
+    ? nearest(rect.y, lines.horizontal, threshold)
+    : movesBottom
+      ? nearest(rect.y + rect.h, lines.horizontal, threshold)
+      : null;
+  if (!vertical && !horizontal) {
+    return { rect, vertical: null, horizontal: null };
+  }
+
+  let x = rect.x;
+  let y = rect.y;
+  let w = rect.w;
+  let h = rect.h;
+  let verticalMark = null;
+  let horizontalMark = null;
+
+  const applyVertical = (line) => {
+    if (movesLeft) {
+      const right = rect.x + rect.w;
+      x = line;
+      w = right - line;
+    } else {
+      w = line - rect.x;
+    }
+    verticalMark = line;
+  };
+  const applyHorizontal = (line) => {
+    if (movesTop) {
+      const bottom = rect.y + rect.h;
+      y = line;
+      h = bottom - line;
+    } else {
+      h = line - rect.y;
+    }
+    horizontalMark = line;
+  };
+
+  if (keepRatio) {
+    const useVertical = vertical && (!horizontal || vertical.distance <= horizontal.distance);
+    if (useVertical) {
+      applyVertical(vertical.line);
+      const ratio = rect.h > 0 ? rect.w / rect.h : 1;
+      h = w / ratio;
+      y = movesTop ? rect.y + rect.h - h : rect.y;
+    } else {
+      applyHorizontal(horizontal.line);
+      const ratio = rect.w > 0 ? rect.w / rect.h : 1;
+      w = h * ratio;
+      x = movesLeft ? rect.x + rect.w - w : rect.x;
+    }
+  } else {
+    if (vertical) applyVertical(vertical.line);
+    if (horizontal) applyHorizontal(horizontal.line);
+  }
+
+  if (w < minW || h < minH) {
+    return { rect, vertical: null, horizontal: null };
+  }
+  // 只吸一条边时，对面那条边本来就在页内，吸到页内的线上不会出页；
+  // 等比缩放会按比例把另一条边也带大，这才需要再检查一次页面边界。
+  if (!allowOutside && keepRatio && (x < 0 || y < 0 || x + w > info.w || y + h > info.h)) {
+    return { rect, vertical: null, horizontal: null };
+  }
+  return { rect: { x, y, w, h }, vertical: verticalMark, horizontal: horizontalMark };
 }
 
 /**

@@ -109,7 +109,6 @@ export async function openPdf() {
 
 const WARNING_KEYS = {
   redact_failed: 'save.warning_redact_failed',
-  image_clamped: 'save.warning_image_clamped',
   insert_failed: 'save.warning_insert_failed',
   image_skipped: 'save.warning_image_skipped',
   annots_lost: 'save.warning_annots_lost',
@@ -279,6 +278,29 @@ export async function mergeImages() {
       height: report.height ?? 0,
     })
   );
+}
+
+/* ---------- 图片 ---------- */
+
+let trimming = false;
+
+/** 把选中图片四周的纯白边裁掉，内容在页面上的位置不变。 */
+export async function trimImages() {
+  const ids = selectedIds();
+  if (!ids.length || !state.data || state.view.busy || trimming) return;
+  trimming = true;
+  try {
+    const snapshot = await call('trim_images', ids);
+    if (!snapshot) return;
+    apply(snapshot);
+    if (snapshot.ok === false) {
+      toast(snapshot.message || T('error.unexpected'), false);
+      return;
+    }
+    toast(T('status.trim_done', { count: snapshot.count || ids.length }));
+  } finally {
+    trimming = false;
+  }
 }
 
 export async function undo() {

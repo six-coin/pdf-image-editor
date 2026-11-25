@@ -21,6 +21,7 @@ const GLOBAL_DEFS = [
   ['zoom_fit', 'Ctrl+0', 'toolbar.fit_width'],
   ['zoom_reset', 'Ctrl+1', 'toolbar.zoom_reset'],
   ['split', 'E', 'toolbar.split'],
+  ['trim', 'G', 'cmd.trim'],
   ['mode_select', 'Z', 'cmd.mode_select'],
   ['mode_text', 'X', 'cmd.mode_text'],
   ['mode_highlight', 'C', 'cmd.mode_highlight'],

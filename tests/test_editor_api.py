@@ -59,16 +59,37 @@ def test_commit_transform_moves(editor, opened):
     assert snapshot["history"]["can_undo"] is True
 
 
-def test_commit_transform_clamps_out_of_page(editor, opened):
+def test_commit_transform_allows_single_image_outside_page(editor, opened):
+    """只选中一张图片时，允许把它留在页面外。"""
     instance, _server = editor
     opened()
     obj = _objects(instance)[0]
     snapshot = instance.commit_transform(
-        [{"id": obj["id"], "page": 0, "x": 5000, "y": 5000, "w": 120, "h": 90}]
+        [{"id": obj["id"], "page": 0, "x": -5000, "y": -5000, "w": 120, "h": 90}]
     )
     moved = [o for o in snapshot["objects"] if o["id"] == obj["id"]][0]
-    assert moved["x"] + moved["w"] <= 595.5
-    assert moved["y"] + moved["h"] <= 842.5
+    assert moved["x"] == pytest.approx(-5000)
+    assert moved["y"] == pytest.approx(-5000)
+    assert moved["w"] == pytest.approx(120)
+    assert moved["h"] == pytest.approx(90)
+
+
+def test_commit_transform_clamps_a_group_to_page(editor, opened):
+    """多张图一起动仍然夹回页内，避免整组丢在页外。"""
+    instance, _server = editor
+    opened(images=2)
+    images = [o for o in _objects(instance) if o["kind"] == "image"]
+    payload = [
+        {"id": obj["id"], "page": 0, "x": 5000, "y": 5000, "w": obj["w"], "h": obj["h"]}
+        for obj in images
+    ]
+
+    snapshot = instance.commit_transform(payload)
+
+    for obj in images:
+        moved = [o for o in snapshot["objects"] if o["id"] == obj["id"]][0]
+        assert moved["x"] + moved["w"] <= 595.5
+        assert moved["y"] + moved["h"] <= 842.5
 
 
 def test_commit_transform_rejects_garbage(editor, opened):
@@ -497,6 +518,78 @@ def test_paste_image_without_clipboard(editor, opened, monkeypatch):
 
     assert snapshot["ok"] is False
     assert len(snapshot["objects"]) == 1
+
+
+def test_trim_images_crops_white_border_and_keeps_position(editor, opened, monkeypatch):
+    instance, _server = editor
+    opened()
+
+    image = np.full((40, 60, 3), 255, dtype=np.uint8)
+    image[10:30, 20:40] = (10, 20, 30)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, 60, 40, np.ascontiguousarray(image).tobytes(), False)
+    png = pix.tobytes("png")
+    monkeypatch.setattr("app.ui.web.api.clipboard.read_image", lambda: png)
+
+    pasted = instance.paste_image(0)
+    obj = [o for o in pasted["objects"] if o["kind"] == "image"][-1]
+    before = dict(obj)
+
+    snapshot = instance.trim_images([obj["id"]])
+
+    assert snapshot["ok"] is True
+    assert snapshot["count"] == 1
+    after = [o for o in snapshot["objects"] if o["id"] == obj["id"]][0]
+    # 内容框是 (20,10)-(40,30)，占原图 1/3 × 1/2
+    assert after["x"] == pytest.approx(before["x"] + before["w"] / 3)
+    assert after["y"] == pytest.approx(before["y"] + before["h"] / 4)
+    assert after["w"] == pytest.approx(before["w"] / 3)
+    assert after["h"] == pytest.approx(before["h"] / 2)
+    cropped = pymupdf.Pixmap(instance.store.get(after["image"]))
+    assert (cropped.width, cropped.height) == (20, 20)
+
+    restored = [o for o in instance.undo()["objects"] if o["id"] == obj["id"]][0]
+    assert restored["x"] == pytest.approx(before["x"])
+    assert restored["y"] == pytest.approx(before["y"])
+    assert restored["w"] == pytest.approx(before["w"])
+    assert restored["h"] == pytest.approx(before["h"])
+
+
+def test_trim_images_without_white_border_is_noop(editor, opened):
+    instance, _server = editor
+    opened()
+    obj = _objects(instance)[0]
+
+    snapshot = instance.trim_images([obj["id"]])
+
+    assert snapshot["ok"] is False
+    assert snapshot["objects"] == _objects(instance)
+    assert snapshot["history"]["can_undo"] is False
+
+
+def test_trim_images_handles_several_images_in_one_undo(editor, opened, monkeypatch):
+    instance, _server = editor
+    opened()
+
+    image = np.full((20, 30, 3), 255, dtype=np.uint8)
+    image[5:15, 10:20] = (10, 20, 30)
+    pix = pymupdf.Pixmap(pymupdf.csRGB, 30, 20, np.ascontiguousarray(image).tobytes(), False)
+    png = pix.tobytes("png")
+    monkeypatch.setattr("app.ui.web.api.clipboard.read_image", lambda: png)
+
+    first = instance.paste_image(0)["selection"][0]
+    second = instance.paste_image(0)["selection"][0]
+
+    snapshot = instance.trim_images([first, second])
+
+    assert snapshot["ok"] is True
+    assert snapshot["count"] == 2
+    trimmed = {o["id"]: o for o in snapshot["objects"]}
+    assert trimmed[first]["w"] == pytest.approx(trimmed[second]["w"])
+    assert trimmed[first]["h"] == pytest.approx(trimmed[second]["h"])
+
+    restored = {o["id"]: o for o in instance.undo()["objects"]}
+    assert restored[first]["w"] > trimmed[first]["w"]
+    assert restored[second]["h"] > trimmed[second]["h"]
 
 
 def test_external_edit_roundtrip(editor, opened, monkeypatch, tmp_path):

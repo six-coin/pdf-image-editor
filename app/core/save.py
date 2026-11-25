@@ -24,7 +24,6 @@ from typing import Any
 import pymupdf
 
 from app.core import overlay
-from app.core.geometry import clamp_rect_to_page
 from app.core.imagestore import ImageStore
 from app.errors import SaveError
 from app.models import DocumentState, ImageObject, Rect
@@ -96,11 +95,10 @@ def _insert_objects(
     report: SaveReport,
     index: int,
 ) -> None:
-    width, height = float(page.rect.width), float(page.rect.height)
     for obj in sorted(objects, key=lambda o: o.z):
-        rect = clamp_rect_to_page(obj.rect, width, height)
-        if rect != obj.rect:
-            report.warnings.append({"page": index, "code": "image_clamped", "detail": obj.id})
+        # 不夹回页面：单张图片允许被移到页外（拼版/裁切时很有用），
+        # PDF 内容流可以画在页面矩形之外，阅读器按页裁掉即可。
+        rect = obj.rect
         target = pymupdf.Rect(rect.x, rect.y, rect.right, rect.bottom)
         if target.is_empty:
             report.warnings.append({"page": index, "code": "image_skipped", "detail": obj.id})

@@ -29,6 +29,7 @@ from app.core import fonts as font_table
 from app.core import merge as merge_ops
 from app.core import palette, tablelines, textlayout
 from app.core import split as split_ops
+from app.core import trim as trim_ops
 from app.core.document import PdfDocument
 from app.core.geometry import MIN_SIZE, clamp_rect_to_page
 from app.core.imagestore import ImageStore
@@ -300,6 +301,9 @@ class EditorApi:
     ) -> dict[str, Any]:
         """提交一次拖动或缩放。越界在这里夹取，前端算错了也不会把图存到页外。
 
+        单张图片是例外：允许它留在页外（比如把图挪到版心外做拼版），
+        这时只校验尺寸，不夹回页面。多选、文本框和荧光带仍然夹在页内。
+
         ``selection`` 一起提交，拖谁就选谁，省掉一次额外往返。
         """
         with self._lock:
@@ -312,11 +316,11 @@ class EditorApi:
             # 的那张、文件里却有两张：保存后重定基线对不上，页面装载时还会重复抽图。
             self._ensure_pages(items, doc)
 
+            payload = [raw for raw in (items or []) if isinstance(raw, dict)]
+            single = len(items or []) == 1 and (selection is None or len(selection) == 1)
             before: list[ImageObject] = []
             after: list[ImageObject] = []
-            for raw in items or []:
-                if not isinstance(raw, dict):
-                    continue
+            for raw in payload:
                 obj = self._state.find(str(raw.get("id", "")))
                 if obj is None:
                     continue
@@ -350,7 +354,12 @@ class EditorApi:
                         Rect(x, y, updated.rect.w, updated.rect.h), page_w, page_h
                     )
                 else:
-                    rect = clamp_rect_to_page(Rect(x, y, w, h), page_w, page_h)
+                    # 单张图片可以留在页外；多张一起动时仍按页夹取，避免整组丢失。
+                    rect = (
+                        Rect(x, y, w, h)
+                        if single
+                        else clamp_rect_to_page(Rect(x, y, w, h), page_w, page_h)
+                    )
                     if rect.w < MIN_SIZE or rect.h < MIN_SIZE:
                         continue
                 updated.rect = rect
@@ -716,6 +725,62 @@ class EditorApi:
             original.image_id = image_id
             stack.push(StructureChanged(before, self._state.clone_objects(), "edit.fill"))
             return self._snapshot()
+
+    def trim_images(self, ids: list[str] | None = None) -> dict[str, Any]:
+        """裁掉选中图片四周的纯白边，内容在页面上的位置不变。
+
+        一张图可能只裁掉左边和上边，所以矩形要按像素框等比缩：新矩形仍是
+        原矩形里对应的那一块，图片内容不会因为裁边而挪位。
+        """
+        with self._lock:
+            stack = self._stack
+            if stack is None:
+                return self._snapshot()
+            wanted = {str(item) for item in (ids or [])}
+            selected = [obj for obj in self._state.objects if obj.id in wanted]
+            if not selected:
+                return {
+                    **self._snapshot(),
+                    "ok": False,
+                    "message": i18n.t("error.trim_need_image"),
+                }
+            if any(not isinstance(obj, ImageObject) for obj in selected):
+                return {
+                    **self._snapshot(),
+                    "ok": False,
+                    "message": i18n.t("error.trim_images_only"),
+                }
+
+            before: list[ImageObject] = []
+            after: list[ImageObject] = []
+            for obj in selected:
+                try:
+                    result = trim_ops.trim_white(self._store.get(obj.image_id))
+                except Exception as exc:
+                    logger.warning("裁白边失败 {}: {}", obj.id, exc)
+                    continue
+                if result is None:
+                    continue
+                png, (x0, y0, w, h), width, height = result
+                updated = obj.clone()
+                updated.rect = Rect(
+                    obj.rect.x + obj.rect.w * x0 / width,
+                    obj.rect.y + obj.rect.h * y0 / height,
+                    obj.rect.w * w / width,
+                    obj.rect.h * h / height,
+                )
+                updated.image_id = self._store.put(png)
+                before.append(obj.clone())
+                after.append(updated)
+
+            if not after:
+                return {
+                    **self._snapshot(),
+                    "ok": False,
+                    "message": i18n.t("status.trim_none"),
+                }
+            stack.push(ObjectsChanged(before, after, "edit.trim"))
+            return {**self._snapshot(), "ok": True, "count": len(after)}
 
     def merge_images(self, ids: list[str] | None = None) -> dict[str, Any]:
         """把同一页上的多张图压成一张。

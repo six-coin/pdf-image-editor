@@ -18,7 +18,7 @@ import { pxPerPt, state } from './state.js';
 import { scheduleRefresh } from './sync.js';
 import { isSplitActive } from './split.js';
 import { createBand } from './highlight.js';
-import { hideSnap, showSnap, snapOffset } from './guides.js';
+import { hideSnap, showSnap, snapOffset, snapResize } from './guides.js';
 import { MODE_HIGHLIGHT, MODE_SELECT, MODE_TEXT, currentMode, setMode } from './modes.js';
 import { beginEdit, createTextAt, isEditing } from './text.js';
 
@@ -528,6 +528,8 @@ function startMove(event, node) {
     items,
     moved: false,
     ids,
+    // 只选中一张图片时允许拖出页面；多选整组仍夹在页内。
+    allowOutside: ids.length === 1 && items.length === 1 && items[0].obj.kind === 'image',
     // 记下按在谁身上、有没有按 Shift：松手没拖动时要用它收拢选中。
     clicked: id,
     toggled: event.shiftKey,
@@ -595,13 +597,15 @@ function moveItems(point) {
 
     const maxLeft = rect.left + Math.max(0, rect.width - next.width);
     // 文本框的高度由内容决定，可以高过页面：只把左上角夹在页内，底部允许溢出。
-    // 图片必须整个留在页内，否则会丢内容。
+    // 图片必须整个留在页内，否则会丢内容。单张图片是例外：允许整张拖出页面。
     const maxTop =
       item.obj.kind === 'text'
         ? rect.top + rect.height
         : rect.top + Math.max(0, rect.height - next.height);
-    next.left = Math.min(Math.max(next.left, rect.left), maxLeft);
-    next.top = Math.min(Math.max(next.top, rect.top), maxTop);
+    if (!gesture.allowOutside) {
+      next.left = Math.min(Math.max(next.left, rect.left), maxLeft);
+      next.top = Math.min(Math.max(next.top, rect.top), maxTop);
+    }
 
     if (pageIndex !== item.mountedOn) {
       const box = pageEl(pageIndex) && pageEl(pageIndex).querySelector('.objects');
@@ -634,6 +638,8 @@ function startResize(event, node, corner) {
     pointerId: event.pointerId,
     start: scenePoint(event.clientX, event.clientY),
     corner,
+    // 单张图片可以放大/缩到页面外；文本框仍按页夹取。
+    allowOutside: obj.kind === 'image',
     item: {
       id,
       el: node,
@@ -658,13 +664,29 @@ function resizeItem(point, freeRatio) {
   // 边手柄本身就是改长宽比，Alt 对它们没有意义。
   const keepRatio = CORNER_HANDLES.includes(gesture.corner) && !freeRatio;
   const scaled = scaleFromCorner(before, gesture.corner, dx, dy, keepRatio);
-  const rect = clampScale(before, gesture.corner, scaled, keepRatio, info.w, info.h);
+  // 单张图片允许缩到页面外；文本框仍夹在页内，避免宽度被页面边界裁掉。
+  const rect = gesture.allowOutside
+    ? scaled
+    : clampScale(before, gesture.corner, scaled, keepRatio, info.w, info.h);
+  const snapped = snapResize(rect, gesture.corner, info, {
+    keepRatio,
+    allowOutside: gesture.allowOutside,
+    minW: MIN_SIZE,
+    minH: MIN_SIZE,
+  });
+  const next = snapped.rect;
 
-  item.next = rect;
-  item.el.style.left = `${rect.x * k}px`;
-  item.el.style.top = `${rect.y * k}px`;
-  item.el.style.width = `${rect.w * k}px`;
-  item.el.style.height = `${rect.h * k}px`;
+  item.next = next;
+  item.el.style.left = `${next.x * k}px`;
+  item.el.style.top = `${next.y * k}px`;
+  item.el.style.width = `${next.w * k}px`;
+  item.el.style.height = `${next.h * k}px`;
+
+  if (snapped.vertical !== null || snapped.horizontal !== null) {
+    showSnap(before.page, snapped);
+  } else {
+    hideSnap();
+  }
 }
 
 /* ---------- 组框缩放 ---------- */
@@ -727,7 +749,37 @@ function resizeGroup(point, freeRatio) {
     minSx,
     minSy
   );
+
+  // 组框的四条边里，只有手柄带着走的那两条参与吸附；组里最小那张图
+  // 仍不能小于 MIN_SIZE，吸完不够大就整次放弃。
+  const limit = keepRatio ? Math.max(minSx, minSy) : 0;
+  const snapped = snapResize(next, corner, info, {
+    keepRatio,
+    allowOutside: false,
+    minW: Math.max(MIN_SIZE, keepRatio ? bounds.w * limit : bounds.w * minSx),
+    minH: Math.max(MIN_SIZE, keepRatio ? bounds.h * limit : bounds.h * minSy),
+  });
+  if (snapped.rect !== next) {
+    next.x = snapped.rect.x;
+    next.y = snapped.rect.y;
+    next.w = snapped.rect.w;
+    next.h = snapped.rect.h;
+    if (keepRatio) {
+      const scale = bounds.w ? snapped.rect.w / bounds.w : next.sx;
+      next.sx = scale;
+      next.sy = scale;
+    } else {
+      next.sx = bounds.w ? snapped.rect.w / bounds.w : next.sx;
+      next.sy = bounds.h ? snapped.rect.h / bounds.h : next.sy;
+    }
+  }
   gesture.next = next;
+
+  if (snapped.vertical !== null || snapped.horizontal !== null) {
+    showSnap(gesture.page, snapped);
+  } else {
+    hideSnap();
+  }
 
   for (const item of gesture.items) {
     const before = item.before;
@@ -993,14 +1045,23 @@ export function nudge(dx, dy) {
   for (const id of ids) {
     const obj = state.data.objects.find((o) => o.id === id);
     if (!obj) continue;
-    // 和拖动一样夹在页内：后端只按边裁，微调出界会把长宽比裁坏。
-    const info = state.data.pages.find((p) => p.index === obj.page);
-    const x = info ? Math.min(Math.max(obj.x + dx, 0), Math.max(info.w - obj.w, 0)) : obj.x + dx;
-    // 与拖动一致：文本框只夹左上角，底部可以超出页面；图片整个夹在页内。
-    const maxY = info ? (obj.kind === 'text' ? info.h : Math.max(info.h - obj.h, 0)) : Infinity;
-    const y = info ? Math.min(Math.max(obj.y + dy, 0), maxY) : obj.y + dy;
+    let x = obj.x + dx;
+    let y = obj.y + dy;
+    // 只选中一张图片时不夹页面：允许用方向键把它微调到页外。
+    if (!(ids.length === 1 && obj.kind === 'image')) {
+      // 和拖动一样夹在页内：后端只按边裁，微调出界会把长宽比裁坏。
+      const info = state.data.pages.find((p) => p.index === obj.page);
+      x = info ? Math.min(Math.max(x, 0), Math.max(info.w - obj.w, 0)) : x;
+      // 与拖动一致：文本框只夹左上角，底部可以超出页面；图片整个夹在页内。
+      const maxY = info
+        ? obj.kind === 'text'
+          ? info.h
+          : Math.max(info.h - obj.h, 0)
+        : Infinity;
+      y = info ? Math.min(Math.max(y, 0), maxY) : y;
+    }
     payload.push({ id, page: obj.page, x, y, w: obj.w, h: obj.h });
   }
   if (!payload.length) return;
-  call('commit_transform', payload).then((snapshot) => snapshot && apply(snapshot));
+  call('commit_transform', payload, ids).then((snapshot) => snapshot && apply(snapshot));
 }
