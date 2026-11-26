@@ -817,9 +817,12 @@ class EditorApi:
 
             before: list[ImageObject] = []
             after: list[ImageObject] = []
+            threshold = int(
+                self._settings.get("trim_threshold", settings.DEFAULT_APP["trim_threshold"])
+            )
             for obj in selected:
                 try:
-                    result = trim_ops.trim_white(self._store.get(obj.image_id))
+                    result = trim_ops.trim_white(self._store.get(obj.image_id), threshold)
                 except Exception as exc:
                     logger.warning("裁白边失败 {}: {}", obj.id, exc)
                     continue
@@ -1153,6 +1156,36 @@ class EditorApi:
                 return {"ok": False, "message": str(exc)}
             return self._snapshot()
 
+    def close_document(self, force: bool = False) -> dict[str, Any]:
+        """关闭当前文档，回到「没有打开文件」的状态。
+
+        有未保存修改时先让前端问一句；``force=True`` 表示用户已经选了
+        「不保存」，直接放掉句柄。关闭只是丢掉内存里的编辑，不碰磁盘。
+        """
+        with self._lock:
+            doc = self._doc
+            if doc is None:
+                return {**self._snapshot(), "ok": True}
+            if self._stack is not None and self._stack.dirty and not force:
+                return {
+                    **self._snapshot(),
+                    "ok": False,
+                    "needs_confirm": True,
+                    "message": i18n.t("dialog.unsaved_text"),
+                }
+            path = doc.path
+            # 代次加一：正在跑的打开/渲染任务回来时会被丢掉，不能把刚关掉的
+            # 文档又塞回界面。
+            self._generation += 1
+            doc.close()
+            self._doc = None
+            self._cache = None
+            self._stack = None
+            self._state = DocumentState(loaded=set())
+        logger.info("已关闭 {}", path)
+        with self._lock:
+            return {**self._snapshot(), "ok": True}
+
     # ---- 另存与导出 ----
 
     def browse_save(self, suggested: str = "") -> str | None:
@@ -1323,9 +1356,12 @@ class EditorApi:
             if not isinstance(obj, ImageObject):
                 return {"ok": False, "message": i18n.t("error.invalid_argument", name="id")}
             data = self._store.get(obj.image_id)
+            min_span = int(
+                self._settings.get("table_min_span", settings.DEFAULT_APP["table_min_span"])
+            )
 
         try:
-            new_data, report = tablelines.straighten(data)
+            new_data, report = tablelines.straighten(data, min_span=min_span)
         except Exception as exc:
             logger.warning("表格框线处理失败: {}", exc)
             with self._lock:
@@ -1425,7 +1461,9 @@ class EditorApi:
         return {"ok": True, "task": task_id}
 
     def _preprocess_worker(self, source: Path, target: Path, task_id: str) -> None:
-        threshold = int(self._settings.get("preprocess_threshold", 235))
+        threshold = int(
+            self._settings.get("preprocess_threshold", settings.DEFAULT_APP["preprocess_threshold"])
+        )
         try:
             count = preprocess.process(
                 source,
@@ -1748,6 +1786,18 @@ class EditorApi:
                 "text_default": str(self._settings.get("text_default", "")),
                 "highlight_height_px": int(self._settings.get("highlight_height_px", 15)),
                 "highlight_color": str(self._settings.get("highlight_color", "yellow")),
+                "table_min_span": settings.DEFAULT_APP["table_min_span"],
+                "trim_threshold": settings.DEFAULT_APP["trim_threshold"],
+            },
+            "table_min_span": int(
+                self._settings.get("table_min_span", settings.DEFAULT_APP["table_min_span"])
+            ),
+            "trim_threshold": int(
+                self._settings.get("trim_threshold", settings.DEFAULT_APP["trim_threshold"])
+            ),
+            "limits": {
+                "table_min_span": list(settings.TABLE_MIN_SPAN_RANGE),
+                "trim_threshold": list(settings.TRIM_THRESHOLD_RANGE),
             },
             "undo_limit": int(self._settings.get("undo_limit", 100)),
             "log_level": str(self._settings.get("log_level", "INFO")),

@@ -54,6 +54,74 @@
   background: var(--border);
 }
 
+/* 「更多」下拉：保存、另存为、关闭当前 PDF 收在打开右边。 */
+.menu-wrap {
+  position: relative;
+  flex: none;
+}
+
+.menu-caret {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  min-width: 196px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 12px 28px var(--shadow);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--surface-active);
+}
+
+.menu-item:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+.menu-item kbd {
+  background: transparent;
+  padding: 0;
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
 .spacer {
   flex: 1;
 }
@@ -641,6 +709,35 @@ body.saving {
 .field-label {
   color: var(--text-soft);
   font-size: 13px;
+}
+
+/* 拖动条 + 右侧数值 + 重置。滑块本身用浏览器原生控件，只统一配色。 */
+.slider-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slider-control input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  margin: 0;
+  accent-color: var(--blue);
+  cursor: pointer;
+}
+
+.slider-value {
+  flex: none;
+  min-width: 40px;
+  color: var(--text-soft);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.slider-control .btn {
+  flex: none;
 }
 
 .margin-grid {

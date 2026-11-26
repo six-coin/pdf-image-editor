@@ -46,6 +46,23 @@ def test_snapshot_exposes_eight_handles(editor):
     assert instance.get_state()["eight_handles"] is False
 
 
+def test_snapshot_exposes_image_processing_settings(editor):
+    """两条图片处理设置要连当前值、出厂默认和范围一起下发，滑块才画得出来。"""
+    instance, _server = editor
+    data = instance.get_state()
+    assert data["table_min_span"] == 170
+    assert data["trim_threshold"] == 235
+    assert data["defaults"]["table_min_span"] == 170
+    assert data["defaults"]["trim_threshold"] == 235
+    assert data["limits"]["table_min_span"] == [20, 340]
+    assert data["limits"]["trim_threshold"] == [64, 255]
+
+    instance.update_settings({"table_min_span": 999, "trim_threshold": 1})
+    data = instance.get_state()
+    assert data["table_min_span"] == 340
+    assert data["trim_threshold"] == 64
+
+
 def test_commit_transform_moves(editor, opened):
     instance, _server = editor
     opened()
@@ -475,6 +492,38 @@ def test_reload_document_needs_confirm_when_dirty(editor, opened):
     assert snapshot["ok"] is True
     assert snapshot["doc"]["dirty"] is False
     assert len(snapshot["objects"]) == 0  # 重新加载后要等页面装载才会重新抽图
+
+
+def test_close_document_returns_to_empty_state(editor, opened):
+    instance, _server = editor
+    opened()
+
+    snapshot = instance.close_document()
+
+    assert snapshot["ok"] is True
+    assert snapshot["doc"]["page_count"] == 0
+    assert snapshot["doc"]["path"] == ""
+    assert snapshot["doc"]["can_save"] is False
+    assert snapshot["pages"] == []
+    assert snapshot["objects"] == []
+    assert snapshot["history"]["can_undo"] is False
+
+
+def test_close_document_needs_confirm_when_dirty(editor, opened):
+    instance, _server = editor
+    opened()
+    obj = _objects(instance)[0]
+    instance.commit_transform([{"id": obj["id"], "page": 0, "x": 200, "y": 200, "w": 100, "h": 80}])
+
+    blocked = instance.close_document()
+    assert blocked["ok"] is False
+    assert blocked["needs_confirm"] is True
+    assert blocked["doc"]["page_count"] == 1  # 还没关
+
+    snapshot = instance.close_document(True)
+    assert snapshot["ok"] is True
+    assert snapshot["doc"]["page_count"] == 0
+    assert snapshot["objects"] == []
 
 
 def test_save_refuses_read_only_file(editor, opened):

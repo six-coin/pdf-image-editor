@@ -57,6 +57,78 @@ function numberBox(value, min, max, step, onChange) {
   return input;
 }
 
+/**
+ * 拖动条设置：拖动时只更新右边的数字，松手才写盘；旁边带「重置」。
+ * ``dataKey`` 是快照里的字段名，写盘后用后端夹取过的值回填。
+ */
+function sliderField(labelKey, hintKey, dataKey, value, min, max, defaultValue, onCommit) {
+  const wrap = document.createElement('div');
+  wrap.className = 'field';
+
+  const label = document.createElement('label');
+  label.textContent = T(labelKey);
+
+  const row = document.createElement('div');
+  row.className = 'slider-control';
+
+  const range = document.createElement('input');
+  range.type = 'range';
+  range.min = String(min);
+  range.max = String(max);
+  range.step = '1';
+  range.setAttribute('aria-label', T(labelKey));
+
+  const output = document.createElement('span');
+  output.className = 'slider-value';
+
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'btn sm';
+  reset.textContent = T('settings.reset_value');
+
+  let current = Number(value);
+  const show = (next) => {
+    current = next;
+    range.value = String(next);
+    output.textContent = String(next);
+  };
+  show(current);
+
+  // 拖动中先让数字跟手，避免每移动一格都写一次 app.json。
+  range.addEventListener('input', () => {
+    output.textContent = range.value;
+  });
+
+  range.addEventListener('change', async () => {
+    const next = Number(range.value);
+    if (!Number.isFinite(next) || next === current) {
+      show(current);
+      return;
+    }
+    const snapshot = await onCommit(next);
+    const saved = snapshot ? Number(snapshot[dataKey]) : NaN;
+    show(Number.isFinite(saved) ? saved : current);
+  });
+
+  reset.addEventListener('click', async () => {
+    if (current === defaultValue) return;
+    const snapshot = await onCommit(defaultValue);
+    const saved = snapshot ? Number(snapshot[dataKey]) : NaN;
+    show(Number.isFinite(saved) ? saved : defaultValue);
+  });
+
+  row.append(range, output, reset);
+  wrap.append(label, row);
+
+  if (hintKey) {
+    const hint = document.createElement('p');
+    hint.className = 'about-hint';
+    hint.textContent = T(hintKey);
+    wrap.appendChild(hint);
+  }
+  return wrap;
+}
+
 function toggle(checked, onChange) {
   const label = document.createElement('label');
   label.className = 'switch';
@@ -576,9 +648,41 @@ export async function openSettings() {
     alignField.appendChild(alignHint);
     body.appendChild(alignField);
 
-    block('settings.text');
+    block('settings.image');
 
     const defaults = data.defaults || {};
+    const limits = data.limits || {};
+    const spanLimits = limits.table_min_span || [20, 340];
+    const trimLimits = limits.trim_threshold || [64, 255];
+
+    body.appendChild(
+      sliderField(
+        'settings.table_min_span',
+        'settings.table_min_span_hint',
+        'table_min_span',
+        data.table_min_span ?? defaults.table_min_span ?? 170,
+        spanLimits[0],
+        spanLimits[1],
+        defaults.table_min_span ?? 170,
+        (value) => writeSettings({ table_min_span: value })
+      )
+    );
+
+    body.appendChild(
+      sliderField(
+        'settings.trim_threshold',
+        'settings.trim_threshold_hint',
+        'trim_threshold',
+        data.trim_threshold ?? defaults.trim_threshold ?? 235,
+        trimLimits[0],
+        trimLimits[1],
+        defaults.trim_threshold ?? 235,
+        (value) => writeSettings({ trim_threshold: value })
+      )
+    );
+
+    block('settings.text');
+
     const textDefaultField = field(
       'settings.text_default',
       textBox(defaults.text_default ?? '', T('settings.text_default_placeholder'), (value) =>

@@ -22,6 +22,7 @@ const ACTIONS = {
   open: actions.openPdf,
   save: actions.saveDoc,
   'save-as': actions.saveAs,
+  'close-doc': actions.closeDoc,
   export: openExport,
   preprocess: actions.preprocessPdf,
   reload: actions.reloadDoc,
@@ -120,6 +121,44 @@ function bindClicks() {
   document.addEventListener('pages:rebuilt', () => observePages());
 }
 
+/* ---------- 文件菜单 ---------- */
+
+/** 「更多」下拉：点外面或按 Esc 收起；菜单项仍走统一的 data-act 分发。 */
+function bindFileMenu() {
+  const trigger = document.getElementById('fileMenuButton');
+  const menu = document.getElementById('fileMenu');
+  if (!trigger || !menu) return;
+
+  const setOpen = (open) => {
+    menu.hidden = !open;
+    trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  };
+
+  trigger.addEventListener('click', (event) => {
+    event.stopPropagation();
+    setOpen(menu.hidden);
+  });
+
+  menu.addEventListener('click', (event) => {
+    if (event.target.closest('[data-act]')) setOpen(false);
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!menu.hidden && !event.target.closest('.menu-wrap')) setOpen(false);
+  });
+
+  // Esc 只收菜单，不再往下触发「取消选择」。
+  document.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key !== 'Escape' || menu.hidden) return;
+      event.stopPropagation();
+      setOpen(false);
+    },
+    true
+  );
+}
+
 /* ---------- 首次启动 ---------- */
 
 async function runFirstRun() {
@@ -213,6 +252,7 @@ async function init() {
   bindGuides();
   bindShortcuts();
   bindClicks();
+  bindFileMenu();
 
   const strings = await call('get_strings');
   if (strings) setStrings(strings);

@@ -26,6 +26,8 @@
     "undo_limit": 100,
     "render_dpi_cap": 300,
     "preprocess_threshold": 235,
+    "table_min_span": 170,
+    "trim_threshold": 235,
     "show_guides": true,
     "show_inspector": true,
     "eight_handles": true,
@@ -69,6 +71,8 @@
 | `undo_limit` | 整数 | `100` | 10–500，越界夹取；非数字回退 100 |
 | `render_dpi_cap` | 整数 | `300` | 96–400，越界夹取；页面位图的渲染上限，调低省内存但放大后发虚 |
 | `preprocess_threshold` | 整数 | `235` | 0–255，越界夹取；黑白化时亮于该值的像素压成纯白 |
+| `table_min_span` | 整数 | `170` | 20–340，越界夹取；表格框线的最短长度（px），短于它的笔画不当作表格线 |
+| `trim_threshold` | 整数 | `235` | 64–255，越界夹取；裁白边的灰度阈值，灰度不低于它的像素算白。默认与 `preprocess_threshold` 一致（预处理会丢弃的那个值） |
 | `show_guides` | 布尔 | `true` | 画布上的页边距参考线 |
 | `show_inspector` | 布尔 | `true` | 右侧属性栏是否展开 |
 | `eight_handles` | 布尔 | `true` | 选中图片时显示八个手柄（四角 + 四边中点）；关掉只留四角 |

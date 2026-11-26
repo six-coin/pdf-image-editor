@@ -165,7 +165,7 @@ function setSaving(on) {
 }
 
 async function commitSave(path) {
-  if (state.view.busy) return;
+  if (state.view.busy) return null;
   // 正在编辑的文本框先落地：保存会重建 DOM，编辑框会跟着一起没。
   const { commitEdit } = await import('./text.js');
   await commitEdit();
@@ -176,14 +176,15 @@ async function commitSave(path) {
   } finally {
     setSaving(false);
   }
-  if (!result) return;
+  if (!result) return null;
   if (!result.ok) {
     toast(result.message || T('error.unexpected'), false);
-    return;
+    return null;
   }
   await refresh();
   await showWarnings(result);
   toast(T('save.done', { path: result.path }));
+  return result;
 }
 
 export async function saveDoc() {
@@ -228,6 +229,46 @@ export async function reloadDoc() {
     toast(result.message || T('error.unexpected'), false);
     return;
   }
+  apply(result);
+}
+
+/** 关闭当前 PDF，回到空状态。有未保存修改时先问一句。 */
+export async function closeDoc() {
+  const data = state.data;
+  if (!data || !data.doc.page_count || state.view.busy) return;
+
+  // 正在编辑的文本框先落地：否则刚敲的字还没进模型，脏标记看不出来，
+  // 关掉就真的没了。
+  const { commitEdit } = await import('./text.js');
+  await commitEdit();
+
+  let result = await call('close_document');
+  if (!result) return;
+
+  if (!result.ok && result.needs_confirm) {
+    const choice = await askUnsaved({
+      title: T('dialog.unsaved_title'),
+      text: T('dialog.unsaved_text'),
+      save: T('dialog.save'),
+      discard: T('dialog.discard'),
+      cancel: T('dialog.cancel'),
+    });
+    if (choice === 'cancel') return;
+    if (choice === 'save') {
+      const saved = await commitSave(null);
+      if (!saved) return;
+    }
+    result = await call('close_document', true);
+    if (!result) return;
+  }
+
+  if (!result.ok) {
+    toast(result.message || T('error.unexpected'), false);
+    return;
+  }
+
+  const { cancelSplit, isSplitActive } = await import('./split.js');
+  if (isSplitActive()) cancelSplit();
   apply(result);
 }
 

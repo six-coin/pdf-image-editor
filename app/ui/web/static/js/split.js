@@ -42,12 +42,15 @@ export function startSplit() {
     toast(T('split.need_one'), false);
     return;
   }
+  const chosen = ids.map((id) => state.data.objects.find((o) => o.id === id)).filter(Boolean);
+  // 文本框和荧光带没有「格子」可言，按 E 不该有任何反应（也不弹提示）。
+  if (chosen.some((obj) => obj.kind !== 'image')) return;
   if (ids.length > 1) {
     // 切分只作用于一张图：多选时后端拿到的 cuts 属于哪一张是说不清的。
     toast(T('split.need_single'), false);
     return;
   }
-  const obj = state.data.objects.find((o) => o.id === ids[0]);
+  const obj = chosen[0];
   if (!obj) return;
 
   split.active = true;

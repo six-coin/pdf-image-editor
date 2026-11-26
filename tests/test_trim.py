@@ -1,4 +1,4 @@
-"""裁白边：灰度 >= 0xF8 就算白，包围盒之外必须都过阈值。"""
+"""裁白边：灰度 >= 阈值（默认 235）就算白，包围盒之外必须都过阈值。"""
 
 from __future__ import annotations
 
@@ -56,20 +56,27 @@ def test_single_pixel_content_survives():
     assert box == (7, 8, 1, 1)
 
 
-def test_248_is_treated_as_white():
-    """0xF8 是阈值本身，包含在内。"""
-    result = trim.trim_white(_png_on(20, 20, (248, 248, 248), (5, 5, 10, 10)))
+def test_235_is_treated_as_white():
+    """默认阈值 235（预处理丢弃底灰的值）本身包含在内。"""
+    result = trim.trim_white(_png_on(20, 20, (235, 235, 235), (5, 5, 10, 10)))
     assert result is not None
     assert result[1] == (5, 5, 5, 5)
 
 
-def test_247_is_kept_as_content():
+def test_234_is_kept_as_content():
     """比阈值低一级就不再算白，整张图都是内容，没有可裁的边。"""
-    assert trim.trim_white(_png_on(20, 20, (247, 247, 247), (5, 5, 10, 10))) is None
+    assert trim.trim_white(_png_on(20, 20, (234, 234, 234), (5, 5, 10, 10))) is None
+
+
+def test_threshold_can_be_raised():
+    """阈值调高后，原本算内容的浅灰也变成白边。"""
+    data = _png_on(20, 20, (248, 248, 248), (5, 5, 10, 10))
+    assert trim.trim_white(data, 250) is None
+    assert trim.trim_white(data, 248) is not None
 
 
 def test_luminance_not_minimum_channel():
-    """(250,250,240) 的灰度约 248.9，虽然蓝通道低于 248，仍算白。"""
+    """(250,250,240) 的灰度约 248.9，虽然蓝通道低于阈值，仍算白。"""
     result = trim.trim_white(_png_on(20, 20, (250, 250, 240), (5, 5, 10, 10)))
     assert result is not None
     assert result[1] == (5, 5, 5, 5)

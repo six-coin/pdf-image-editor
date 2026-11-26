@@ -428,6 +428,12 @@ api.save_document(path?)
 
 单页失败不拖累其他页，只记一条警告，最后汇总成一份报告（见使用手册第 11 节）。
 
+顶栏把保存、另存为、关闭当前 PDF 收进「打开」右边的「更多」菜单；保存与另存为
+仍走 `save_document`，快捷键不变。关闭走 `close_document`：有未保存修改时先返回
+`needs_confirm`，前端问「保存 / 不保存 / 取消」；确认后 `generation += 1` 让在跑的
+任务作废，放掉文档句柄，把 `DocumentState` 换成空文档，界面回到「没有打开文件」。
+关闭只丢弃内存里的编辑，不写盘、不删文件。
+
 ### 6.10 保存后的基线重建
 
 保存完不能整份重建——那样界面会闪一下，撤销栈也会清空。所以先试「就地重定基线」：
@@ -477,7 +483,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 3. 游程连通域 + 逐列/逐行墨迹重心拟合中心线。线芯（≤100）与整条墨迹各量一次：
    浅灰线在芯掩膜里断断续续、相对厚度波动虚高，芯不合格就退到墨迹；厚度波动只统计
    参与拟合的列，贴着线的字不会把一条 2px 细线误判掉。
-4. 认线：长度至少 170px；贯穿 75% 图宽/高的线直接收，其余线只有两端都搭在
+4. 认线：长度至少 `table_min_span`（默认 170px，设置里可调 20–340）；贯穿 75% 图宽/高的线直接收，其余线只有两端都搭在
    「可靠线」（≥8% 且几何合格）上才收。收下的线再筛一遍：任一端必须落在另一条
    垂直线上（corner / 丁字口），只是从线中间穿过去不算接上，两端都悬空的孤立线丢弃。
    手写长横线因此不会被误检。
@@ -527,9 +533,10 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 
 选中图片按 `G` → `api.trim_images`。像素处理在 `core/trim.py`：
 
-1. 解码成 numpy，按 BT.601 灰度判断「够白」：`0.299R + 0.587G + 0.114B >= 248`
-   （#F8F8F8）。带 alpha 的样本在 PyMuPDF 里是预乘的，先补上
-   `255 × (1 − alpha)` 压到白底，再比阈值；不再要求三个通道都等于 255。
+1. 解码成 numpy，按 BT.601 灰度判断「够白」：`0.299R + 0.587G + 0.114B >= trim_threshold`
+   （默认 235，与预处理丢弃底灰的值一致；设置里可调 64–255）。带 alpha 的样本在
+   PyMuPDF 里是预乘的，先补上 `255 × (1 − alpha)` 压到白底，再比阈值；不再要求
+   三个通道都等于 255。
 2. 取所有非白像素的包围盒 `(x0, y0, x1, y1)`；包围盒之外的四条边必然都过阈值，
    而且已经不能再往里裁，切掉的面积最大。
 3. 按 `crop_pixmap` 裁出内容，再把对象矩形按像素比例缩到同一块：
@@ -573,7 +580,10 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
   "fonts": [{ "key": "msyh", "css": "Microsoft YaHei" }, …],
   "defaults": { "text_font": "msyh", "text_size_px": 14, "text_color": "blue",
                 "text_width_mm": 45, "text_line_height": 1.15, "text_default": "",
-                "highlight_height_px": 15, "highlight_color": "yellow" },
+                "highlight_height_px": 15, "highlight_color": "yellow",
+                "table_min_span": 170, "trim_threshold": 235 },
+  "table_min_span": 170, "trim_threshold": 235,
+  "limits": { "table_min_span": [20, 340], "trim_threshold": [64, 255] },
   "undo_limit": 100,
   "log_level": "INFO", "log_cleanup": true, "log_retention_days": 30,
   "backup_retention_days": 30
@@ -588,7 +598,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 | 类别 | 方法 |
 |---|---|
 | 读取 | `get_state` `get_strings` `poll_task` |
-| 文档 | `browse_pdf` `open_path` `reload_document` |
+| 文档 | `browse_pdf` `open_path` `reload_document` `close_document` |
 | 渲染 | `load_page`（另：`render_page` 供资源服务内部调用） |
 | 选择 | `select` |
 | 编辑 | `commit_transform` `delete_objects` `reorder_objects` `undo` `redo` |

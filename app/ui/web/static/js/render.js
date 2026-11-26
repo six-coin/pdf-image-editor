@@ -133,6 +133,9 @@ function applyChrome() {
       b.disabled = !hasDoc;
     }
   );
+  document.querySelectorAll('[data-act="close-doc"]').forEach((b) => {
+    b.disabled = !hasDoc;
+  });
   document.querySelectorAll('[data-act="undo"]').forEach((b) => {
     b.disabled = !state.data.history.can_undo;
   });
@@ -584,6 +587,13 @@ export function applyShortcutHints() {
     if (!kbd) return;
     const command = SPLIT_ACTIONS[button.dataset.act];
     const accel = command ? accelFor('split', command) : '';
+    kbd.textContent = accel || '';
+    kbd.hidden = !accel;
+  });
+
+  // 「更多」菜单里的快捷键提示：键位可改，每次快照重刷一遍。
+  document.querySelectorAll('#fileMenu [data-command]').forEach((kbd) => {
+    const accel = accelFor('global', kbd.dataset.command);
     kbd.textContent = accel || '';
     kbd.hidden = !accel;
   });

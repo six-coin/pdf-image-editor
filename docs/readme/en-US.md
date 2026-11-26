@@ -79,7 +79,7 @@ The window has five parts: the top bar, the tool rail on the left, the canvas, t
 
 | Area | Contents |
 |---|---|
-| Left | Open, Save, Save As; file name and the unsaved dot |
+| Left | Open, More (Save / Save As / Close current PDF); file name and the unsaved dot |
 | Middle | Undo / redo, zoom (`−` / percentage field / `+` / Fit Width / 100%) |
 | Right | Preprocess, Export Pages, Reload, theme toggle, Settings, show/hide inspector |
 
@@ -191,8 +191,8 @@ With two or more images selected, each keeps its own small outline and a group f
 
 Select one or more images and press `G` (or use **Trim white borders** in the inspector). The program walks in from all four sides until every removed strip is light enough; what remains is the bounding box of all darker pixels, so the removed area is as large as possible. The content stays at the same place on the page — only the rectangle and the pixels shrink. One `Ctrl+Z` undoes the whole operation.
 
-- Pixels are converted to BT.601 grayscale and **anything at or above #F8F8F8 (248) counts as white**; the three channels no longer have to be exactly 255. Transparent and semi-transparent pixels are composited over white first;
-- a 254 scanned background is trimmed, while 247 light grey is still content;
+- Pixels are converted to BT.601 grayscale and **anything at or above the threshold counts as white**; the default is 235, the same value preprocessing uses to discard background grey, and it can be adjusted in Settings from 64 (about 1/4 gray) to 255 (pure white). The three channels no longer have to be exactly 255. Transparent and semi-transparent pixels are composited over white first;
+- at the default, a 235 scanned background is trimmed while 234 light grey is still content; raising the threshold trims more aggressively, lowering it keeps more pale edges;
 - an all-light image, or one with no light border, is left untouched and the status bar says so;
 - a mixed selection containing text boxes or highlights is refused.
 
@@ -254,7 +254,7 @@ Only the pixel content is replaced; position and size stay as they were.
 
 Select a table image and click **Straighten table lines** in the inspector. The program finds the ruling lines, makes them exactly horizontal or vertical, and draws every line at a fixed 3 px.
 
-- **At least 170 px**: anything shorter is never treated as a table line, so small strokes in handwriting are left alone.
+- **At least 170 px (adjustable)**: anything shorter is never treated as a table line, so small strokes in handwriting are left alone. Settings → Image processing adjusts it between 20 and 340 px; smaller values pick up shorter cell dividers, larger values are more conservative.
 - **No isolated lines**: an endpoint must land on a perpendicular line (a corner or a T-junction). Merely crossing another line in the middle does not count; a line with both ends free is discarded.
 - **Long lines are accepted first**: borders spanning at least 75% of the image width/height seed the grid. Other segments are accepted only when **both ends land on an accepted line**, so long cell dividers are handled, while a long handwritten stroke that does not touch a line at both ends is ignored.
 - **Fixed 3 px width**: the original width is not measured; a 2 px outer border and a 4 px inner line both become 3 px.
@@ -274,7 +274,7 @@ One continuous drag is one entry; structural changes such as splitting and pasti
 
 ## 8. Splitting
 
-Select **one** image, press `E` or click "Split" in the inspector. With several images selected split mode refuses to start — a cut belongs to exactly one image, and the message says so.
+Select **one** image, press `E` or click "Split" in the inspector. With several images selected split mode refuses to start — a cut belongs to exactly one image, and the message says so. Text boxes and highlights have no cells, so pressing `E` with one of those selected does nothing at all.
 
 1. **Place cuts**: click inside the image for a horizontal cut; hold `Shift` and click for a vertical one. The dashed preview turns as soon as `Shift` goes down or comes back up — no need to move the mouse first. Any number of cuts is allowed, positioned where you click.
 2. **Read the cells**: the cell under the pointer is highlighted, which enables "Keep this cell / Extract this cell / Erase this cell" on the split bar.
@@ -387,6 +387,10 @@ While saving, the status bar at the bottom of the window (the same one every oth
 
 `Ctrl+Shift+S`, default name `<name>-edited.pdf`. After saving, the new file becomes the baseline and further edits apply to it.
 
+### Close current PDF
+
+**Close current PDF** in the **More** menu of the top bar releases the current file and returns to the empty state (only "Open PDF" in the middle). With unsaved changes it asks "Save / Don't save / Cancel" first: saving writes the file before closing, while Don't save discards only the in-memory edits and leaves the file on disk untouched. Closing does not quit the program.
+
 ### What saving does
 
 1. Remove the previous version of the text boxes and highlights this program drew;
@@ -467,7 +471,7 @@ When it finishes you are told where the file went and how many images were proce
 | `Ctrl+Shift+E` | Edit the current image externally |
 | `Ctrl+I` | Show / hide the inspector |
 | `Ctrl+,` | Settings |
-| `E` | Enter split mode |
+| `E` | Enter split mode (images only) |
 | `G` | Trim white borders on the selected images |
 | `Z` / `X` / `C` | Switch to Select / Text / Highlighter mode |
 | Arrow keys (`Shift` faster, `Ctrl` finer) | Nudge position |
@@ -490,7 +494,7 @@ Switching tools clears the selection; `Ctrl+A` and `Esc` only work in the Select
 
 **There is no Save and no Cancel**: every change is written to `app.json` in the data folder immediately, and closing the dialog undoes nothing. The red "Reset all" at the bottom-left restores settings, shortcuts, guides and snap lines together.
 
-Settings are grouped into blocks — General, Text boxes, Highlighter, Logs, Backups, Shortcuts, About — separated by a thin grey rule.
+Settings are grouped into blocks — General, Image processing, Text boxes, Highlighter, Logs, Backups, Shortcuts, About — separated by a thin grey rule.
 
 | Item | Range | Notes |
 |---|---|---|
@@ -502,6 +506,8 @@ Settings are grouped into blocks — General, Text boxes, Highlighter, Logs, Bac
 | Eight handles | On / Off | Off leaves only the four corner handles |
 | Margins | 0–300 mm | Left / top / right / bottom; each edge takes several values separated by commas, e.g. `10, 50`. Stored as a sorted, de-duplicated list and formatted back to `10, 50` |
 | Snap lines | 0–300 mm | Same four-edge, multi-value input. Defaults to the five guide positions plus 85 mm from the left; used for snapping while moving or resizing, hidden otherwise |
+| Shortest table line | 20–340 px | 170 by default; drag the slider, and **Reset** next to it returns to 170. Shorter lines are not treated as table borders |
+| Trim white threshold | 64–255 | 235 by default, matching the grey level preprocessing discards; drag the slider, and **Reset** next to it returns to 235. 64 is about 1/4 gray, 255 is pure white |
 | Default font | Six families | Font for new text boxes |
 | Default size | 6–200 px | 14 by default; integers only |
 | Default color | Blue / red / green / black | Color for new text boxes, blue by default |

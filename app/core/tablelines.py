@@ -31,8 +31,9 @@ _MAX_THICKNESS_SPREAD = 0.35
 _SEED_RATIO = 0.75
 _RELIABLE_RATIO = 0.08
 # 一条线至少要有这么长才算表格线。短于它的笔画一律不碰：手写批注里
-# 几十像素的横竖线太多，按「线」处理只会把字迹拉成栅栏。
-_MIN_LINE_SPAN = 170
+# 几十像素的横竖线太多，按「线」处理只会把字迹拉成栅栏。设置里可调
+# （20–340），默认值由 settings.TABLE_MIN_SPAN_DEFAULT 决定。
+DEFAULT_MIN_SPAN = 170
 # 端点落在另一条线（或它的端点）上就算接上了。扫描件线头常多出几像素。
 _CONNECT_TOL = 9.0
 
@@ -60,12 +61,14 @@ class TableLinesReport:
         }
 
 
-def straighten(data: bytes) -> tuple[bytes, TableLinesReport]:
+def straighten(data: bytes, min_span: int = DEFAULT_MIN_SPAN) -> tuple[bytes, TableLinesReport]:
     """把图片里的表格框线拉直，返回 ``(新图片字节, 报告)``。
 
+    ``min_span`` 是最短表格线长度（px）；短于它的笔画不会被当成线。
     识别不到足够的表格线时原样返回，``applied`` 为 ``False``；图片本身解不开
     会抛 ``ValueError``，由调用方转成界面提示。
     """
+    short_min = max(1, int(min_span))
     array, width, height = _load_rgb(data)
     gray = array.astype(np.float32).mean(axis=2)
     threshold = _otsu(gray)
@@ -83,7 +86,7 @@ def straighten(data: bytes) -> tuple[bytes, TableLinesReport]:
 
     hcands = _candidates(ink, core, horizontal_mask, "h", width, height)
     vcands = _candidates(ink, core, vertical_mask, "v", width, height)
-    accepted_h, accepted_v = _accept(hcands, vcands, width, height)
+    accepted_h, accepted_v = _accept(hcands, vcands, width, height, short_min)
     if len(accepted_h) + len(accepted_v) < 3:
         return data, TableLinesReport(reason="no_lines")
 
@@ -391,6 +394,7 @@ def _accept(
     vcands: list[dict[str, Any]],
     width: int,
     height: int,
+    short_min: int,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """认线：长线直接收，短线必须两端都搭在「可靠线」上。
 
@@ -400,7 +404,6 @@ def _accept(
     收下的线还要再筛一遍：两端都不与任何垂直线形成 corner / 丁字口的，
     属于孤立笔画（只是从别的线上横穿而过不算接上），一律不要。
     """
-    short_min = _MIN_LINE_SPAN
     reliable_h = [
         c for c in hcands if _good(c) and c["span"] >= max(short_min, _RELIABLE_RATIO * width)
     ]

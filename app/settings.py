@@ -41,12 +41,24 @@ FONT_KEYS = ("msyh", "simsun", "simfang", "simkai", "simhei", "times")
 TEXT_COLOR_KEYS = ("blue", "red", "green", "black")
 HIGHLIGHT_COLOR_KEYS = ("yellow",)
 
+# 预处理会把灰度 >= 235 的像素直接压成纯白；裁白边默认用同一个值，
+# 这样「预处理已经丢掉」的底灰，裁白边也会当成白边切掉。
+PREPROCESS_THRESHOLD_DEFAULT = 235
+# 表格框线最短长度（px）。默认 170，设置里可在 20–340（默认值的两倍）之间调。
+TABLE_MIN_SPAN_DEFAULT = 170
+TABLE_MIN_SPAN_RANGE = (20, TABLE_MIN_SPAN_DEFAULT * 2)
+# 裁白边灰度阈值：>= 这个值算白。64 约等于 1/4 灰，255 是纯白。
+TRIM_THRESHOLD_DEFAULT = PREPROCESS_THRESHOLD_DEFAULT
+TRIM_THRESHOLD_RANGE = (64, 255)
+
 DEFAULT_APP: dict[str, Any] = {
     "language": "zh-CN",
     "theme": "light",
     "undo_limit": 100,
     "render_dpi_cap": 300,
-    "preprocess_threshold": 235,
+    "preprocess_threshold": PREPROCESS_THRESHOLD_DEFAULT,
+    "table_min_span": TABLE_MIN_SPAN_DEFAULT,
+    "trim_threshold": TRIM_THRESHOLD_DEFAULT,
     "show_guides": True,
     "show_inspector": True,
     # 图片选中时显示八个手柄（四角 + 四边中点）；关掉只留四角。
@@ -201,6 +213,18 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     )
     merged["preprocess_threshold"] = _integer(
         raw.get("preprocess_threshold"), DEFAULT_APP["preprocess_threshold"], 0, 255
+    )
+    merged["table_min_span"] = _integer(
+        raw.get("table_min_span"),
+        DEFAULT_APP["table_min_span"],
+        TABLE_MIN_SPAN_RANGE[0],
+        TABLE_MIN_SPAN_RANGE[1],
+    )
+    merged["trim_threshold"] = _integer(
+        raw.get("trim_threshold"),
+        DEFAULT_APP["trim_threshold"],
+        TRIM_THRESHOLD_RANGE[0],
+        TRIM_THRESHOLD_RANGE[1],
     )
     merged["show_guides"] = _boolean(raw.get("show_guides"), DEFAULT_APP["show_guides"])
     merged["show_inspector"] = _boolean(raw.get("show_inspector"), DEFAULT_APP["show_inspector"])

@@ -233,6 +233,36 @@ def test_text_and_highlight_defaults(temp_config):
     assert config["text_default"] == ""
 
 
+def test_image_processing_defaults(temp_config):
+    """裁白边默认用预处理丢弃底灰的那个阈值；两个核心默认值必须对得上。"""
+    from app.core import tablelines, trim
+
+    config = settings.load_app()
+    assert config["trim_threshold"] == 235
+    assert config["trim_threshold"] == config["preprocess_threshold"]
+    assert config["table_min_span"] == 170
+    assert trim.DEFAULT_THRESHOLD == config["trim_threshold"]
+    assert tablelines.DEFAULT_MIN_SPAN == config["table_min_span"]
+    assert settings.TABLE_MIN_SPAN_RANGE == (20, 340)
+    assert settings.TRIM_THRESHOLD_RANGE == (64, 255)
+
+
+def test_image_processing_values_are_clamped(temp_config):
+    (temp_config / "app.json").write_text(
+        json.dumps({"table_min_span": 5, "trim_threshold": 300}), encoding="utf-8"
+    )
+    config = settings.load_app()
+    assert config["table_min_span"] == 20
+    assert config["trim_threshold"] == 255
+
+    (temp_config / "app.json").write_text(
+        json.dumps({"table_min_span": 999, "trim_threshold": 0}), encoding="utf-8"
+    )
+    config = settings.load_app()
+    assert config["table_min_span"] == 340
+    assert config["trim_threshold"] == 64
+
+
 def test_text_black_and_yellow_only_highlighter():
     from app.core import palette
 

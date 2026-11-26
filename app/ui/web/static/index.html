@@ -31,8 +31,27 @@
 
   <header class="topbar" role="toolbar" data-i18n-aria="app.title">
     <button class="btn" data-act="open" data-i18n="toolbar.open">打开</button>
-    <button class="btn ghost" data-act="save" data-i18n="toolbar.save" disabled>保存</button>
-    <button class="btn ghost" data-act="save-as" data-i18n="toolbar.save_as" disabled>另存为</button>
+    <div class="menu-wrap">
+      <button class="btn ghost" id="fileMenuButton" type="button" aria-haspopup="menu"
+              aria-expanded="false" data-i18n-aria="toolbar.more" aria-label="More">
+        <span data-i18n="toolbar.more">更多</span>
+        <svg class="menu-caret" viewBox="0 0 12 12" aria-hidden="true">
+          <path d="M3 4.5 6 7.5l3-3"></path>
+        </svg>
+      </button>
+      <div class="menu" id="fileMenu" role="menu" hidden>
+        <button class="menu-item" type="button" role="menuitem" data-act="save" disabled>
+          <span data-i18n="toolbar.save">保存</span><kbd data-command="save" hidden></kbd>
+        </button>
+        <button class="menu-item" type="button" role="menuitem" data-act="save-as" disabled>
+          <span data-i18n="toolbar.save_as">另存为</span><kbd data-command="save_as" hidden></kbd>
+        </button>
+        <div class="menu-sep" role="separator"></div>
+        <button class="menu-item" type="button" role="menuitem" data-act="close-doc" disabled>
+          <span data-i18n="toolbar.close">关闭当前 PDF</span>
+        </button>
+      </div>
+    </div>
 
     <div class="doc-name" id="docName" hidden>
       <span id="docTitle"></span>

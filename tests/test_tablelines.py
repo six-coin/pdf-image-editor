@@ -163,6 +163,23 @@ def test_short_line_is_not_straightened():
     assert np.array_equal(before, after)
 
 
+def test_custom_min_span_accepts_a_shorter_divider():
+    """最短线长可调：161px 的隔板两端都接在竖线上，默认不收，调到 120 就收。"""
+    image = _canvas(800, 600)
+    for y in (100, 400):
+        _draw_h(image, y, 100, 500, wobble=0.0)
+    for x in (100, 260, 500):
+        _draw_v(image, x, 100, 400, wobble=0.0)
+    _draw_h(image, 250, 100, 260, wobble=0.0)  # 161px，两端都落在竖线上
+
+    _, default_report = tablelines.straighten(_encode(image))
+    assert default_report.horizontal == 2
+
+    _, report = tablelines.straighten(_encode(image), min_span=120)
+    assert report.applied is True
+    assert report.horizontal == 3
+
+
 def test_isolated_lines_are_not_converted():
     """三条平行横线彼此不相接，全部按孤立线拒绝，不做任何转换。"""
     image = _canvas(640, 300)
