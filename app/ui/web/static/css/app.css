@@ -81,6 +81,35 @@
   border-radius: var(--radius);
   background: var(--panel);
   box-shadow: 0 12px 28px var(--shadow);
+  /* 用 opacity + transform 做弹出动效；关闭后 visibility 再收起来，
+     这样过渡能完整播完，也不会留下能点到的透明层。 */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-5px) scale(0.98);
+  transform-origin: top left;
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s var(--ease),
+    visibility 0s linear 0.14s;
+}
+
+.menu.open {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: none;
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s var(--ease),
+    visibility 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu,
+  .menu.open {
+    transition: none;
+  }
 }
 
 .menu-item {

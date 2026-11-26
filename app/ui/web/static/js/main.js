@@ -131,13 +131,14 @@ function bindFileMenu() {
   if (!trigger || !menu) return;
 
   const setOpen = (open) => {
-    menu.hidden = !open;
+    menu.classList.toggle('open', open);
     trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
   };
+  const isOpen = () => menu.classList.contains('open');
 
   trigger.addEventListener('click', (event) => {
     event.stopPropagation();
-    setOpen(menu.hidden);
+    setOpen(!isOpen());
   });
 
   menu.addEventListener('click', (event) => {
@@ -145,14 +146,14 @@ function bindFileMenu() {
   });
 
   document.addEventListener('click', (event) => {
-    if (!menu.hidden && !event.target.closest('.menu-wrap')) setOpen(false);
+    if (isOpen() && !event.target.closest('.menu-wrap')) setOpen(false);
   });
 
   // Esc 只收菜单，不再往下触发「取消选择」。
   document.addEventListener(
     'keydown',
     (event) => {
-      if (event.key !== 'Escape' || menu.hidden) return;
+      if (event.key !== 'Escape' || !isOpen()) return;
       event.stopPropagation();
       setOpen(false);
     },
@@ -168,12 +169,33 @@ function bindQuickRanges() {
   const trim = document.getElementById('quickTrim');
   if (!span || !trim) return;
 
+  // 拖动条是 <input>：聚焦时快捷键会让路。画布和对象上的 pointerdown 会
+  // preventDefault（拖拽手势需要），浏览器不会自动把焦点移走，于是调完滑块
+  // 再点画布，焦点还停在滑块上，快捷键就一直不响应。这里在捕获阶段补一次：
+  // 点到别处就把滑块焦点收掉。
+  document.addEventListener(
+    'pointerdown',
+    (event) => {
+      const active = document.activeElement;
+      if (!active || active === event.target) return;
+      if (active.tagName !== 'INPUT' || active.type !== 'range') return;
+      active.blur();
+    },
+    true
+  );
+
   const bind = (range, key, outputId, format) => {
     const output = document.getElementById(outputId);
     range.addEventListener('input', () => {
       paintRange(range);
       if (output) output.textContent = format(range.value);
     });
+    // 鼠标拖完就把焦点交出去：画布上的 pointerdown 会 preventDefault，
+    // 不主动 blur 的话焦点会一直留在滑块上，快捷键全部失效。
+    // 放到下一帧再 blur，让浏览器先把 change 派发完。
+    const release = () => window.setTimeout(() => range.blur(), 0);
+    range.addEventListener('pointerup', release);
+    range.addEventListener('pointercancel', release);
     range.addEventListener('change', async () => {
       const value = Number(range.value);
       if (!Number.isFinite(value)) return;
