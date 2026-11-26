@@ -191,6 +191,8 @@ With two or more images selected, each keeps its own small outline and a group f
 
 Select one or more images and press `G` (or use **Trim white borders** in the inspector). The program walks in from all four sides until every removed strip is light enough; what remains is the bounding box of all darker pixels, so the removed area is as large as possible. The content stays at the same place on the page — only the rectangle and the pixels shrink. One `Ctrl+Z` undoes the whole operation.
 
+The inspector footer, above the page jump, also has a **White threshold** slider — the same value as the one in Settings; the next `G` uses it.
+
 - Pixels are converted to BT.601 grayscale and **anything at or above the threshold counts as white**; the default is 235, the same value preprocessing uses to discard background grey, and it can be adjusted in Settings from 64 (about 1/4 gray) to 255 (pure white). The three channels no longer have to be exactly 255. Transparent and semi-transparent pixels are composited over white first;
 - at the default, a 235 scanned background is trimmed while 234 light grey is still content; raising the threshold trims more aggressively, lowering it keeps more pale edges;
 - an all-light image, or one with no light border, is left untouched and the status bar says so;
@@ -254,7 +256,7 @@ Only the pixel content is replaced; position and size stay as they were.
 
 Select a table image and click **Straighten table lines** in the inspector. The program finds the ruling lines, makes them exactly horizontal or vertical, and draws every line at a fixed 3 px.
 
-- **At least 170 px (adjustable)**: anything shorter is never treated as a table line, so small strokes in handwriting are left alone. Settings → Image processing adjusts it between 20 and 340 px; smaller values pick up shorter cell dividers, larger values are more conservative.
+- **At least 170 px (adjustable)**: anything shorter is never treated as a table line, so small strokes in handwriting are left alone. Settings → Image processing adjusts it between 20 and 340 px, and the inspector footer (above the page jump) has the same slider; smaller values pick up shorter cell dividers, larger values are more conservative.
 - **No isolated lines**: an endpoint must land on a perpendicular line (a corner or a T-junction). Merely crossing another line in the middle does not count; a line with both ends free is discarded.
 - **Long lines are accepted first**: borders spanning at least 75% of the image width/height seed the grid. Other segments are accepted only when **both ends land on an accepted line**, so long cell dividers are handled, while a long handwritten stroke that does not touch a line at both ends is ignored.
 - **Fixed 3 px width**: the original width is not measured; a 2 px outer border and a 4 px inner line both become 3 px.
@@ -506,8 +508,8 @@ Settings are grouped into blocks — General, Image processing, Text boxes, High
 | Eight handles | On / Off | Off leaves only the four corner handles |
 | Margins | 0–300 mm | Left / top / right / bottom; each edge takes several values separated by commas, e.g. `10, 50`. Stored as a sorted, de-duplicated list and formatted back to `10, 50` |
 | Snap lines | 0–300 mm | Same four-edge, multi-value input. Defaults to the five guide positions plus 85 mm from the left; used for snapping while moving or resizing, hidden otherwise |
-| Shortest table line | 20–340 px | 170 by default; drag the slider, and **Reset** next to it returns to 170. Shorter lines are not treated as table borders |
-| Trim white threshold | 64–255 | 235 by default, matching the grey level preprocessing discards; drag the slider, and **Reset** next to it returns to 235. 64 is about 1/4 gray, 255 is pure white |
+| Shortest table line | 20–340 px | 170 by default; drag the slider, and **Reset** next to it returns to 170. Shorter lines are not treated as table borders. The inspector footer has the same slider |
+| Trim white threshold | 64–255 | 235 by default, matching the grey level preprocessing discards; drag the slider, and **Reset** next to it returns to 235. 64 is about 1/4 gray, 255 is pure white. The inspector footer has the same slider |
 | Default font | Six families | Font for new text boxes |
 | Default size | 6–200 px | 14 by default; integers only |
 | Default color | Blue / red / green / black | Color for new text boxes, blue by default |

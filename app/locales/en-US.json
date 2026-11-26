@@ -241,6 +241,8 @@
   "color.yellow": "Yellow",
   "inspector.highlight": "Highlight",
   "settings.image": "Image processing",
+  "sidebar.table_min_span": "Table line",
+  "sidebar.trim_threshold": "White threshold",
   "settings.table_min_span": "Shortest table line (px)",
   "settings.table_min_span_hint": "Lines shorter than this are not treated as table borders. Range 20–340 px, default 170.",
   "settings.trim_threshold": "Trim white threshold",

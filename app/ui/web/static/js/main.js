@@ -11,6 +11,7 @@ import { bindInteract } from './interact.js';
 import { renderMarkdown } from './markdown.js';
 import { askUnsaved, isOpen, openModal } from './modal.js';
 import { bindModes, onModeChange, setMode } from './modes.js';
+import { paintRange } from './range.js';
 import { apply, applyStrings, applyTheme } from './render.js';
 import { state } from './state.js';
 import { openSettings } from './settings.js';
@@ -159,6 +160,34 @@ function bindFileMenu() {
   );
 }
 
+/* ---------- 属性栏拖动条 ---------- */
+
+/** 属性栏底部的两条常用拖动条：松手才写盘，写盘后按后端夹取的值回填。 */
+function bindQuickRanges() {
+  const span = document.getElementById('quickSpan');
+  const trim = document.getElementById('quickTrim');
+  if (!span || !trim) return;
+
+  const bind = (range, key, outputId, format) => {
+    const output = document.getElementById(outputId);
+    range.addEventListener('input', () => {
+      paintRange(range);
+      if (output) output.textContent = format(range.value);
+    });
+    range.addEventListener('change', async () => {
+      const value = Number(range.value);
+      if (!Number.isFinite(value)) return;
+      const snapshot = await call('update_settings', { [key]: value });
+      if (!snapshot) return;
+      if (snapshot.ok === false && snapshot.message) toast(snapshot.message, false);
+      apply(snapshot);
+    });
+  };
+
+  bind(span, 'table_min_span', 'quickSpanValue', (value) => `${value} px`);
+  bind(trim, 'trim_threshold', 'quickTrimValue', (value) => String(value));
+}
+
 /* ---------- 首次启动 ---------- */
 
 async function runFirstRun() {
@@ -253,6 +282,7 @@ async function init() {
   bindShortcuts();
   bindClicks();
   bindFileMenu();
+  bindQuickRanges();
 
   const strings = await call('get_strings');
   if (strings) setStrings(strings);

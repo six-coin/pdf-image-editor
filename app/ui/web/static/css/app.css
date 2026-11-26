@@ -552,6 +552,47 @@ body.saving {
   font-size: 12px;
 }
 
+/* 属性栏底部的两条常用拖动条，放在页码跳转器上方。 */
+.quick-ranges {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.quick-range {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.quick-range-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--text-soft);
+  font-size: 11.5px;
+}
+
+.quick-range-value {
+  color: var(--muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.quick-range .range {
+  height: 14px;
+}
+
+.quick-range .range::-webkit-slider-thumb {
+  width: 11px;
+  height: 11px;
+  margin-top: -3.5px;
+}
+
 .page-jump {
   display: flex;
   gap: 6px;
@@ -711,20 +752,69 @@ body.saving {
   font-size: 13px;
 }
 
-/* 拖动条 + 右侧数值 + 重置。滑块本身用浏览器原生控件，只统一配色。 */
+/* 拖动条 + 右侧数值 + 重置。轨道用 --fill 画已填充的一段，
+   样式对齐 music-player 的滑块：4px 圆角轨道 + 12px 圆形拇指。 */
 .slider-control {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.slider-control input[type="range"] {
+.slider-control .range {
   flex: 1 1 auto;
   min-width: 0;
-  height: 32px;
+}
+
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 16px;
   margin: 0;
-  accent-color: var(--blue);
+  background: transparent;
   cursor: pointer;
+}
+
+.range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--blue) 0,
+    var(--blue) var(--fill, 0%),
+    var(--surface-muted) var(--fill, 0%),
+    var(--surface-muted) 100%
+  );
+}
+
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--blue);
+  transition: transform 0.12s var(--ease);
+}
+
+.range:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+}
+
+.range:active::-webkit-slider-thumb {
+  transform: scale(1.25);
+}
+
+.range:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 4px;
+  border-radius: 999px;
+}
+
+.range:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .slider-value {

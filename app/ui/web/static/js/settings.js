@@ -7,6 +7,7 @@ import { segmented, selectBox } from './controls.js';
 import { COMMANDS, accelOf, bindings, findConflicts } from './keymap.js';
 import { renderMarkdown } from './markdown.js';
 import { openModal } from './modal.js';
+import { paintRange } from './range.js';
 import { apply, applyStrings, refreshTexts } from './render.js';
 import { refreshSplitBar } from './split.js';
 import { state } from './state.js';
@@ -73,6 +74,7 @@ function sliderField(labelKey, hintKey, dataKey, value, min, max, defaultValue, 
 
   const range = document.createElement('input');
   range.type = 'range';
+  range.className = 'range';
   range.min = String(min);
   range.max = String(max);
   range.step = '1';
@@ -91,12 +93,14 @@ function sliderField(labelKey, hintKey, dataKey, value, min, max, defaultValue, 
     current = next;
     range.value = String(next);
     output.textContent = String(next);
+    paintRange(range);
   };
   show(current);
 
-  // 拖动中先让数字跟手，避免每移动一格都写一次 app.json。
+  // 拖动中先让数字和轨道跟手，避免每移动一格都写一次 app.json。
   range.addEventListener('input', () => {
     output.textContent = range.value;
+    paintRange(range);
   });
 
   range.addEventListener('change', async () => {

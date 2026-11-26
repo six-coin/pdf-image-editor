@@ -4,6 +4,7 @@
 import { T } from './bridge.js';
 import { bandNode } from './highlight.js';
 import { accelFor, setBindings } from './keymap.js';
+import { paintRange } from './range.js';
 import { objectsOf, pxPerPt, state } from './state.js';
 import { textNode, updateTextMetrics } from './text.js';
 
@@ -163,6 +164,36 @@ function applyChrome() {
 
   renderZoom();
   renderPageIndicator(lastPageIndex);
+  syncQuickRanges();
+}
+
+/** 属性栏底部的两条常用拖动条：值、范围和填充比例都跟快照走。 */
+function syncQuickRanges() {
+  if (!state.data) return;
+  const span = $('quickSpan');
+  const trim = $('quickTrim');
+  if (!span || !trim) return;
+
+  const limits = state.data.limits || {};
+  const defaults = state.data.defaults || {};
+  const spanLimits = limits.table_min_span || [20, 340];
+  const trimLimits = limits.trim_threshold || [64, 255];
+  const spanValue = Number(state.data.table_min_span ?? defaults.table_min_span ?? 170);
+  const trimValue = Number(state.data.trim_threshold ?? defaults.trim_threshold ?? 235);
+
+  span.min = String(spanLimits[0]);
+  span.max = String(spanLimits[1]);
+  trim.min = String(trimLimits[0]);
+  trim.max = String(trimLimits[1]);
+  span.value = String(spanValue);
+  trim.value = String(trimValue);
+  paintRange(span);
+  paintRange(trim);
+
+  const spanOutput = $('quickSpanValue');
+  const trimOutput = $('quickTrimValue');
+  if (spanOutput) spanOutput.textContent = `${spanValue} px`;
+  if (trimOutput) trimOutput.textContent = String(trimValue);
 }
 
 /** 底部页码浮标 + 属性栏底部的页码。视口滚动时由 canvas.js 调用。 */

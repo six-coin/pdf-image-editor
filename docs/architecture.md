@@ -655,7 +655,7 @@ closing（UI 线程） → 有未保存修改就 request_close_prompt()（丢进
 
 ### 8.1 模块划分
 
-零构建，原生 ES module，22 个文件各管一件事：
+零构建，原生 ES module，23 个文件各管一件事：
 
 | 文件 | 职责 |
 |---|---|
@@ -663,7 +663,7 @@ closing（UI 线程） → 有未保存修改就 request_close_prompt()（丢进
 | `bridge.js` | 桥接封装：`call()`、`T()`、状态栏 `toast()` |
 | `state.js` | 纯视图状态（缩放、DPI、主题、手势中） |
 | `sync.js` | **唯一**的快照通道，合并短时间内的多次刷新 |
-| `render.js` | 快照 → DOM，含属性栏、多选组框与语言替换；按 `kind` 分派到图片 / 文本框 / 荧光带 |
+| `render.js` | 快照 → DOM，含属性栏、底部常用拖动条、多选组框与语言替换；按 `kind` 分派到图片 / 文本框 / 荧光带 |
 | `canvas.js` | 页面可见性、位图加载、缩放与滚动 |
 | `interact.js` | 指针手势：选中、拖动（含吸附）、八手柄缩放（含吸附）、组缩放、框选、平移 |
 | `split.js` | 分割模式：切线、格子高亮、执行 |
@@ -674,6 +674,7 @@ closing（UI 线程） → 有未保存修改就 request_close_prompt()（丢进
 | `guides.js` | 参考线绘制（每边多条）、移动/缩放吸附计算、吸附时的绿色提示线 |
 | `drop.js` | 拖文件进窗口：遮罩提示、挡住 WebView2 的默认导航 |
 | `controls.js` | 通用表单控件（分段选择器），设置页与首次运行共用 |
+| `range.js` | 拖动条的填充比例（`--fill`），设置页与属性栏共用 |
 | `settings.js` | 设置弹窗 |
 | `modal.js` | 通用弹窗与确认框 |
 | `markdown.js` | 使用说明的 Markdown 渲染 |
