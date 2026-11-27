@@ -246,7 +246,7 @@
   "settings.table_min_span": "Shortest table line (px)",
   "settings.table_min_span_hint": "Lines shorter than this are not treated as table borders. Range 20–340 px, default 170.",
   "settings.trim_threshold": "Trim white threshold",
-  "settings.trim_threshold_hint": "Pixels at or above this gray level count as white. 64 is about 1/4 gray, 255 is pure white; the default 235 matches the level preprocessing discards.",
+  "settings.trim_threshold_hint": "Pixels at or above this gray level count as white. 64 is about 1/4 gray, 255 is pure white; the default 227 matches the level preprocessing discards.",
   "settings.reset_value": "Reset",
   "settings.text_font": "Default font",
   "settings.text_default": "Default text for new text boxes",

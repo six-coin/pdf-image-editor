@@ -246,7 +246,7 @@
   "settings.table_min_span": "表格线最短长度（px）",
   "settings.table_min_span_hint": "短于这个长度的线不当作表格线。范围 20–340 px，默认 170。",
   "settings.trim_threshold": "裁白边灰度阈值",
-  "settings.trim_threshold_hint": "灰度不低于这个值的像素算白。64 约等于 1/4 灰，255 是纯白；默认 235，与预处理丢弃底灰的值一致。",
+  "settings.trim_threshold_hint": "灰度不低于这个值的像素算白。64 约等于 1/4 灰，255 是纯白；默认 227，与预处理丢弃底灰的值一致。",
   "settings.reset_value": "重置",
   "settings.text_font": "默认字体",
   "settings.text_default": "新建文本框的默认文本",

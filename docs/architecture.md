@@ -534,7 +534,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 选中图片按 `G` → `api.trim_images`。像素处理在 `core/trim.py`：
 
 1. 解码成 numpy，按 BT.601 灰度判断「够白」：`0.299R + 0.587G + 0.114B >= trim_threshold`
-   （默认 235，与预处理丢弃底灰的值一致；设置里可调 64–255）。带 alpha 的样本在
+   （默认 227，与预处理丢弃底灰的值一致；设置里可调 64–255）。带 alpha 的样本在
    PyMuPDF 里是预乘的，先补上 `255 × (1 − alpha)` 压到白底，再比阈值；不再要求
    三个通道都等于 255。
 2. 取所有非白像素的包围盒 `(x0, y0, x1, y1)`；包围盒之外的四条边必然都过阈值，
@@ -581,8 +581,8 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
   "defaults": { "text_font": "msyh", "text_size_px": 14, "text_color": "blue",
                 "text_width_mm": 45, "text_line_height": 1.15, "text_default": "",
                 "highlight_height_px": 15, "highlight_color": "yellow",
-                "table_min_span": 170, "trim_threshold": 235 },
-  "table_min_span": 170, "trim_threshold": 235,
+                "table_min_span": 170, "trim_threshold": 227 },
+  "table_min_span": 170, "trim_threshold": 227,
   "limits": { "table_min_span": [20, 340], "trim_threshold": [64, 255] },
   "undo_limit": 100,
   "log_level": "INFO", "log_cleanup": true, "log_retention_days": 30,

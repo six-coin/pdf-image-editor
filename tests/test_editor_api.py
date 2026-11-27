@@ -51,9 +51,9 @@ def test_snapshot_exposes_image_processing_settings(editor):
     instance, _server = editor
     data = instance.get_state()
     assert data["table_min_span"] == 170
-    assert data["trim_threshold"] == 235
+    assert data["trim_threshold"] == 227
     assert data["defaults"]["table_min_span"] == 170
-    assert data["defaults"]["trim_threshold"] == 235
+    assert data["defaults"]["trim_threshold"] == 227
     assert data["limits"]["table_min_span"] == [20, 340]
     assert data["limits"]["trim_threshold"] == [64, 255]
 

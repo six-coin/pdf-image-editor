@@ -46,7 +46,7 @@ def _to_gray(pix: pymupdf.Pixmap) -> pymupdf.Pixmap | None:
 def process(
     src: Path,
     dst: Path,
-    threshold: int = 235,
+    threshold: int = 227,
     progress: Progress | None = None,
 ) -> int:
     """逐页处理图片并另存。返回处理的图片张数。"""

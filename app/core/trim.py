@@ -1,7 +1,7 @@
 """裁掉图片四周接近纯白的边。
 
 判定用 BT.601 灰度：``0.299R + 0.587G + 0.114B >= 阈值`` 就算白。默认阈值
-235，与预处理丢弃底灰的值一致（预处理会把 >= 235 的像素压成纯白）；设置里
+227，与预处理丢弃底灰的值一致（预处理会把 >= 227 的像素压成纯白）；设置里
 可以在 64（约 1/4 灰）到 255（纯白）之间调。带 alpha 的像素先压在白底上再算
 灰度——透明区域压在纸上就是白的。
 
@@ -18,7 +18,7 @@ from app.core.split import crop_pixmap
 
 # 默认阈值与 settings.DEFAULT_APP["trim_threshold"] 一致；settings 是基础层，
 # 不能反过来 import core，所以这里再写一遍，由 tests/test_settings.py 守。
-DEFAULT_THRESHOLD = 235.0
+DEFAULT_THRESHOLD = 227.0
 _GRAY_WEIGHTS = np.array([0.299, 0.587, 0.114], dtype=np.float32)
 
 

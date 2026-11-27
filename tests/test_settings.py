@@ -238,7 +238,7 @@ def test_image_processing_defaults(temp_config):
     from app.core import tablelines, trim
 
     config = settings.load_app()
-    assert config["trim_threshold"] == 235
+    assert config["trim_threshold"] == 227
     assert config["trim_threshold"] == config["preprocess_threshold"]
     assert config["table_min_span"] == 170
     assert trim.DEFAULT_THRESHOLD == config["trim_threshold"]
@@ -287,14 +287,46 @@ def test_legacy_text_width_migrates_to_45(temp_config):
     (temp_config / "app.json").write_text(json.dumps({"text_width_mm": 40.0}), encoding="utf-8")
     config = settings.load_app()
     assert config["text_width_mm"] == pytest.approx(45.0)
-    assert config["settings_version"] == 2
+    assert config["settings_version"] == 3
 
 
 def test_custom_text_width_survives_the_migration(temp_config):
     (temp_config / "app.json").write_text(json.dumps({"text_width_mm": 55.0}), encoding="utf-8")
     config = settings.load_app()
     assert config["text_width_mm"] == pytest.approx(55.0)
-    assert config["settings_version"] == 2
+    assert config["settings_version"] == 3
+
+
+def test_old_default_thresholds_migrate_to_227(temp_config):
+    """版本 2 的 235 是旧默认值，读到时迁到 227；用户调过的值不动。"""
+    (temp_config / "app.json").write_text(
+        json.dumps(
+            {
+                "settings_version": 2,
+                "preprocess_threshold": 235,
+                "trim_threshold": 235,
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = settings.load_app()
+    assert config["preprocess_threshold"] == 227
+    assert config["trim_threshold"] == 227
+    assert config["settings_version"] == 3
+
+    (temp_config / "app.json").write_text(
+        json.dumps(
+            {
+                "settings_version": 2,
+                "preprocess_threshold": 240,
+                "trim_threshold": 250,
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = settings.load_app()
+    assert config["preprocess_threshold"] == 240
+    assert config["trim_threshold"] == 250
 
 
 def test_bad_text_defaults_are_clamped(temp_config):

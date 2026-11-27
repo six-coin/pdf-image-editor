@@ -677,10 +677,10 @@ export async function openSettings() {
         'settings.trim_threshold',
         'settings.trim_threshold_hint',
         'trim_threshold',
-        data.trim_threshold ?? defaults.trim_threshold ?? 235,
+        data.trim_threshold ?? defaults.trim_threshold ?? 227,
         trimLimits[0],
         trimLimits[1],
-        defaults.trim_threshold ?? 235,
+        defaults.trim_threshold ?? 227,
         (value) => writeSettings({ trim_threshold: value })
       )
     );

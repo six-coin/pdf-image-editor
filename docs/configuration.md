@@ -25,9 +25,9 @@
     "theme": "light",
     "undo_limit": 100,
     "render_dpi_cap": 300,
-    "preprocess_threshold": 235,
+    "preprocess_threshold": 227,
     "table_min_span": 170,
-    "trim_threshold": 235,
+    "trim_threshold": 227,
     "show_guides": true,
     "show_inspector": true,
     "eight_handles": true,
@@ -60,7 +60,7 @@
     "open_dir": "",
     "highlight_height_px": 15,
     "highlight_color": "yellow",
-    "settings_version": 2
+    "settings_version": 3
 }
 ```
 
@@ -70,9 +70,9 @@
 | `theme` | 字符串 | 系统主题 | `light` / `dark`，没有 `system`；首次启动读一次系统偏好，旧值 `system` 在读取时定成当时的浅色/深色 |
 | `undo_limit` | 整数 | `100` | 10–500，越界夹取；非数字回退 100 |
 | `render_dpi_cap` | 整数 | `300` | 96–400，越界夹取；页面位图的渲染上限，调低省内存但放大后发虚 |
-| `preprocess_threshold` | 整数 | `235` | 0–255，越界夹取；黑白化时亮于该值的像素压成纯白 |
+| `preprocess_threshold` | 整数 | `227` | 0–255，越界夹取；黑白化时亮于该值的像素压成纯白 |
 | `table_min_span` | 整数 | `170` | 20–340，越界夹取；表格框线的最短长度（px），短于它的笔画不当作表格线 |
-| `trim_threshold` | 整数 | `235` | 64–255，越界夹取；裁白边的灰度阈值，灰度不低于它的像素算白。默认与 `preprocess_threshold` 一致（预处理会丢弃的那个值） |
+| `trim_threshold` | 整数 | `227` | 64–255，越界夹取；裁白边的灰度阈值，灰度不低于它的像素算白。默认与 `preprocess_threshold` 一致（预处理会丢弃的那个值） |
 | `show_guides` | 布尔 | `true` | 画布上的页边距参考线 |
 | `show_inspector` | 布尔 | `true` | 右侧属性栏是否展开 |
 | `eight_handles` | 布尔 | `true` | 选中图片时显示八个手柄（四角 + 四边中点）；关掉只留四角 |
@@ -92,7 +92,7 @@
 | `text_default` | 字符串 | `""` | 新建文本框时自动填入的文本；空字符串表示不填。保留前导/尾随空格；新建时按住 Ctrl 可跳过 |
 | `highlight_height_px` | 整数 | `15` | 4–200，越界夹取；荧光带的默认高度（px） |
 | `highlight_color` | 字符串 | `yellow` | 固定 `yellow`；旧配置里的其它颜色在读取时归一为黄色。荧光笔只有黄色一种 |
-| `settings_version` | 整数 | `2` | 配置结构版本，不要手改。版本 1 的旧默认宽度 40mm 在读取时迁到 45mm，用户改过的其它宽度保持不变 |
+| `settings_version` | 整数 | `3` | 配置结构版本，不要手改。版本 1 的旧默认宽度 40mm 迁到 45mm；版本 2 的旧默认阈值 235 迁到 227。用户改过的其它值保持不变 |
 
 说明：
 

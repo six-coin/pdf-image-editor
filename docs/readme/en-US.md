@@ -193,8 +193,8 @@ Select one or more images and press `G` (or use **Trim white borders** in the in
 
 The inspector footer, above the page jump, also has a **White threshold** slider — the same value as the one in Settings; the next `G` uses it.
 
-- Pixels are converted to BT.601 grayscale and **anything at or above the threshold counts as white**; the default is 235, the same value preprocessing uses to discard background grey, and it can be adjusted in Settings from 64 (about 1/4 gray) to 255 (pure white). The three channels no longer have to be exactly 255. Transparent and semi-transparent pixels are composited over white first;
-- at the default, a 235 scanned background is trimmed while 234 light grey is still content; raising the threshold trims more aggressively, lowering it keeps more pale edges;
+- Pixels are converted to BT.601 grayscale and **anything at or above the threshold counts as white**; the default is 227, the same value preprocessing uses to discard background grey, and it can be adjusted in Settings from 64 (about 1/4 gray) to 255 (pure white). The three channels no longer have to be exactly 255. Transparent and semi-transparent pixels are composited over white first;
+- at the default, a 227 scanned background is trimmed while 226 light grey is still content; raising the threshold trims more aggressively, lowering it keeps more pale edges;
 - an all-light image, or one with no light border, is left untouched and the status bar says so;
 - a mixed selection containing text boxes or highlights is refused.
 
@@ -446,13 +446,13 @@ Then pick the target file; choosing the source file itself is refused.
 |---|---|
 | What it processes | Raster images on the pages; text, vectors and annotations are left as they are |
 | What it skips | Images with an alpha channel (logos, watermarks) — thresholding would turn transparent areas into black blocks |
-| Threshold | 235 by default; change `preprocess_threshold` in Settings or in `app.json` in the data folder (0–255) |
+| Threshold | 227 by default; change `preprocess_threshold` in `app.json` in the data folder (0–255) |
 | Output | The target file you choose; choosing the source file itself is refused |
 | Progress | The busy bar on the right of the top bar shows processed / total |
 
 When it finishes you are told where the file went and how many images were processed, then asked whether to open the result right away. Run it again to redo the work — the source file is never modified.
 
-> The higher the threshold, the more light grey becomes white; 235 suits most scans. Below 200 you start erasing pale lines and light colour along with the background.
+> The higher the threshold, the more light grey becomes white; 227 suits most scans. Below 200 you start erasing pale lines and light colour along with the background.
 
 ## 13. Keyboard shortcuts
 
@@ -509,7 +509,7 @@ Settings are grouped into blocks — General, Image processing, Text boxes, High
 | Margins | 0–300 mm | Left / top / right / bottom; each edge takes several values separated by commas, e.g. `10, 50`. Stored as a sorted, de-duplicated list and formatted back to `10, 50` |
 | Snap lines | 0–300 mm | Same four-edge, multi-value input. Defaults to the five guide positions plus 85 mm from the left; used for snapping while moving or resizing, hidden otherwise |
 | Shortest table line | 20–340 px | 170 by default; drag the slider, and **Reset** next to it returns to 170. Shorter lines are not treated as table borders. The inspector footer has the same slider |
-| Trim white threshold | 64–255 | 235 by default, matching the grey level preprocessing discards; drag the slider, and **Reset** next to it returns to 235. 64 is about 1/4 gray, 255 is pure white. The inspector footer has the same slider |
+| Trim white threshold | 64–255 | 227 by default, matching the grey level preprocessing discards; drag the slider, and **Reset** next to it returns to 227. 64 is about 1/4 gray, 255 is pure white. The inspector footer has the same slider |
 | Default font | Six families | Font for new text boxes |
 | Default size | 6–200 px | 14 by default; integers only |
 | Default color | Blue / red / green / black | Color for new text boxes, blue by default |

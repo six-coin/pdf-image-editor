@@ -41,9 +41,9 @@ FONT_KEYS = ("msyh", "simsun", "simfang", "simkai", "simhei", "times")
 TEXT_COLOR_KEYS = ("blue", "red", "green", "black")
 HIGHLIGHT_COLOR_KEYS = ("yellow",)
 
-# 预处理会把灰度 >= 235 的像素直接压成纯白；裁白边默认用同一个值，
+# 预处理会把灰度 >= 227 的像素直接压成纯白；裁白边默认用同一个值，
 # 这样「预处理已经丢掉」的底灰，裁白边也会当成白边切掉。
-PREPROCESS_THRESHOLD_DEFAULT = 235
+PREPROCESS_THRESHOLD_DEFAULT = 227
 # 表格框线最短长度（px）。默认 170，设置里可在 20–340（默认值的两倍）之间调。
 TABLE_MIN_SPAN_DEFAULT = 170
 TABLE_MIN_SPAN_RANGE = (20, TABLE_MIN_SPAN_DEFAULT * 2)
@@ -89,9 +89,9 @@ DEFAULT_APP: dict[str, Any] = {
     # 荧光带默认高度（px）与颜色。
     "highlight_height_px": 15,
     "highlight_color": "yellow",
-    # 设置结构版本：老配置没有这个键。版本 1 → 2 时把旧的 40mm 默认宽度
-    # 迁到 45mm；用户改过的其它值不动。
-    "settings_version": 2,
+    # 设置结构版本：老配置没有这个键。版本 1 → 2 把旧的 40mm 默认宽度迁到
+    # 45mm；版本 2 → 3 把旧的 235 默认阈值迁到 227。用户改过的其它值不动。
+    "settings_version": 3,
 }
 
 _THEMES = ("light", "dark")
@@ -257,7 +257,13 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     version = _integer(raw.get("settings_version"), 1, 1, 1000)
     if version < 2 and _number(raw.get("text_width_mm"), -1.0, 10.0, 300.0) == 40.0:
         merged["text_width_mm"] = 45.0
-    merged["settings_version"] = max(version, 2)
+    # 版本 2 的默认阈值是 235。正好是旧默认的迁到 227，用户调过的值不动。
+    if version < 3:
+        if _integer(raw.get("preprocess_threshold"), -1, 0, 255) == 235:
+            merged["preprocess_threshold"] = PREPROCESS_THRESHOLD_DEFAULT
+        if _integer(raw.get("trim_threshold"), -1, 64, 255) == 235:
+            merged["trim_threshold"] = TRIM_THRESHOLD_DEFAULT
+    merged["settings_version"] = max(version, 3)
     merged["text_line_height"] = _number(
         raw.get("text_line_height"), DEFAULT_APP["text_line_height"], 0.8, 3.0
     )

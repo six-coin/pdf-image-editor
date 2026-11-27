@@ -1,4 +1,4 @@
-"""裁白边：灰度 >= 阈值（默认 235）就算白，包围盒之外必须都过阈值。"""
+"""裁白边：灰度 >= 阈值（默认 227）就算白，包围盒之外必须都过阈值。"""
 
 from __future__ import annotations
 
@@ -56,16 +56,16 @@ def test_single_pixel_content_survives():
     assert box == (7, 8, 1, 1)
 
 
-def test_235_is_treated_as_white():
-    """默认阈值 235（预处理丢弃底灰的值）本身包含在内。"""
-    result = trim.trim_white(_png_on(20, 20, (235, 235, 235), (5, 5, 10, 10)))
+def test_227_is_treated_as_white():
+    """默认阈值 227（预处理丢弃底灰的值）本身包含在内。"""
+    result = trim.trim_white(_png_on(20, 20, (227, 227, 227), (5, 5, 10, 10)))
     assert result is not None
     assert result[1] == (5, 5, 5, 5)
 
 
-def test_234_is_kept_as_content():
+def test_226_is_kept_as_content():
     """比阈值低一级就不再算白，整张图都是内容，没有可裁的边。"""
-    assert trim.trim_white(_png_on(20, 20, (234, 234, 234), (5, 5, 10, 10))) is None
+    assert trim.trim_white(_png_on(20, 20, (226, 226, 226), (5, 5, 10, 10))) is None
 
 
 def test_threshold_can_be_raised():

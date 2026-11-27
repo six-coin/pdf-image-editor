@@ -179,7 +179,7 @@ function syncQuickRanges() {
   const spanLimits = limits.table_min_span || [20, 340];
   const trimLimits = limits.trim_threshold || [64, 255];
   const spanValue = Number(state.data.table_min_span ?? defaults.table_min_span ?? 170);
-  const trimValue = Number(state.data.trim_threshold ?? defaults.trim_threshold ?? 235);
+  const trimValue = Number(state.data.trim_threshold ?? defaults.trim_threshold ?? 227);
 
   span.min = String(spanLimits[0]);
   span.max = String(spanLimits[1]);
