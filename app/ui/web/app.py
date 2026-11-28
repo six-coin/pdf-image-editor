@@ -1,8 +1,8 @@
 """窗口装配。
 
-启动顺序：cwd → 目录准备 → 单实例 → 日志 → API（配置错误在这里就能报）→ 资源
-服务 → 窗口 → 关闭握手。关窗后如果用户点过「立即重启」，由这里在释放单实例
-锁之后拉起新进程——数据目录的搬迁只发生在启动早期，重开窗口是搬不动的。
+启动顺序：cwd → 目录准备 → 日志 → API（配置错误在这里就能报）→ 资源服务 →
+窗口 → 关闭握手。关窗后如果用户点过「立即重启」，由这里拉起新进程——数据
+目录的搬迁只发生在启动早期，重开窗口是搬不动的。
 """
 
 from __future__ import annotations
@@ -15,16 +15,18 @@ import webview
 from webview.dom import DOMEventHandler
 
 from app import bootstrap, i18n, logging_setup, paths
-from app import settings as settings_module
 from app.errors import ConfigError
 from app.system.asset_server import AssetServer
-from app.system.single import MAIN_MUTEX, InstanceLock, activate_window
 from app.ui.web.api import EditorApi
 
 _LOGGER = logging.getLogger(__name__)
 
 # 与页面 --bg 同色，否则首帧会闪白。
 _BACKGROUND = {"light": "#f0f2f5", "dark": "#14161a"}
+
+# 窗口允许缩到的最小尺寸。宽度 960 是「左栏 + 画布 + 属性栏」仍能放下
+# 一页 A4 的底线，再窄就只能看到页面的一条缝。
+MIN_WINDOW_SIZE = (960, 640)
 
 
 def _screen_size() -> tuple[int, int]:
@@ -83,16 +85,8 @@ def main() -> None:
     # 第一件事：把工作目录钉在程序目录。之后不再改，见 bootstrap.ensure_cwd。
     bootstrap.ensure_cwd()
     warnings = bootstrap.prepare()
-    lock = InstanceLock(MAIN_MUTEX)
-    if not lock.acquire():
-        _activate_existing()
-        return
 
-    api: EditorApi | None = None
-    try:
-        api = _run(warnings)
-    finally:
-        lock.release()
+    api = _run(warnings)
     if api is not None and api.restart_requested:
         _relaunch()
 
@@ -121,9 +115,9 @@ def _run(warnings: list[str]) -> EditorApi | None:
         i18n.t("app.title"),
         server.static_url(),
         js_api=api,
-        width=int(screen_w * 0.85),
-        height=int(screen_h * 0.85),
-        min_size=(960, 640),
+        width=max(MIN_WINDOW_SIZE[0], int(screen_w * 0.85)),
+        height=max(MIN_WINDOW_SIZE[1], int(screen_h * 0.85)),
+        min_size=MIN_WINDOW_SIZE,
         background_color=_BACKGROUND.get(config["theme"], _BACKGROUND["light"]),
         text_select=False,
     )
@@ -140,10 +134,10 @@ def _run(warnings: list[str]) -> EditorApi | None:
 
 
 def _relaunch() -> None:
-    """释放单实例锁之后拉起一个新进程。
+    """拉起一个新进程。
 
     数据目录的搬迁只在启动早期、所有业务模块打开文件之前发生，所以「改完目录
-    重启」必须是真重启。锁在调用本函数之前已经放掉，新进程不会撞上「已经在运行」。
+    重启」必须是真重启。
     """
     command = [str(bootstrap.pythonw()), str(paths.MAIN_ENTRY)]
     try:
@@ -151,24 +145,6 @@ def _relaunch() -> None:
     except OSError as error:
         _LOGGER.error("重启失败：{}", error)
         bootstrap.info(i18n.t("about.restart_failed", error=error), i18n.t("app.title"))
-
-
-def _activate_existing() -> None:
-    """已经有一个窗口开着：把它提到前面，然后安静退出。
-
-    不再弹「已经在运行」的框：用户点第二次的意思就是「让我看到那个窗口」，
-    窗到前台就够了；提不上来（窗口标题对不上、被别的会话占用）也只留一条
-    日志，双击完弹一个框只会让人以为出了故障。
-    """
-    try:
-        i18n.set_language(str(settings_module.load_app()["language"]))
-    except Exception:  # 读配置失败不该挡住「多开」这条路径
-        pass
-    if activate_window(i18n.t("app.title")):
-        return
-    # 提不上来也要留一条记录：「双击了没反应」是最难解释的现象。
-    logging_setup.setup("main")
-    _LOGGER.info("已有实例在运行，但没能把窗口提到前面")
 
 
 if __name__ == "__main__":

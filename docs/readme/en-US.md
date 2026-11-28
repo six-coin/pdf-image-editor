@@ -301,7 +301,7 @@ Settings can hold a **default text for new text boxes**: every new box is prefil
 ### Editing
 
 - **Click** to select (and drag); **double-click** to edit — the caret is already in the box, and the left rail switches to the Text tool automatically.
-- `Enter` starts a new line; `Ctrl+Enter` ends editing right away.
+- `Enter` starts a new line; `Ctrl+Enter` ends editing right away. With the caret on the trailing empty line, `Backspace` removes that line.
 - `Esc` ends editing, **switches to the Select tool and selects the box** — it is ready to drag or nudge with the arrow keys, no extra click needed.
 - **Clicking outside** ends editing and deselects the box; it does not create a new text box in the empty space.
 - While editing, the box grows or shrinks with its content; a trailing Enter also counts as a line, and that empty line is visible while editing, matching the saved height.

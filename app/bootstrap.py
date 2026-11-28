@@ -63,7 +63,6 @@ def prepare() -> list[str]:
         paths.backup_dir(),
         paths.LOCAL_DIR,
         paths.LOG_DIR,
-        paths.LOCK_DIR,
     )
     for folder in folders:
         try:
@@ -83,7 +82,7 @@ def pythonw() -> Path:
 
 
 def sync_language() -> None:
-    """多开提示与崩溃弹窗要按用户选过的语言说话；读不到配置就用系统语言。
+    """提示框与崩溃弹窗要按用户选过的语言说话；读不到配置就用系统语言。
 
     这里直接读文件，不走 ``settings.load_app()``：那条路径会顺手写一份默认
     配置，把「第一次运行」标记冲掉。
@@ -102,7 +101,7 @@ def current_language() -> str:
 
 
 def info(message: str, title: str = "") -> None:
-    """提示框（信息图标）。多开、需要用户知道但不致命的事情用它。"""
+    """提示框（信息图标）。需要用户知道但不致命的事情用它。"""
     if os.name != "nt":
         return
     try:

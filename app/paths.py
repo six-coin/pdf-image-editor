@@ -52,7 +52,6 @@ TEMP_DIR = Path(
 DATA_DIR_DEFAULT = _system_dir("PROGRAMDATA", "C:/ProgramData") / VENDOR / PROJECT
 
 LOG_DIR = LOCAL_DIR / "logs"
-LOCK_DIR = LOCAL_DIR / "locks"
 DATA_POINTER = LOCAL_DIR / "data-dir.txt"
 #: 「更改数据目录」留下的待搬迁标记。指针只在搬完之后才改，中途断电也不会让
 #: 程序在一个空目录里找数据。

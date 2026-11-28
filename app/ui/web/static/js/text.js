@@ -180,8 +180,16 @@ function runSpan(text, font) {
 
 function caretToEnd(editor) {
   const range = document.createRange();
-  range.selectNodeContents(editor);
-  range.collapse(false);
+  const last = editor.lastChild;
+  // 末尾哨兵只是为了撑出空行，光标应该停在哨兵前面，而不是后面。
+  // 停在后面时再按回车，换行会插到哨兵之后，哨兵就跑到文档中间去了。
+  if (last && last.nodeType === 1 && last.dataset && last.dataset.eol === '1') {
+    range.setStartBefore(last);
+    range.collapse(true);
+  } else {
+    range.selectNodeContents(editor);
+    range.collapse(false);
+  }
   const selection = window.getSelection();
   if (!selection) return;
   selection.removeAllRanges();
@@ -296,32 +304,58 @@ function ensureEolLine() {
   // 输入法组字期间不要动 DOM：在候选词旁边插节点会把组字打断。
   if (!editing || composing) return;
   const { editor } = editing;
-  const last = editor.lastChild;
-  const sentinel = Boolean(last && last.nodeType === 1 && last.dataset && last.dataset.eol === '1');
+  const sentinels = [...editor.querySelectorAll('[data-eol="1"]')];
+  let last = editor.lastChild;
+
   if (editorText(editor).endsWith('\n')) {
-    if (sentinel) return;
+    // 浏览器有时会在末尾补一个 <br> 撑行。前面已经有真正的 \n 时它只是
+    // 占位，留着会让高度多出一行；如果它是唯一的换行，就换成文本 \n，
+    // 后续的删除逻辑只认文本换行。
+    while (last && last.nodeType === 1 && last.tagName === 'BR') {
+      last.remove();
+      if (!editorText(editor).endsWith('\n')) {
+        editor.appendChild(document.createTextNode('\n'));
+        break;
+      }
+      last = editor.lastChild;
+    }
+    const sentinel = Boolean(
+      last && last.nodeType === 1 && last.dataset && last.dataset.eol === '1'
+    );
+    if (sentinel) {
+      // 哨兵只能有一个，而且必须在末尾；编辑过程中可能被插到中间去。
+      sentinels.forEach((node) => {
+        if (node !== last) node.remove();
+      });
+      return;
+    }
+    sentinels.forEach((node) => node.remove());
     const span = document.createElement('span');
     span.dataset.eol = '1';
     span.textContent = ZWSP;
     editor.appendChild(span);
     return;
   }
-  if (!sentinel) return;
+  if (!sentinels.length) return;
   // 光标可能正停在哨兵里，先挪到末尾再拆，别把光标一起删掉。
   const selection = window.getSelection();
-  if (selection && selection.rangeCount && last.contains(selection.getRangeAt(0).startContainer)) {
-    const range = document.createRange();
-    range.selectNodeContents(editor);
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
+  if (
+    selection &&
+    selection.rangeCount &&
+    sentinels.some((node) => node.contains(selection.getRangeAt(0).startContainer))
+  ) {
+    caretToEnd(editor);
   }
-  last.remove();
+  sentinels.forEach((node) => node.remove());
 }
 
 function onEditorKey(event) {
   // 输入法组字时的回车/退格属于输入法：拦下来会把候选词直接吃掉。
   if (event.isComposing || event.keyCode === 229) return;
+  if (event.key === 'Backspace' && dropTrailingLine()) {
+    event.preventDefault();
+    return;
+  }
   if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
     // 保持 DOM 扁平：回车插的是真正的换行符，不是 <div> 套 <div>。
     event.preventDefault();
@@ -339,11 +373,66 @@ function onEditorKey(event) {
   }
 }
 
+/**
+ * 光标在末尾空行时，浏览器不会把上一行的换行符当成可删字符：它要么去删
+ * 上一行最后一个字，要么删掉零宽哨兵再补一个 <br>，于是「往回删」看起来
+ * 永远删不掉最后一行。这里直接把最后一个换行符从 DOM 里摘掉。
+ *
+ * 只处理「光标在文档末尾、前面是换行」这一种情况；其它位置的换行删除交给
+ * 浏览器，它处理得比我们准。
+ */
+function dropTrailingLine() {
+  if (!editing) return false;
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount) return false;
+  const range = selection.getRangeAt(0);
+  if (!range.collapsed || !editing.editor.contains(range.commonAncestorContainer)) return false;
+  if (!editorText(editing.editor).endsWith('\n')) return false;
+
+  const before = document.createRange();
+  before.selectNodeContents(editing.editor);
+  before.setEnd(range.startContainer, range.startOffset);
+  const after = document.createRange();
+  after.selectNodeContents(editing.editor);
+  after.setStart(range.endContainer, range.endOffset);
+  const read = (piece) =>
+    collectRuns(piece.cloneContents(), editing.baseFont)
+      .map(([text]) => text)
+      .join('');
+  if (read(after) !== '' || !read(before).endsWith('\n')) return false;
+
+  const { editor } = editing;
+  // 找最后一个含换行的文本节点。哨兵里的零宽字符不算。
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+  let target = null;
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (node.parentElement && node.parentElement.closest('[data-eol="1"]')) continue;
+    if (node.nodeValue.includes('\n')) target = node;
+  }
+  if (!target) return false;
+
+  const value = target.nodeValue;
+  const index = value.lastIndexOf('\n');
+  target.nodeValue = value.slice(0, index) + value.slice(index + 1);
+  if (!target.nodeValue) target.remove();
+
+  // 哨兵和浏览器补在末尾的 <br> 都不是用户敲的换行，一起清掉。
+  editor.querySelectorAll('[data-eol="1"]').forEach((node) => node.remove());
+  while (editor.lastChild && editor.lastChild.nodeType === 1 && editor.lastChild.tagName === 'BR') {
+    editor.lastChild.remove();
+  }
+  caretToEnd(editor);
+  scheduleEditorHeight();
+  return true;
+}
+
 /** 粘贴、拖放进来的文本一律当纯文本：不要字体、颜色、字号，也不要块级结构。 */
 function plainText(raw) {
   return String(raw || '')
     .replace(/\r\n?/g, '\n')
     .replace(/\u00a0/g, ' ')
+    .replace(/\u200b/g, '')
     .replace(/\t/g, '    ')
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '');
 }
@@ -451,7 +540,9 @@ function collectRuns(root, baseFont) {
       }
       if (child.nodeType !== 1) continue;
       if (child.tagName === 'BR') {
-        emit('\n', font);
+        // 浏览器会在块末尾补 <br> 撑行；前面已经是换行时它只是占位，
+        // 不是用户又敲了一行。真换行由我们插入的 \n 文本节点负责。
+        if (!atLineStart()) emit('\n', font);
         continue;
       }
       const own = child.dataset && child.dataset.font ? child.dataset.font : font;
@@ -874,6 +965,7 @@ async function applyFont(key) {
     now.removeAllRanges();
     now.addRange(next);
   }
+  scheduleEditorHeight();
   return true;
 }
 
