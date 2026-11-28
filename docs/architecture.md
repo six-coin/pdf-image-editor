@@ -36,7 +36,7 @@ app/
 ├─ paths.py                   全部路径的唯一来源
 ├─ errors.py                  异常类型（文案在抛出时本地化）
 ├─ models.py                  Rect / ImageObject / PageInfo / DocumentState
-├─ settings.py                app.json 读写、夹取、迁移
+├─ settings.py                app.json 读写、夹取、补默认值
 ├─ i18n.py                    文案查表
 ├─ logging_setup.py           loguru + 钩子 + 致命错误弹窗
 ├─ locales/                   zh-CN.json / en-US.json
@@ -200,7 +200,7 @@ app/
 | 模块 | 只做 | 不做 |
 |---|---|---|
 | `paths` | 由 `__file__` 推导绝对路径；解析配置里的相对路径 | 不判断文件是否存在 |
-| `settings` | 读写 `app.json`、夹取数值、迁移旧格式、原子写入 | 不缓存、不持有界面状态 |
+| `settings` | 读写 `app.json`、夹取数值、补默认值、原子写入 | 不缓存、不持有界面状态 |
 | `models` | 数据结构与形状运算 | 不读写文件 |
 | `i18n` | 扫描语言目录、查表、填占位符 | 不关心调用者是谁 |
 | `errors` | 异常类型；抛出时把文案取好 | 不含逻辑 |
@@ -212,7 +212,7 @@ app/
 | `core.render` | 页面光栅化 + 涂白 + LRU 缓存；渲染时临时摘掉本项目覆盖层 | 不决定显示在哪一页 |
 | `core.split` | 五个纯函数：切分、保留、打孔、涂白、像素裁切 | 不碰撤销栈 |
 | `core.merge` | 并集画布、最高像素密度、双三次放大、按 z 序预乘合成 | 不碰撤销栈、不知道结果放在哪一层 |
-| `core.fonts` | 六种字体的路径、懒加载与缓存 | 不排版、不画 |
+| `core.fonts` | 六种字体的路径、懒加载与缓存；按字形覆盖拆分换字体 | 不排版、不画 |
 | `core.textlayout` | 换行、行高、基线；输出「第几行、每个字段从哪开始」 | 不碰 PDF、不知道字号是 px 还是 pt |
 | `core.palette` | 文字四色与荧光黄色的键表 | 不认识 PDF |
 | `core.overlay` | 草稿页绘制、`/BM /Multiply`、子集化、嫁接、标记读写 | 不决定存到哪、不认识撤销栈 |
@@ -323,6 +323,10 @@ pointerup    → 一次性 commit_transform(items, selection)
 编辑结束时 `commitEdit` 会带 `drop_if_default=True` 调 `update_text`：内容还是 `text_default`
 就把这个框删掉（占位符没被替换，留着没有意义）。只改样式的调用不传这个参数，否则给一个
 还带着默认文本的框换个颜色，框就没了。
+
+换字体不走「整段套新字体」：`fonts.retarget_runs` 逐字符查目标字体的 `has_glyph`，有字形
+的换成目标字体，没有的保留原字体。未编辑的整框走 `api.set_text_font`；编辑中的选区先调
+`api.retarget_runs` 拿到拆好的段，再按段重建选区的 DOM，屏幕和落盘都不会出现静默回退。
 
 ```
 每页（只处理 state.loaded 里的页）：
@@ -604,7 +608,7 @@ replace_image(id, path) → 校验能解析成图片 → push ImageReplaced → 
 | 编辑 | `commit_transform` `delete_objects` `reorder_objects` `undo` `redo` |
 | 切分 | `split_object` `keep_cell` `punch_cell` `fill_cell` |
 | 图片 | `trim_images` `merge_images` |
-| 文本 | `create_text` `update_text`（清空即删除） |
+| 文本 | `create_text` `update_text`（清空即删除）`set_text_font` `retarget_runs` |
 | 荧光笔 | `create_highlight` |
 | 表格线 | `straighten_table` |
 | 保存导出 | `save_document` `browse_save` `export_pages` |
@@ -810,9 +814,8 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 
 - **原子写入**：临时文件 + `os.replace`，中途崩溃不会留下半个文件。
 - **读的时候夹取**：数字越界夹回范围，非数字回退默认，`NaN` 视为非法，布尔接受 `1/true/yes/on`。
-- **未知键原样保留**：跨版本共存不会丢用户手写的内容。
+- **未知键原样保留**：手改文件时加的自定义字段不会在保存时被丢掉。
 - **损坏就报错**：抛 `ConfigError` 并指出文件名，绝不静默重建——静默重建会把用户数据洗掉。
-- **旧格式迁移**：早期版本把边距单独放在 `reference.json`（更早是 `reference_line.json`，单位厘米），读取时一次性并进 `app.json` 并删掉旧文件。
 
 | 键 | 范围 |
 |---|---|
@@ -842,7 +845,7 @@ dpi = clamp(round(96 × zoom × devicePixelRatio / 24) × 24, 72, 300)
 tests/
 ├─ conftest.py              夹具：临时配置、现场生成 PDF、真实 EditorApi + 资源服务
 ├─ test_paths.py            路径推导
-├─ test_settings.py         夹取、迁移、原子写
+├─ test_settings.py         夹取、原子写、损坏处理
 ├─ test_i18n.py             语言发现与键完整性
 ├─ test_units.py            pt/mm、页码范围
 ├─ test_geometry.py         夹取、角/边手柄缩放、切分矩阵

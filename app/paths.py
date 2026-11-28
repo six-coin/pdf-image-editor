@@ -357,9 +357,6 @@ MIGRATION: dict[str, Any] = _migration("none")
 _reconcile_data_dir()
 
 DATA_DIR = read_data_dir()
-
-#: 旧名字保留：配置现在在数据目录里。
-CONFIG_DIR = DATA_DIR
 # 打开 PDF 时的默认目录。软件启动时若不存在会自动创建。
 PDFS_DIR = DATA_DIR / "pdfs"
 
@@ -388,11 +385,6 @@ LOCALES_DIR = PACKAGE_DIR / "locales"
 WEB_DIR = PACKAGE_DIR / "ui" / "web" / "static"
 
 APP_CONFIG_PATH = DATA_DIR / "app.json"
-# 迁移用：早期版本把参考线边距放在这两个文件里，现在并入 app.json，读到就删。
-REFERENCE_CONFIG_PATH = DATA_DIR / "reference.json"
-
-# 更早的版本把边距写在 reference_line.json 里，键名是 *_cm。
-LEGACY_REFERENCE_PATH = DATA_DIR / "reference_line.json"
 
 MAIN_ENTRY = PROGRAM_DIR / "main.pyw"
 PYTHONW = PROGRAM_DIR / ".venv" / "Scripts" / "pythonw.exe"

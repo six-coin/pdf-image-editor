@@ -325,6 +325,8 @@ The toolbar is pinned to the top-left of the box and appears as soon as it is se
 
 **Mixed fonts are allowed**: select part of the text and pick a font — only that run changes. One box can hold a SimSun paragraph followed by a FangSong one. The font name on the toolbar follows the run under the caret instead of sticking to the first run.
 
+**Font changes follow glyph coverage**: select all and pick Times New Roman and only characters Times actually has glyphs for (Latin, digits, common symbols) switch; Chinese characters, fullwidth punctuation and anything else without a glyph keep their previous font instead of being silently replaced by a fallback.
+
 ### Width
 
 A text box has **two handles, left and right**, and they change the width only — the text is re-wrapped, never scaled. The height always follows the number of lines and cannot be dragged. The default width is 4.5 cm and can be changed in Settings.
@@ -586,7 +588,7 @@ Backups moved to `backup\` inside the data folder (Settings → About → Data f
 That image has an alpha channel (logo, watermark); thresholding would turn its transparent areas into black blocks, so it is skipped. Such images are meant to stay as they are.
 
 **Chinese in a text box looks different from the screen**
-That run uses a font without Chinese glyphs, such as Times New Roman, so the save falls back to another face — readable, but not the same letterforms. Switch that run to a Chinese font if it has to match.
+That run was written with a font that has no Chinese glyphs, such as Times New Roman (the default font when the box was created, or inherited from a paste), so the save falls back to another face. Switch that run to a Chinese font to fix it; if you changed the font to Times later, Chinese keeps its previous font and this does not happen.
 
 **A shortcut does nothing**
 First check whether you are in split mode (global shortcuts are suspended), then whether a save is running (the canvas and shortcuts are locked while saving), then whether an input has focus (keys go to the input). If you rebound keys, Settings marks the conflicts.
@@ -608,7 +610,7 @@ Look at the line under the field in Settings: if it still says "Takes effect aft
 - **Only four pages are preloaded**: distant pages render when you get near them, so dragging the scrollbar quickly shows grey placeholders for a moment.
 - **No text boxes or highlights on rotated pages**: the page coordinate system no longer matches the canvas — the same reason rotated images are not editable.
 - **Text does not re-wrap while you drag the width**: the box re-wraps on release, so the text looks clipped for a moment mid-drag.
-- **Chinese text in Times New Roman uses a system fallback font**: Times has no Chinese glyphs, so such mixed runs may differ by a character or two after saving; the five Chinese fonts (YaHei / SimSun / FangSong / KaiTi / SimHei) match the saved result line for line.
+- **Chinese written in Times New Roman from the start uses a system fallback font**: Times has no Chinese glyphs, so such mixed runs may differ by a character or two after saving; changing a run to Times later keeps the previous font for characters without a glyph. The five Chinese fonts (YaHei / SimSun / FangSong / KaiTi / SimHei) match the saved result line for line.
 - **Text boxes and highlights are only editable where the marker is understood**: they are page content, so other readers show, select and print them, but they cannot be edited there like annotations.
 - **Overlays always sit above images on the same page**: they do not take part in image z-order (bring to front / send to back apply to images only).
 - **Merging flattens several layers into one**: the result takes the topmost selected layer; an unselected image that sat between the selected ones cannot keep its old relative position.

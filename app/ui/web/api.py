@@ -714,6 +714,37 @@ class EditorApi:
             stack.push(StructureChanged(before, self._state.clone_objects(), "edit.text"))
             return self._snapshot()
 
+    def set_text_font(self, object_id: str, font: str) -> dict[str, Any]:
+        """换整个文本框的字体：只换目标字体有字形的字符，缺字形的保留原字体。"""
+        with self._lock:
+            stack = self._stack
+            obj = self._state.find(str(object_id))
+            if stack is None or not isinstance(obj, TextObject):
+                return {**self._snapshot(), "ok": False, "changed": False}
+
+            target = font_table.normalize(font)
+            before_runs = [(run.text, font_table.normalize(run.font)) for run in obj.runs]
+            after_runs = font_table.retarget_runs(before_runs, target)
+            if after_runs == before_runs:
+                return {**self._snapshot(), "ok": True, "changed": False}
+
+            before = self._state.clone_objects()
+            obj.runs = [TextRun(text, family) for text, family in after_runs]
+            obj.rect = self._reflow(obj)
+            stack.push(StructureChanged(before, self._state.clone_objects(), "edit.text"))
+            return {**self._snapshot(), "ok": True, "changed": True}
+
+    def retarget_runs(self, font: str, runs: list[Any] | None = None) -> dict[str, Any]:
+        """按字形覆盖拆分文字段：能换成目标字体的换，缺字形的保留原字体。
+
+        编辑中的选区在前端拆 DOM，拿不到字体覆盖信息，所以先问后端要一份
+        拆好的段，再按段重建选区。
+        """
+        target = font_table.normalize(font)
+        parsed = [TextRun.from_any(item) for item in (runs if isinstance(runs, list) else [])]
+        out = font_table.retarget_runs([(run.text, run.font) for run in parsed], target)
+        return {"ok": True, "font": target, "runs": [[text, family] for text, family in out]}
+
     def create_highlight(
         self,
         page: int = 0,

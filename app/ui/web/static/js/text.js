@@ -86,6 +86,11 @@ function defaults() {
   };
 }
 
+/** 文本框第一段的字体；没有段时用新建默认值。 */
+function boxFont(obj) {
+  return (obj.runs && obj.runs[0] && obj.runs[0][1]) || defaults().font;
+}
+
 /* ---------- 渲染 ---------- */
 
 export function textNode(obj, k) {
@@ -582,7 +587,7 @@ function barTarget() {
     id: obj.id,
     obj,
     live: false,
-    font: (obj.runs && obj.runs[0] && obj.runs[0][1]) || defaults().font,
+    font: boxFont(obj),
     style: { size: obj.size, color: obj.color, line_height: obj.line_height },
   };
 }
@@ -654,15 +659,21 @@ function buildBar(target) {
   // 工具条会跨多次快照复用；回调里不能再用 buildBar 时捕获的旧对象，
   // 否则改完文字再改字体/字号，会把旧内容一起写回去。
   const liveTarget = () => (bar && bar.id === target.id ? bar.target : target);
-  const picker = selectBox(fonts, target.font, (value) => {
+  const picker = selectBox(fonts, target.font, async (value) => {
     const current = liveTarget();
-    if (!current.live) {
-      applyFontToBox(current.obj, value);
-      return;
+    try {
+      const changed = current.live
+        ? await applyFont(value)
+        : await applyFontToBox(current.obj, value);
+      // 一个字符都换不了时，把下拉框退回真实字体，别停在一个没生效的选项上。
+      if (!changed && bar && bar.picker) {
+        bar.picker.setValue(current.live ? currentFont() : boxFont(current.obj));
+      }
+    } catch (error) {
+      if (bar && bar.picker) {
+        bar.picker.setValue(current.live ? currentFont() : boxFont(current.obj));
+      }
     }
-    // 选区不在编辑框里时 applyFont 会拒绝，下拉框要退回到光标真实的字体，
-    // 否则它会停在一个其实没生效的选项上。
-    if (!applyFont(value) && bar && bar.picker) bar.picker.setValue(currentFont());
   });
   picker.addEventListener('mousedown', (event) => event.stopPropagation());
   el.appendChild(picker);
@@ -793,17 +804,13 @@ async function applyStyleToBox(obj, patch) {
 }
 
 async function applyFontToBox(obj, key) {
-  const runs = (obj.runs || []).map(([text]) => [text, key]);
-  const snapshot = await call('update_text', obj.id, runs, {
-    size: obj.size,
-    color: obj.color,
-    line_height: obj.line_height,
-  });
+  const snapshot = await call('set_text_font', obj.id, key);
   if (snapshot) apply(snapshot);
+  return Boolean(snapshot && snapshot.changed);
 }
 
 /** 给选区（或光标后面要敲的字）换字体。返回是否真的改了。 */
-function applyFont(key) {
+async function applyFont(key) {
   if (!editing) return false;
   const selection = window.getSelection();
   if (!selection || !selection.rangeCount) return false;
@@ -822,23 +829,51 @@ function applyFont(key) {
     return true;
   }
 
-  const fragment = range.extractContents();
-  const wrapper = document.createElement('span');
-  wrapper.dataset.font = key;
-  wrapper.style.fontFamily = cssFont(key);
-  wrapper.appendChild(fragment);
-  // 选区里原有的 run 还带着旧字体的 data-font 与 font-family。只包一层新
-  // span 不够：serialize 取的是最内层的 data-font，里面的旧值会把新字体盖掉。
-  wrapper.querySelectorAll('span').forEach((node) => {
-    node.dataset.font = key;
-    node.style.fontFamily = cssFont(key);
-  });
-  range.insertNode(wrapper);
+  // 选区里的字符逐个问后端有没有目标字体的字形：能换的换，缺字形的保留
+  // 原字体。不能直接给整段套新字体——MuPDF 保存时会静默回退，屏幕和落盘
+  // 的字形就对不上了。
+  const startContainer = range.startContainer;
+  const startOffset = range.startOffset;
+  const endContainer = range.endContainer;
+  const endOffset = range.endOffset;
+  const runs = collectRuns(range.cloneContents(), editing.baseFont);
+  if (!runs.length) return false;
 
-  const next = document.createRange();
-  next.selectNodeContents(wrapper);
-  selection.removeAllRanges();
-  selection.addRange(next);
+  const result = await call('retarget_runs', key, runs);
+  if (!result || !result.ok) return false;
+  const retargeted = (result.runs || []).filter(([text]) => text);
+  if (!retargeted.length) return false;
+  // 一个字符都换不了（比如整段中文选 Times）：不动 DOM，让工具栏退回原字体。
+  if (!retargeted.some(([, family]) => family === result.font)) return false;
+
+  // 等回包期间选区或编辑框可能已经变了。
+  if (!editing || !editing.editor.isConnected) return false;
+  const now = window.getSelection();
+  if (!now || !now.rangeCount) return false;
+  const current = now.getRangeAt(0);
+  if (
+    current.startContainer !== startContainer ||
+    current.startOffset !== startOffset ||
+    current.endContainer !== endContainer ||
+    current.endOffset !== endOffset
+  ) {
+    return false;
+  }
+
+  current.deleteContents();
+  const holder = document.createDocumentFragment();
+  for (const [text, family] of retargeted) holder.appendChild(runSpan(text, family));
+  const first = holder.firstChild;
+  const last = holder.lastChild;
+  current.insertNode(holder);
+
+  if (first && last) {
+    const next = document.createRange();
+    next.setStartBefore(first);
+    next.setEndAfter(last);
+    now.removeAllRanges();
+    now.addRange(next);
+  }
   return true;
 }
 

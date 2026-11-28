@@ -89,9 +89,6 @@ DEFAULT_APP: dict[str, Any] = {
     # 荧光带默认高度（px）与颜色。
     "highlight_height_px": 15,
     "highlight_color": "yellow",
-    # 设置结构版本：老配置没有这个键。版本 1 → 2 把旧的 40mm 默认宽度迁到
-    # 45mm；版本 2 → 3 把旧的 235 默认阈值迁到 227。用户改过的其它值不动。
-    "settings_version": 3,
 }
 
 _THEMES = ("light", "dark")
@@ -111,15 +108,6 @@ def default_app() -> dict[str, Any]:
     config["reference"] = {key: list(value) for key, value in DEFAULT_REFERENCE.items()}
     config["align"] = {key: list(value) for key, value in DEFAULT_ALIGN.items()}
     return config
-
-
-# 迁移用：早期版本以厘米为单位，键名带 _cm 后缀。
-_LEGACY_MARGIN_KEYS = {
-    "left_cm": "left_mm",
-    "top_cm": "top_mm",
-    "right_cm": "right_mm",
-    "bottom_cm": "bottom_mm",
-}
 
 
 def _number(value: Any, default: float, low: float, high: float) -> float:
@@ -205,7 +193,6 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     merged["language"] = _choice(
         raw.get("language"), i18n.initial_language(), tuple(i18n.available())
     )
-    # 旧配置里的 system 在这里定成当时的浅色/深色，之后不再随系统变化。
     merged["theme"] = theme_tool.resolve(raw.get("theme"))
     merged["undo_limit"] = _integer(raw.get("undo_limit"), DEFAULT_APP["undo_limit"], 10, 500)
     merged["render_dpi_cap"] = _integer(
@@ -252,18 +239,6 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     merged["text_width_mm"] = _number(
         raw.get("text_width_mm"), DEFAULT_APP["text_width_mm"], 10.0, 300.0
     )
-    # 版本 1 的默认宽度是 40mm。老配置里正好是 40 的，按旧默认迁到 45；
-    # 用户改过的其它值（50、60…）原样保留。
-    version = _integer(raw.get("settings_version"), 1, 1, 1000)
-    if version < 2 and _number(raw.get("text_width_mm"), -1.0, 10.0, 300.0) == 40.0:
-        merged["text_width_mm"] = 45.0
-    # 版本 2 的默认阈值是 235。正好是旧默认的迁到 227，用户调过的值不动。
-    if version < 3:
-        if _integer(raw.get("preprocess_threshold"), -1, 0, 255) == 235:
-            merged["preprocess_threshold"] = PREPROCESS_THRESHOLD_DEFAULT
-        if _integer(raw.get("trim_threshold"), -1, 64, 255) == 235:
-            merged["trim_threshold"] = TRIM_THRESHOLD_DEFAULT
-    merged["settings_version"] = max(version, 3)
     merged["text_line_height"] = _number(
         raw.get("text_line_height"), DEFAULT_APP["text_line_height"], 0.8, 3.0
     )
@@ -280,7 +255,8 @@ def _normalize_app(raw: dict[str, Any]) -> dict[str, Any]:
     )
     align = raw.get("align")
     merged["align"] = _normalize_guides(align if isinstance(align, dict) else {}, DEFAULT_ALIGN)
-    # save_mode 是早期版本的单选保存方式，读到就丢掉，不再写回文件。
+    # 历史遗留键：结构版本已取消，save_mode 也不再使用，读到就丢掉。
+    merged.pop("settings_version", None)
     merged.pop("save_mode", None)
     return merged
 
@@ -296,13 +272,11 @@ def _normalize_guides(raw: dict[str, Any], defaults: dict[str, Any]) -> dict[str
 def _mm_values(value: Any, default: list[float]) -> list[float]:
     """一条边上的参考线位置。
 
-    接受标量（老版本）、逗号分隔的字符串（手改文件）、列表（当前格式），
-    统一成「升序、去重、夹在 0–300」的毫米列表。解析不出任何数字就退回默认值。
+    接受逗号分隔的字符串（设置面板与手改文件）和列表（当前格式），统一成
+    「升序、去重、夹在 0–300」的毫米列表。解析不出任何数字就退回默认值。
     """
     if isinstance(value, bool) or value is None:
         items: list[Any] = []
-    elif isinstance(value, (int, float)):
-        items = [value]
     elif isinstance(value, str):
         items = [part for part in re.split(r"[,，;；\s]+", value) if part.strip()]
     elif isinstance(value, (list, tuple)):
@@ -324,60 +298,13 @@ def _mm_values(value: Any, default: list[float]) -> list[float]:
     return cleaned[:MAX_GUIDES]
 
 
-def _migrate_legacy_reference() -> dict[str, Any] | None:
-    legacy = paths.LEGACY_REFERENCE_PATH
-    if not legacy.is_file():
-        return None
-    try:
-        raw = _read_json(legacy)
-    except ConfigError:
-        return None
-    migrated: dict[str, Any] = {}
-    for old_key, new_key in _LEGACY_MARGIN_KEYS.items():
-        if old_key in raw:
-            migrated[new_key] = (
-                _number(raw[old_key], DEFAULT_REFERENCE[new_key][0], 0.0, 300.0) * 10
-            )
-    return migrated or None
-
-
-def _legacy_reference() -> dict[str, Any]:
-    """把老版本单独存放的边距读出来。都找不到就用默认值。"""
-    path = paths.REFERENCE_CONFIG_PATH
-    if path.is_file():
-        try:
-            return _normalize_guides(_read_json(path), DEFAULT_REFERENCE)
-        except ConfigError:
-            pass
-    migrated = _migrate_legacy_reference()
-    return _normalize_guides(migrated or dict(DEFAULT_REFERENCE), DEFAULT_REFERENCE)
-
-
-def _drop_legacy_reference() -> None:
-    """合并进 app.json 之后删掉旧文件。删不掉也不影响使用。"""
-    for path in (paths.REFERENCE_CONFIG_PATH, paths.LEGACY_REFERENCE_PATH):
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-
 def load_app() -> dict[str, Any]:
     path = paths.APP_CONFIG_PATH
     if not path.is_file():
         config = default_app()
-        config["reference"] = _legacy_reference()
         save_app(config)
-        _drop_legacy_reference()
         return _normalize_app(config)
-
-    raw = _read_json(path)
-    if "reference" not in raw:
-        # 老版本把边距单独放在 reference.json 里，这里一次性并进来。
-        raw["reference"] = _legacy_reference()
-        save_app(raw)
-        _drop_legacy_reference()
-    return _normalize_app(raw)
+    return _normalize_app(_read_json(path))
 
 
 def save_app(config: dict[str, Any]) -> None:

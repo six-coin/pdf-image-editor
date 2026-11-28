@@ -72,14 +72,13 @@ def test_atomic_write_leaves_no_temp_file(temp_config):
 def test_reference_defaults_and_clamp(temp_config):
     config = settings.load_reference()
     assert config["right_mm"] == settings.DEFAULT_REFERENCE["right_mm"]
-    settings.save_reference({"left_mm": -10, "top_mm": "abc"})
+    settings.save_reference({"left_mm": [-10], "top_mm": "abc"})
     reloaded = settings.load_reference()
     assert reloaded["left_mm"] == [0.0]
     assert reloaded["top_mm"] == settings.DEFAULT_REFERENCE["top_mm"]
     # 边距必须落在 app.json 里，不能另开一个文件
     stored = json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
     assert stored["reference"]["left_mm"] == [0.0]
-    assert not (temp_config / "reference.json").exists()
 
 
 def test_reference_accepts_a_comma_list(temp_config):
@@ -90,16 +89,6 @@ def test_reference_accepts_a_comma_list(temp_config):
     assert reloaded["left_mm"] == [5.0, 30.0]
 
 
-def test_reference_old_scalar_becomes_a_list(temp_config):
-    """老配置里是一个数字，读进来要包成单元素列表，不能丢。"""
-    (temp_config / "app.json").write_text(
-        json.dumps({"reference": {"right_mm": 50, "left_mm": 12.5}}), encoding="utf-8"
-    )
-    config = settings.load_reference()
-    assert config["right_mm"] == [50.0]
-    assert config["left_mm"] == [12.5]
-
-
 def test_reference_rejects_garbage(temp_config):
     settings.save_reference({"bottom_mm": "abc, ,", "top_mm": [None, "x", 20]})
     reloaded = settings.load_reference()
@@ -107,39 +96,28 @@ def test_reference_rejects_garbage(temp_config):
     assert reloaded["top_mm"] == [20.0]
 
 
-def test_legacy_reference_is_migrated(temp_config):
-    legacy = {
-        "left_cm": 1.0,
-        "top_cm": 1.0,
-        "right_cm": 5.0,
-        "bottom_cm": 1.0,
-    }
-    (temp_config / "reference_line.json").write_text(json.dumps(legacy), encoding="utf-8")
-    config = settings.load_reference()
-    assert config["left_mm"] == [pytest.approx(10.0)]
-    assert config["right_mm"] == [pytest.approx(50.0)]
-    stored = json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
-    assert stored["reference"]["right_mm"] == [pytest.approx(50.0)]
-    assert not (temp_config / "reference_line.json").exists()
-
-
-def test_reference_json_is_merged_into_app_json(temp_config):
-    (temp_config / "app.json").write_text(json.dumps({"theme": "dark"}), encoding="utf-8")
-    (temp_config / "reference.json").write_text(json.dumps({"left_mm": 33}), encoding="utf-8")
-
+def test_legacy_setting_keys_are_dropped(temp_config):
+    (temp_config / "app.json").write_text(
+        json.dumps({"settings_version": 3, "save_mode": "raster"}), encoding="utf-8"
+    )
     config = settings.load_app()
-
-    assert config["reference"]["left_mm"] == [pytest.approx(33)]
-    assert not (temp_config / "reference.json").exists()
-    stored = json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
-    assert stored["reference"]["left_mm"] == [pytest.approx(33)]
-
-
-def test_save_mode_is_dropped(temp_config):
-    (temp_config / "app.json").write_text(json.dumps({"save_mode": "raster"}), encoding="utf-8")
-    config = settings.load_app()
+    assert "settings_version" not in config
     assert "save_mode" not in config
-    assert "save_mode" not in json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
+
+    settings.save_app(config)
+    stored = json.loads((temp_config / "app.json").read_text(encoding="utf-8"))
+    assert "settings_version" not in stored
+    assert "save_mode" not in stored
+
+
+def test_reference_scalar_is_not_accepted(temp_config):
+    """旧格式的单个数字不再兼容；解析不出来就退回默认值。"""
+    (temp_config / "app.json").write_text(
+        json.dumps({"reference": {"left_mm": 12.5, "right_mm": 50}}), encoding="utf-8"
+    )
+    config = settings.load_reference()
+    assert config["left_mm"] == settings.DEFAULT_REFERENCE["left_mm"]
+    assert config["right_mm"] == settings.DEFAULT_REFERENCE["right_mm"]
 
 
 def test_keybindings_are_normalized(temp_config):
@@ -280,53 +258,6 @@ def test_open_dir_is_trimmed_but_default_text_is_verbatim(temp_config):
     assert config["open_dir"] == "D:/Docs"
     # 默认文本里的前导/尾随空格是用户有意敲的，不能顺手 trim 掉
     assert config["text_default"] == "  你好  "
-
-
-def test_legacy_text_width_migrates_to_45(temp_config):
-    """老配置没有 settings_version：旧的 40mm 默认迁到 45mm。"""
-    (temp_config / "app.json").write_text(json.dumps({"text_width_mm": 40.0}), encoding="utf-8")
-    config = settings.load_app()
-    assert config["text_width_mm"] == pytest.approx(45.0)
-    assert config["settings_version"] == 3
-
-
-def test_custom_text_width_survives_the_migration(temp_config):
-    (temp_config / "app.json").write_text(json.dumps({"text_width_mm": 55.0}), encoding="utf-8")
-    config = settings.load_app()
-    assert config["text_width_mm"] == pytest.approx(55.0)
-    assert config["settings_version"] == 3
-
-
-def test_old_default_thresholds_migrate_to_227(temp_config):
-    """版本 2 的 235 是旧默认值，读到时迁到 227；用户调过的值不动。"""
-    (temp_config / "app.json").write_text(
-        json.dumps(
-            {
-                "settings_version": 2,
-                "preprocess_threshold": 235,
-                "trim_threshold": 235,
-            }
-        ),
-        encoding="utf-8",
-    )
-    config = settings.load_app()
-    assert config["preprocess_threshold"] == 227
-    assert config["trim_threshold"] == 227
-    assert config["settings_version"] == 3
-
-    (temp_config / "app.json").write_text(
-        json.dumps(
-            {
-                "settings_version": 2,
-                "preprocess_threshold": 240,
-                "trim_threshold": 250,
-            }
-        ),
-        encoding="utf-8",
-    )
-    config = settings.load_app()
-    assert config["preprocess_threshold"] == 240
-    assert config["trim_threshold"] == 250
 
 
 def test_bad_text_defaults_are_clamped(temp_config):

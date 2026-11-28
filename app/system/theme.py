@@ -29,13 +29,8 @@ def system_theme() -> str:
 
 
 def resolve(value: object) -> str:
-    """把任意来源的值压成 light/dark。
-
-    旧配置里可能还写着 ``system``：按当时的系统偏好定一次，之后就固定下来。
-    其余无法识别的值回退浅色——一个拼错的词不该让界面变黑。
-    """
+    """把任意来源的值压成 light/dark。无法识别的值回退浅色——
+    一个拼错的词不该让界面变黑。"""
     if value == "dark":
         return "dark"
-    if value == "system":
-        return system_theme()
     return DEFAULT

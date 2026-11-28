@@ -294,6 +294,47 @@ def test_create_text_can_skip_default_text(editor, opened):
     assert text == ""
 
 
+def test_set_text_font_keeps_unsupported_glyphs(editor, opened):
+    """换 Times 时只换它有的字形，汉字保留原来的宋体。"""
+    instance, _server = editor
+    opened()
+    created = instance.create_text(page=0, x=50, y=50, text="中文abc", style={"font": "simsun"})[
+        "created"
+    ]
+
+    snapshot = instance.set_text_font(created, "times")
+
+    assert snapshot["ok"] is True
+    assert snapshot["changed"] is True
+    obj = [o for o in _objects(instance) if o["id"] == created][0]
+    runs = [tuple(run) for run in obj["runs"]]
+    assert ("中文", "simsun") in runs
+    assert ("abc", "times") in runs
+
+
+def test_set_text_font_is_noop_when_nothing_can_change(editor, opened):
+    instance, _server = editor
+    opened()
+    created = instance.create_text(page=0, x=50, y=50, text="中文", style={"font": "simsun"})[
+        "created"
+    ]
+
+    snapshot = instance.set_text_font(created, "times")
+
+    assert snapshot["ok"] is True
+    assert snapshot["changed"] is False
+    obj = [o for o in _objects(instance) if o["id"] == created][0]
+    assert obj["runs"] == [["中文", "simsun"]]
+
+
+def test_retarget_runs_splits_without_touching_the_document(editor):
+    instance, _server = editor
+    result = instance.retarget_runs("times", [["中文abc", "simsun"]])
+    assert result["ok"] is True
+    assert result["font"] == "times"
+    assert result["runs"] == [["中文", "simsun"], ["abc", "times"]]
+
+
 def test_update_text_drops_a_box_left_at_the_default_text(editor, opened):
     """编辑完还是默认文本：这个框只是占位，提交时就该消失。"""
     instance, _server = editor
@@ -814,7 +855,7 @@ def test_external_edit_rejects_garbage(editor, opened, monkeypatch, tmp_path):
 def test_reference_settings_persist(editor, opened):
     instance, _server = editor
     opened()
-    snapshot = instance.update_reference({"left_mm": 20, "right_mm": 15})
+    snapshot = instance.update_reference({"left_mm": [20], "right_mm": [15]})
     assert snapshot["reference"]["left_mm"] == [pytest.approx(20)]
     assert snapshot["reference"]["right_mm"] == [pytest.approx(15)]
 
@@ -1069,7 +1110,7 @@ def test_reset_settings_restores_defaults(editor, opened):
     instance, _server = editor
     opened()
     instance.update_settings({"theme": "dark", "undo_limit": 30, "keybindings": {"global": {}}})
-    instance.update_reference({"left_mm": 33})
+    instance.update_reference({"left_mm": [33]})
 
     snapshot = instance.reset_settings()
 

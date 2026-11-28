@@ -45,10 +45,7 @@ def temp_config(tmp_path, monkeypatch):
     config_dir = tmp_path / "config"
     config_dir.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(paths, "DATA_DIR", config_dir)
-    monkeypatch.setattr(paths, "CONFIG_DIR", config_dir)
     monkeypatch.setattr(paths, "APP_CONFIG_PATH", config_dir / "app.json")
-    monkeypatch.setattr(paths, "REFERENCE_CONFIG_PATH", config_dir / "reference.json")
-    monkeypatch.setattr(paths, "LEGACY_REFERENCE_PATH", config_dir / "reference_line.json")
     return config_dir
 
 

@@ -94,3 +94,37 @@ def missing_glyphs(text: str, key: str) -> bool:
         if not target.has_glyph(ord(char)):
             return True
     return False
+
+
+def retarget_runs(runs: list[tuple[str, str]], key: str) -> list[tuple[str, str]]:
+    """把文字段换成目标字体，但只换目标字体真正有字形的字符。
+
+    例如全选一段「中文 abc」并选 Times New Roman：``abc`` 换成 Times，
+    汉字保留原来的字体。没有字形却硬换，MuPDF 保存时会静默换成别的字体，
+    屏幕上的字形和落盘结果就对不上了。
+    """
+    target_key = normalize(key)
+    target = font(target_key)
+    result: list[tuple[str, str]] = []
+    for text, current in runs:
+        current_key = normalize(current)
+        buffer: list[str] = []
+        buffer_font = current_key
+        for char in str(text):
+            # 空白不参与字形判断：字体里都有空格，换过去不影响观感。
+            use = target_key if char in "\n\r\t " or target.has_glyph(ord(char)) else current_key
+            if buffer and buffer_font != use:
+                result.append(("".join(buffer), buffer_font))
+                buffer = []
+            buffer_font = use
+            buffer.append(char)
+        if buffer:
+            result.append(("".join(buffer), buffer_font))
+
+    merged: list[tuple[str, str]] = []
+    for text, family in result:
+        if merged and merged[-1][1] == family:
+            merged[-1] = (merged[-1][0] + text, family)
+        else:
+            merged.append((text, family))
+    return merged
