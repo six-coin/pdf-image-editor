@@ -1080,6 +1080,7 @@ body.saving {
   width: 100%;
   margin: 10px 0;
   border-collapse: collapse;
+  table-layout: fixed;
   font-size: 13px;
 }
 
@@ -1089,6 +1090,7 @@ body.saving {
   border: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .md th {
@@ -1472,4 +1474,15 @@ select option {
 
 .viewport.mode-text {
   cursor: text;
+}
+
+/* 窄窗口下的设置表单：快捷键表收成一列，四边边距收成两列。 */
+@media (max-width: 700px) {
+  .key-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .margin-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

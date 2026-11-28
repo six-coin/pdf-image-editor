@@ -24,9 +24,29 @@ _LOGGER = logging.getLogger(__name__)
 # 与页面 --bg 同色，否则首帧会闪白。
 _BACKGROUND = {"light": "#f0f2f5", "dark": "#14161a"}
 
-# 窗口允许缩到的最小尺寸。宽度 960 是「左栏 + 画布 + 属性栏」仍能放下
-# 一页 A4 的底线，再窄就只能看到页面的一条缝。
+# 窗口允许缩到的最小尺寸，按屏幕物理像素算。pywebview 的 min_size 收的是
+# 逻辑像素、内部再乘一次 DPI，所以真正传给它的值要先按缩放比例除回去。
 MIN_WINDOW_SIZE = (960, 640)
+
+
+def _dpi_scale() -> float:
+    """主显示器的缩放比例（96 DPI 为 1.0）。"""
+    try:
+        user32 = ctypes.windll.user32
+        # pywebview 稍后也会设；这里先设，GetDpiForSystem 才不会被虚拟化成 96。
+        user32.SetProcessDPIAware()
+    except Exception:
+        return 1.0
+    try:
+        dpi = int(user32.GetDpiForSystem())
+    except Exception:
+        try:
+            hdc = user32.GetDC(0)
+            dpi = int(ctypes.windll.gdi32.GetDeviceCaps(hdc, 88))
+            user32.ReleaseDC(0, hdc)
+        except Exception:
+            return 1.0
+    return max(1.0, dpi / 96.0)
 
 
 def _screen_size() -> tuple[int, int]:
@@ -110,14 +130,20 @@ def _run(warnings: list[str]) -> EditorApi | None:
     config = api.settings_snapshot
     i18n.set_language(config["language"])
 
+    scale = _dpi_scale()
     screen_w, screen_h = _screen_size()
+    # pywebview 的 width/height/min_size 都按逻辑像素收，内部再乘 DPI。
+    logical_w = screen_w / scale
+    logical_h = screen_h / scale
+    min_w = max(1, round(MIN_WINDOW_SIZE[0] / scale))
+    min_h = max(1, round(MIN_WINDOW_SIZE[1] / scale))
     window = webview.create_window(
         i18n.t("app.title"),
         server.static_url(),
         js_api=api,
-        width=max(MIN_WINDOW_SIZE[0], int(screen_w * 0.85)),
-        height=max(MIN_WINDOW_SIZE[1], int(screen_h * 0.85)),
-        min_size=MIN_WINDOW_SIZE,
+        width=max(min_w, round(logical_w * 0.85)),
+        height=max(min_h, round(logical_h * 0.85)),
+        min_size=(min_w, min_h),
         background_color=_BACKGROUND.get(config["theme"], _BACKGROUND["light"]),
         text_select=False,
     )

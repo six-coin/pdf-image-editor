@@ -388,7 +388,8 @@ kbd {
 .modal-card {
   display: flex;
   flex-direction: column;
-  width: min(720px, 100%);
+  width: min(720px, calc(100vw - 48px));
+  max-width: 100%;
   max-height: 82vh;
   background: var(--panel);
   border-radius: var(--radius-lg);
@@ -409,12 +410,12 @@ kbd {
 }
 
 .modal-card.narrow {
-  width: min(440px, 100%);
+  width: min(440px, calc(100vw - 48px));
 }
 
 /* 使用说明这类长文档要更宽：跟设置面板一样宽时，正文挤在一条窄缝里读着累。 */
 .modal-card.wide {
-  width: min(960px, 100%);
+  width: min(960px, calc(100vw - 48px));
   max-height: 88vh;
 }
 
@@ -461,6 +462,27 @@ kbd {
   gap: 8px;
   /* 下方必须留白，否则按钮贴着卡片底边 */
   padding: 14px 22px 18px;
+}
+
+/* 窄窗口下弹窗跟着窗口走，不再被固定列宽撑开。 */
+@media (max-width: 700px) {
+  .modal {
+    padding: 16px;
+  }
+
+  .modal-card,
+  .modal-card.narrow,
+  .modal-card.wide {
+    width: 100%;
+  }
+
+  .field-row {
+    flex-wrap: wrap;
+  }
+
+  .field-row > .field-label {
+    flex: 1 0 100%;
+  }
 }
 
 /* 放在左侧的次要动作（比如设置里的「重置所有」） */
